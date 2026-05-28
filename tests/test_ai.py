@@ -4,6 +4,44 @@ import subprocess
 from pr_dash import ai
 
 
+def _difffile(path, body="+code\n"):
+    return f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -0,0 +1 @@\n{body}"
+
+
+def test_strip_noise_drops_generated_keeps_code():
+    diff = (
+        _difffile("sale/models/sale_order.py")
+        + _difffile("sale/i18n/fr.po")
+        + _difffile("web/static/lib/foo.min.js")
+        + _difffile("package-lock.json")
+        + _difffile("sale/views/views.xml")
+    )
+    kept, dropped = ai._strip_noise(diff)
+    assert "sale_order.py" in kept and "views.xml" in kept
+    assert "fr.po" not in kept and "min.js" not in kept and "package-lock" not in kept
+    assert set(dropped) == {"sale/i18n/fr.po", "web/static/lib/foo.min.js", "package-lock.json"}
+
+
+def test_strip_noise_all_noise_is_empty():
+    diff = _difffile("a/i18n/es.po") + _difffile("yarn.lock")
+    kept, dropped = ai._strip_noise(diff)
+    assert kept == ""
+    assert len(dropped) == 2
+
+
+def test_diff_for_prompt_notes_omissions_and_caps():
+    diff = _difffile("m/x.py", body="+a\n" * 100) + _difffile("m/i18n/fr.po")
+    out = ai._diff_for_prompt(diff, cap=50)
+    assert "omitted" in out and "fr.po" in out
+    # cap applies to the kept code, the note is appended after
+    assert "x.py" in out
+
+
+def test_diff_for_prompt_all_noise_message():
+    out = ai._diff_for_prompt(_difffile("m/i18n/fr.po"), cap=1000)
+    assert "nothing to review" in out
+
+
 def _req():
     return ai.ReviewRequest(
         head_sha="deadbeef1234",

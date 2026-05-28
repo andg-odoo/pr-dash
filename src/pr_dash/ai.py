@@ -2,11 +2,57 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
+
+# Generated / translation files carry no review signal but eat the prompt's
+# character budget. Stripped before the diff is sent to the model. Mirrors the
+# frontend NOISY_RE used to fold these files in the dashboard.
+_NOISE_RE = re.compile(
+    r"(\.(po|pot|map|lock)$)|(\.min\.(js|css)$)"
+    r"|((^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$)",
+    re.IGNORECASE,
+)
+_FILE_SPLIT_RE = re.compile(r"(?m)^(?=diff --git )")
+_FILE_PATH_RE = re.compile(r"diff --git a/.+? b/(.+)")
+
+
+def _strip_noise(diff: str) -> tuple[str, list[str]]:
+    """Drop generated/translation files from a combined `.diff` so the model's
+    token budget goes to reviewable code. Returns (kept_diff, dropped_paths)."""
+    if not diff:
+        return diff, []
+    kept: list[str] = []
+    dropped: list[str] = []
+    for chunk in _FILE_SPLIT_RE.split(diff):
+        if not chunk.strip():
+            continue
+        m = _FILE_PATH_RE.match(chunk)
+        path = m.group(1).strip() if m else ""
+        if path and _NOISE_RE.search(path):
+            dropped.append(path)
+        else:
+            kept.append(chunk)
+    return "".join(kept), dropped
+
+
+def _diff_for_prompt(diff: str, cap: int) -> str:
+    """Strip noise, cap, and annotate what was omitted so the model doesn't
+    flag e.g. missing translation updates that were intentionally dropped."""
+    if not diff:
+        return "(no diff available)"
+    kept, dropped = _strip_noise(diff)
+    if not kept:
+        return "(only generated/translation files changed; nothing to review)"
+    note = ""
+    if dropped:
+        shown = ", ".join(dropped[:5]) + ("…" if len(dropped) > 5 else "")
+        note = f"\n\n[{len(dropped)} generated/translation file(s) omitted: {shown}]"
+    return kept[:cap] + note
 
 def is_available() -> bool:
     try:
@@ -150,18 +196,18 @@ def _build_prompt(req: ReviewRequest) -> str:
             body=(req.body or "(no description)")[:3000],
             modules=", ".join(req.modules) or "(none)",
             branch=req.branch,
-            diff=req.diff[:35_000] if req.diff else "(no diff available)",
+            diff=_diff_for_prompt(req.diff, 35_000),
             sibling_repo=req.sibling_repo,
             sibling_number=req.sibling_number,
             sibling_title=req.sibling_title or "(unknown)",
-            sibling_diff=req.sibling_diff[:25_000] if req.sibling_diff else "(no diff)",
+            sibling_diff=_diff_for_prompt(req.sibling_diff, 25_000) if req.sibling_diff else "(no diff)",
         )
     return REVIEW_PROMPT_SINGLE.format(
         title=req.title,
         body=(req.body or "(no description)")[:4000],
         modules=", ".join(req.modules) or "(none)",
         branch=req.branch,
-        diff=req.diff[:50_000] if req.diff else "(no diff available)",
+        diff=_diff_for_prompt(req.diff, 50_000),
     )
 
 
