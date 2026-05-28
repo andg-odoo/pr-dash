@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 SCHEMA_SQL = """
 CREATE TABLE pr (
@@ -24,6 +24,7 @@ CREATE TABLE pr (
   previously_reviewed  INTEGER NOT NULL,
   mergeable            TEXT,
   ci_state             TEXT,
+  ci_failures          TEXT,
   runbot_url           TEXT,
   additions            INTEGER NOT NULL,
   deletions            INTEGER NOT NULL,
@@ -191,6 +192,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 "  seen_at    TEXT NOT NULL"
                 ")"
             )
+    if current < 9:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(pr)").fetchall()}
+        if "ci_failures" not in cols:
+            conn.execute("ALTER TABLE pr ADD COLUMN ci_failures TEXT")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 

@@ -377,6 +377,15 @@ body {
 .look-ci { color: var(--orange); background: rgba(224, 144, 74, 0.15); }
 .look-new { color: var(--bg); background: var(--green); }
 
+/* Failing CI checks in the detail Status section */
+.ci-failures { display: flex; flex-direction: column; gap: 2px; }
+.ci-failures a, .ci-failures span {
+  color: var(--red);
+  font-size: 12px;
+  text-decoration: none;
+}
+.ci-failures a:hover { text-decoration: underline; }
+
 .pr-row .archived-tag {
   font-size: 9px;
   font-weight: 700;

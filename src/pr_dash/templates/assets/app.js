@@ -491,6 +491,15 @@
             <dt>Modules</dt><dd>${pr.modules.length ? pr.modules.map(escapeHTML).join(", ") : "<em>(none)</em>"}</dd>
             <dt>Open / requested</dt><dd>${pr.age_days}d open, ${pr.req_age_days}d since you were requested</dd>
             <dt>CI</dt><dd>${escapeHTML(pr.ci_state || "-")} · ${escapeHTML(pr.mergeable || "-")}</dd>
+            ${(pr.ci_failures && pr.ci_failures.length) ? `
+            <dt>Failed</dt><dd class="ci-failures">
+              ${pr.ci_failures.map(f => {
+                const label = (pr.is_pair ? escapeHTML(f.repo_short) + ": " : "") + escapeHTML(f.name);
+                return f.url
+                  ? `<a href="${f.url}" target="_blank" rel="noopener">${label} ↗</a>`
+                  : `<span>${label}</span>`;
+              }).join("")}
+            </dd>` : ""}
             <dt>Flags</dt><dd>${pr.flags.length ? pr.flags.map(f => `<span class="pr-flag ${cssClass(f)}">${escapeHTML(f)}</span>`).join(" ") : "<em>(none)</em>"}</dd>
           </dl>
         </section>

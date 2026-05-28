@@ -217,6 +217,26 @@ def status_check_state(status_check_rollup: dict | None) -> tuple[str | None, st
     return state, runbot
 
 
+_FAILING_STATES = {"FAILURE", "ERROR"}
+_FAILING_CONCLUSIONS = {"FAILURE", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED", "CANCELLED"}
+
+
+def failing_checks(status_check_rollup: dict | None) -> list[dict]:
+    """Extract the individual failing checks (name + url) from a rollup, so a
+    reviewer can see *which* check is red rather than just an overall FAILURE."""
+    if not status_check_rollup:
+        return []
+    out: list[dict] = []
+    for ctx in (status_check_rollup.get("contexts") or {}).get("nodes") or []:
+        if ctx.get("__typename") == "StatusContext":
+            if (ctx.get("state") or "") in _FAILING_STATES:
+                out.append({"name": ctx.get("context") or "(check)", "url": ctx.get("targetUrl")})
+        elif ctx.get("__typename") == "CheckRun":
+            if (ctx.get("conclusion") or "") in _FAILING_CONCLUSIONS:
+                out.append({"name": ctx.get("name") or "(check)", "url": ctx.get("detailsUrl")})
+    return out
+
+
 def is_personally_requested(review_requests: list[dict], my_login: str) -> bool:
     for r in review_requests:
         rr = r.get("requestedReviewer") or {}

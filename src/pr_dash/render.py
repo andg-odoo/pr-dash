@@ -65,6 +65,11 @@ def _build_pr_record(
             "sibling_head_sha": review_row["sibling_head_sha"] or "",
         }
 
+    try:
+        ci_failures = json.loads(pr["ci_failures"]) if pr["ci_failures"] else []
+    except (json.JSONDecodeError, TypeError):
+        ci_failures = []
+
     age_days = derive.days_since(pr["created_at"])
     req_age_days = derive.days_since(pr["review_requested_at"])
     is_stale = req_age_days > stale_review_days
@@ -100,6 +105,7 @@ def _build_pr_record(
         "installable": installable,
         "mergeable": pr["mergeable"],
         "ci_state": pr["ci_state"],
+        "ci_failures": ci_failures,
         "runbot_url": pr["runbot_url"],
         "linked_task": pr["linked_task"],
         "linked_task_kind": pr["linked_task_kind"],
@@ -263,6 +269,11 @@ def _make_item(members: list[dict], my_login: str,
     ci_rank = {"FAILURE": 3, "ERROR": 3, "PENDING": 1, "SUCCESS": 0}
     ci_state = max((m["ci_state"] for m in members),
                    key=lambda s: ci_rank.get(s or "", -1), default=None)
+    # Failing checks across members, tagged with the repo they failed on.
+    ci_failures = [
+        {**f, "repo_short": m["repo_short"]}
+        for m in members for f in (m.get("ci_failures") or [])
+    ]
     mergeable_rank = {"CONFLICTING": 2, "UNKNOWN": 1, "MERGEABLE": 0}
     mergeable = max((m["mergeable"] for m in members),
                     key=lambda s: mergeable_rank.get(s or "", -1), default=None)
@@ -292,6 +303,7 @@ def _make_item(members: list[dict], my_login: str,
         "installable": installable,
         "mergeable": mergeable,
         "ci_state": ci_state,
+        "ci_failures": ci_failures,
         "runbot_url": runbot_url,
         "linked_task": linked_task,
         "linked_task_kind": linked_task_kind,

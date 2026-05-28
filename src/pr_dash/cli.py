@@ -477,6 +477,7 @@ def _node_to_rows(node: dict, my_login: str) -> tuple[dict, list[str], list[dict
     commits = (node.get("commits") or {}).get("nodes") or []
     rollup = commits[0]["commit"]["statusCheckRollup"] if commits else None
     ci_state, runbot_url = derive.status_check_state(rollup)
+    ci_failures = derive.failing_checks(rollup)
 
     parsed_task = derive.parse_linked_task(node.get("body"))
     task_kind, task_id = parsed_task if parsed_task else (None, None)
@@ -497,6 +498,7 @@ def _node_to_rows(node: dict, my_login: str) -> tuple[dict, list[str], list[dict
         "previously_reviewed": int(prev_reviewed),
         "mergeable": node.get("mergeable"),
         "ci_state": ci_state,
+        "ci_failures": json.dumps(ci_failures) if ci_failures else None,
         "runbot_url": runbot_url,
         "additions": node["additions"],
         "deletions": node["deletions"],

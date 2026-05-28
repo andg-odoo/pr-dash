@@ -201,6 +201,35 @@ def test_status_check_state_none():
     assert state is None and url is None
 
 
+def test_failing_checks_extracts_failures():
+    rollup = {"contexts": {"nodes": [
+        {"__typename": "StatusContext", "context": "ci/runbot", "state": "FAILURE",
+         "targetUrl": "https://runbot.odoo.com/x"},
+        {"__typename": "StatusContext", "context": "ci/style", "state": "SUCCESS",
+         "targetUrl": "https://x"},
+        {"__typename": "CheckRun", "name": "tests", "conclusion": "FAILURE",
+         "detailsUrl": "https://gh/checks/1"},
+        {"__typename": "CheckRun", "name": "lint", "conclusion": "SUCCESS",
+         "detailsUrl": "https://gh/checks/2"},
+        {"__typename": "CheckRun", "name": "flaky", "conclusion": "TIMED_OUT",
+         "detailsUrl": "https://gh/checks/3"},
+    ]}}
+    failures = derive.failing_checks(rollup)
+    names = {f["name"] for f in failures}
+    assert names == {"ci/runbot", "tests", "flaky"}
+    runbot = next(f for f in failures if f["name"] == "ci/runbot")
+    assert runbot["url"] == "https://runbot.odoo.com/x"
+
+
+def test_failing_checks_empty_when_green_or_none():
+    assert derive.failing_checks(None) == []
+    green = {"contexts": {"nodes": [
+        {"__typename": "StatusContext", "context": "ci", "state": "SUCCESS", "targetUrl": "u"},
+        {"__typename": "CheckRun", "name": "t", "conclusion": "SUCCESS", "detailsUrl": "u"},
+    ]}}
+    assert derive.failing_checks(green) == []
+
+
 def test_detect_pairs():
     prs = [
         {"id": "odoo/odoo#1", "author": "jdoe", "head_branch": "feature-x"},
