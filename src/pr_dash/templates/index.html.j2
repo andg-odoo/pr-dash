@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>pr-dash · {{ pr_count }} PRs</title>
+<style>{{ diff2html_css|safe }}</style>
+<style>{{ app_css|safe }}</style>
+</head>
+<body>
+  {% if offline %}
+  <div class="banner">Offline mode - last refresh {{ last_refresh }}</div>
+  {% endif %}
+
+  <div class="layout">
+    <aside class="left">
+      <header class="left-header">
+        <h1>pr-dash</h1>
+        <div class="meta">
+          <span class="count-line">
+            <span id="visible-count">{{ pr_count }} / {{ pr_count }}</span>
+            <span id="total-count">active</span> PRs
+            <span class="kpi" id="kpi"></span>
+          </span>
+          <button id="reset-filters" type="button">reset</button>
+        </div>
+      </header>
+
+      <div class="search-bar">
+        <input id="search" type="search" autocomplete="off" spellcheck="false"
+               placeholder="Search title, #, author, module…  ( / )">
+      </div>
+
+      <section class="filters">
+        <div class="filter-group" data-group="repo">
+          <div class="filter-label">Repo</div>
+          <div class="chips" id="repo-chips"></div>
+        </div>
+        <div class="filter-group" data-group="bucket">
+          <div class="filter-label">Bucket</div>
+          <div class="chips" id="bucket-chips"></div>
+        </div>
+        <div class="filter-group" data-group="branch">
+          <div class="filter-label">Branch</div>
+          <div class="chips" id="branch-chips"></div>
+        </div>
+        <div class="filter-group" data-group="state">
+          <div class="filter-label">State</div>
+          <div class="chips" id="state-chips"></div>
+        </div>
+      </section>
+
+      <div class="sort-bar">
+        <label>Sort:</label>
+        <select id="sort">
+          <option value="default">default</option>
+          <option value="req_age_desc">requested oldest</option>
+          <option value="req_age_asc">requested newest</option>
+          <option value="bucket">bucket size</option>
+          <option value="size">size desc</option>
+        </select>
+        <span class="kbd-hint" title="j/k move · o or enter open on GitHub · h hide · / search">
+          <kbd>j</kbd><kbd>k</kbd> move · <kbd>o</kbd> open · <kbd>h</kbd> hide
+        </span>
+      </div>
+
+      <ol class="pr-list" id="pr-list"></ol>
+    </aside>
+
+    <main class="right" id="detail">
+      <div class="empty">Select a PR on the left.</div>
+    </main>
+  </div>
+
+  <script>
+    window.PR_DATA = {{ prs_json|safe }};
+    window.MY_LOGIN = window.PR_DATA[0]?.my_login || null;
+  </script>
+  <script>{{ diff2html_js|safe }}</script>
+  <script>{{ markdown_it_js|safe }}</script>
+  <script>{{ app_js|safe }}</script>
+</body>
+</html>

@@ -1,0 +1,181 @@
+from pr_dash import derive
+
+
+def test_path_to_module_enterprise():
+    assert derive.path_to_module("odoo/enterprise", "account_accountant/models/foo.py") == "account_accountant"
+    assert derive.path_to_module("odoo/enterprise", "README.md") is None
+
+
+def test_path_to_module_odoo_addons():
+    assert derive.path_to_module("odoo/odoo", "addons/sale/models/sale_order.py") == "sale"
+    assert derive.path_to_module("odoo/odoo", "odoo/addons/base/models/res_partner.py") == "base"
+
+
+def test_path_to_module_odoo_core():
+    assert derive.path_to_module("odoo/odoo", "odoo/orm/models.py") == "_core"
+    assert derive.path_to_module("odoo/odoo", "setup.py") == "_root"
+
+
+def test_path_to_module_unknown_repo():
+    assert derive.path_to_module("unknown/repo", "foo/bar.py") is None
+
+
+def test_modules_for_dedupes_and_orders():
+    paths = ["addons/sale/a.py", "addons/sale/b.py", "addons/account/c.py"]
+    assert derive.modules_for("odoo/odoo", paths) == ["sale", "account"]
+
+
+def test_installable_modules_filters_underscores():
+    assert derive.installable_modules(["sale", "_core", "_root", "account"]) == ["sale", "account"]
+
+
+def test_parse_linked_task():
+    assert derive.parse_linked_task("Fixes task-123456 something") == ("task", "123456")
+    assert derive.parse_linked_task("Task-789012") == ("task", "789012")
+    assert derive.parse_linked_task("task 4567") == ("task", "4567")
+    assert derive.parse_linked_task("opw-987654") == ("opw", "987654")
+    assert derive.parse_linked_task("Opw 12345") == ("opw", "12345")
+    assert derive.parse_linked_task("OPW-22") is None  # too short
+    assert derive.parse_linked_task("no task here") is None
+    assert derive.parse_linked_task(None) is None
+
+
+def test_derive_threads_basic():
+    threads = [
+        {
+            "id": "t1",
+            "isResolved": False,
+            "comments": {"nodes": [
+                {"author": {"login": "me"}, "createdAt": "2026-05-01T00:00:00Z"},
+                {"author": {"login": "them"}, "createdAt": "2026-05-02T00:00:00Z"},
+            ]},
+        },
+        {
+            "id": "t2",
+            "isResolved": False,
+            "comments": {"nodes": [
+                {"author": {"login": "them"}, "createdAt": "2026-05-03T00:00:00Z"},
+            ]},
+        },
+        {
+            "id": "t3",
+            "isResolved": True,
+            "comments": {"nodes": [
+                {"author": {"login": "me"}, "createdAt": "2026-05-04T00:00:00Z"},
+                {"author": {"login": "them"}, "createdAt": "2026-05-05T00:00:00Z"},
+            ]},
+        },
+    ]
+    result = derive.derive_threads(threads, "me")
+    assert result.unresolved == 2
+    assert result.awaiting_my_reply is True
+    assert len(result.threads) == 3
+
+
+def test_derive_threads_no_awaiting_when_i_replied_last():
+    threads = [{
+        "id": "t1",
+        "isResolved": False,
+        "comments": {"nodes": [
+            {"author": {"login": "them"}, "createdAt": "2026-05-01T00:00:00Z"},
+            {"author": {"login": "me"}, "createdAt": "2026-05-02T00:00:00Z"},
+        ]},
+    }]
+    result = derive.derive_threads(threads, "me")
+    assert result.awaiting_my_reply is False
+
+
+def test_is_personally_requested():
+    reqs = [
+        {"requestedReviewer": {"__typename": "Team", "slug": "rd-accounting"}},
+        {"requestedReviewer": {"__typename": "User", "login": "me"}},
+    ]
+    assert derive.is_personally_requested(reqs, "me") is True
+    assert derive.is_personally_requested(reqs, "other") is False
+    assert derive.is_personally_requested([reqs[0]], "me") is False
+
+
+def test_heuristic_score_monotonic_in_size():
+    base = dict(changed_files=1, modules=["sale"], unresolved_threads=0, previously_reviewed=False)
+    small = derive.heuristic_score(additions=5, deletions=2, **base)
+    big = derive.heuristic_score(additions=500, deletions=200, **base)
+    assert big > small
+
+
+def test_heuristic_score_reread_discount():
+    args = dict(additions=200, deletions=100, changed_files=4, modules=["sale"], unresolved_threads=0)
+    fresh = derive.heuristic_score(previously_reviewed=False, **args)
+    reread = derive.heuristic_score(previously_reviewed=True, **args)
+    assert abs(reread - fresh * 0.5) < 0.01
+
+
+def test_bucket_for():
+    assert derive.bucket_for(2, 5, 20, 60) == "S"
+    assert derive.bucket_for(5, 5, 20, 60) == "M"
+    assert derive.bucket_for(19, 5, 20, 60) == "M"
+    assert derive.bucket_for(20, 5, 20, 60) == "L"
+    assert derive.bucket_for(59, 5, 20, 60) == "L"
+    assert derive.bucket_for(60, 5, 20, 60) == "XL"
+
+
+def test_status_check_state_picks_runbot():
+    rollup = {
+        "state": "SUCCESS",
+        "contexts": {"nodes": [
+            {"__typename": "StatusContext", "context": "ci/style", "state": "SUCCESS",
+             "targetUrl": "https://runbot.odoo.com/runbot/batch/1/build/100"},
+            {"__typename": "StatusContext", "context": "ci/runbot", "state": "PENDING",
+             "targetUrl": "https://runbot.odoo.com/runbot/batch/2/build/200"},
+        ]},
+    }
+    state, url = derive.status_check_state(rollup)
+    assert state == "SUCCESS"
+    assert url == "https://runbot.odoo.com/runbot/batch/2/build/200"
+
+
+def test_status_check_state_falls_back_to_any_runbot():
+    rollup = {
+        "state": "SUCCESS",
+        "contexts": {"nodes": [
+            {"__typename": "StatusContext", "context": "ci/lint", "state": "SUCCESS",
+             "targetUrl": "https://runbot.odoo.com/runbot/batch/9/build/9"},
+        ]},
+    }
+    _, url = derive.status_check_state(rollup)
+    assert url == "https://runbot.odoo.com/runbot/batch/9/build/9"
+
+
+def test_status_check_state_none():
+    state, url = derive.status_check_state(None)
+    assert state is None and url is None
+
+
+def test_detect_pairs():
+    prs = [
+        {"id": "odoo/odoo#1", "author": "jdoe", "head_branch": "feature-x"},
+        {"id": "odoo/enterprise#2", "author": "jdoe", "head_branch": "feature-x"},
+        {"id": "odoo/odoo#3", "author": "asmith", "head_branch": "other"},
+    ]
+    pairs = derive.detect_pairs(prs)
+    assert pairs == {"odoo/odoo#1": "odoo/enterprise#2", "odoo/enterprise#2": "odoo/odoo#1"}
+
+
+def test_latest_review_requested_at_picks_latest_for_me():
+    timeline = [
+        {"__typename": "ReviewRequestedEvent", "createdAt": "2026-05-01T00:00:00Z",
+         "requestedReviewer": {"__typename": "User", "login": "me"}},
+        {"__typename": "ReviewRequestedEvent", "createdAt": "2026-05-05T00:00:00Z",
+         "requestedReviewer": {"__typename": "User", "login": "other"}},
+        {"__typename": "ReviewRequestedEvent", "createdAt": "2026-05-10T00:00:00Z",
+         "requestedReviewer": {"__typename": "User", "login": "me"}},
+    ]
+    assert derive.latest_review_requested_at(timeline, "me", "fallback") == "2026-05-10T00:00:00Z"
+
+
+def test_previously_reviewed():
+    timeline = [
+        {"__typename": "PullRequestReview", "author": {"login": "me"}, "submittedAt": "2026-05-01T00:00:00Z"},
+    ]
+    assert derive.previously_reviewed(timeline, "me") is True
+    assert derive.previously_reviewed(timeline, "other") is False
+    assert derive.previously_reviewed([], "me") is False
