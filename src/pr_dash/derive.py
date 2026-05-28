@@ -37,6 +37,35 @@ def file_change_signatures(diff_text: str) -> dict[str, str]:
     return sigs
 
 
+def thread_signature(threads: list[dict]) -> str:
+    """Stable signature of a PR's thread activity. Changes when a thread is
+    added or gets a new reply, so it detects discussion movement since a prior view."""
+    parts = sorted(f"{t['thread_id']}:{t.get('last_reply_at', '')}" for t in threads)
+    return hashlib.sha1("\n".join(parts).encode("utf-8", "replace")).hexdigest()[:16]
+
+
+def since_last_look_tags(
+    prev: tuple[str | None, str | None, str] | None,
+    head_sha: str, ci_state: str | None, thread_sig: str, *, first_run: bool,
+) -> list[str]:
+    """What changed since the PR was last rendered. `prev` is the previously
+    seen (head_sha, ci_state, thread_sig) or None. On the first run ever
+    (`first_run`) nothing is flagged - there's no baseline to compare against."""
+    if first_run:
+        return []
+    if prev is None:
+        return ["new"]
+    p_head, p_ci, p_sig = prev
+    tags = []
+    if p_head != head_sha:
+        tags.append("pushed")
+    if (p_ci or "") != (ci_state or "") and ci_state:
+        tags.append("ci")
+    if p_sig != thread_sig:
+        tags.append("reply")
+    return tags
+
+
 def path_to_module(repo: str, path: str) -> str | None:
     if repo == "odoo/enterprise":
         return path.split("/", 1)[0] if "/" in path else None

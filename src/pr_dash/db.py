@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 SCHEMA_SQL = """
 CREATE TABLE pr (
@@ -93,6 +93,14 @@ CREATE TABLE review_snapshot (
   snapped_at   TEXT NOT NULL
 );
 
+CREATE TABLE seen (
+  pr_id      TEXT PRIMARY KEY REFERENCES pr(id) ON DELETE CASCADE,
+  head_sha   TEXT,
+  ci_state   TEXT,
+  thread_sig TEXT,
+  seen_at    TEXT NOT NULL
+);
+
 CREATE INDEX idx_pr_module_pr ON pr_module(pr_id);
 CREATE INDEX idx_pr_reviewer_pr ON pr_reviewer(pr_id);
 CREATE INDEX idx_pr_thread_pr ON pr_thread(pr_id);
@@ -165,6 +173,22 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 "  reviewed_sha TEXT NOT NULL,"
                 "  signatures   TEXT NOT NULL,"
                 "  snapped_at   TEXT NOT NULL"
+                ")"
+            )
+    if current < 8:
+        tables = {
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        if "seen" not in tables:
+            conn.execute(
+                "CREATE TABLE seen ("
+                "  pr_id      TEXT PRIMARY KEY REFERENCES pr(id) ON DELETE CASCADE,"
+                "  head_sha   TEXT,"
+                "  ci_state   TEXT,"
+                "  thread_sig TEXT,"
+                "  seen_at    TEXT NOT NULL"
                 ")"
             )
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
@@ -291,6 +315,22 @@ def upsert_review_snapshot(conn: sqlite3.Connection, pr_id: str, reviewed_sha: s
         "reviewed_sha = excluded.reviewed_sha, signatures = excluded.signatures, "
         "snapped_at = excluded.snapped_at",
         (pr_id, reviewed_sha, signatures_json, snapped_at),
+    )
+
+
+def list_seen(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
+    return {r["pr_id"]: r for r in conn.execute("SELECT * FROM seen").fetchall()}
+
+
+def upsert_seen(conn: sqlite3.Connection, pr_id: str, head_sha: str | None,
+                ci_state: str | None, thread_sig: str, seen_at: str) -> None:
+    conn.execute(
+        "INSERT INTO seen (pr_id, head_sha, ci_state, thread_sig, seen_at) "
+        "VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(pr_id) DO UPDATE SET "
+        "head_sha = excluded.head_sha, ci_state = excluded.ci_state, "
+        "thread_sig = excluded.thread_sig, seen_at = excluded.seen_at",
+        (pr_id, head_sha, ci_state, thread_sig, seen_at),
     )
 
 

@@ -24,6 +24,34 @@ def test_signatures_per_file():
     assert derive.file_change_signatures("") == {}
 
 
+def test_thread_signature_detects_new_reply():
+    a = [{"thread_id": "t1", "last_reply_at": "2026-05-01"}]
+    b = [{"thread_id": "t1", "last_reply_at": "2026-05-02"}]  # someone replied
+    assert derive.thread_signature(a) != derive.thread_signature(b)
+    # order-independent
+    two = [{"thread_id": "t1", "last_reply_at": "x"}, {"thread_id": "t2", "last_reply_at": "y"}]
+    assert derive.thread_signature(two) == derive.thread_signature(list(reversed(two)))
+
+
+def test_since_last_look_first_run_flags_nothing():
+    assert derive.since_last_look_tags(None, "sha", "SUCCESS", "sig", first_run=True) == []
+
+
+def test_since_last_look_new_pr():
+    assert derive.since_last_look_tags(None, "sha", "SUCCESS", "sig", first_run=False) == ["new"]
+
+
+def test_since_last_look_detects_each_change():
+    prev = ("old_sha", "PENDING", "old_sig")
+    assert derive.since_last_look_tags(prev, "new_sha", "PENDING", "old_sig", first_run=False) == ["pushed"]
+    assert derive.since_last_look_tags(prev, "old_sha", "SUCCESS", "old_sig", first_run=False) == ["ci"]
+    assert derive.since_last_look_tags(prev, "old_sha", "PENDING", "new_sig", first_run=False) == ["reply"]
+    # nothing changed
+    assert derive.since_last_look_tags(prev, "old_sha", "PENDING", "old_sig", first_run=False) == []
+    # multiple at once, stable order
+    assert derive.since_last_look_tags(prev, "new_sha", "SUCCESS", "new_sig", first_run=False) == ["pushed", "ci", "reply"]
+
+
 def test_path_to_module_enterprise():
     assert derive.path_to_module("odoo/enterprise", "account_accountant/models/foo.py") == "account_accountant"
     assert derive.path_to_module("odoo/enterprise", "README.md") is None

@@ -95,6 +95,18 @@ body {
   color: var(--green);
   font-weight: 600;
 }
+
+.left-header .look-count {
+  color: var(--accent);
+  font-weight: 600;
+  cursor: pointer;
+}
+.left-header .look-count:not(:empty)::before {
+  content: "·  ";
+  color: var(--fg-faint);
+  font-weight: 400;
+}
+.left-header .look-count:hover { text-decoration: underline; }
 .left-header .kpi:not(:empty)::before {
   content: "·  ";
   color: var(--fg-faint);
@@ -349,6 +361,21 @@ body {
   margin-left: 4px;
   vertical-align: middle;
 }
+
+/* "Since last look" row badges */
+.look-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 4px;
+  vertical-align: middle;
+  letter-spacing: 0.03em;
+}
+.look-pushed { color: var(--blue); background: rgba(122, 162, 247, 0.15); }
+.look-reply { color: var(--green); background: rgba(106, 208, 138, 0.15); }
+.look-ci { color: var(--orange); background: rgba(224, 144, 74, 0.15); }
+.look-new { color: var(--bg); background: var(--green); }
 
 .pr-row .archived-tag {
   font-size: 9px;

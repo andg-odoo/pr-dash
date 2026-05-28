@@ -21,6 +21,7 @@
   const visibleCountEl = document.getElementById("visible-count");
   const totalCountEl = document.getElementById("total-count");
   const kpiEl = document.getElementById("kpi");
+  const lookCountEl = document.getElementById("look-count");
   const sortEl = document.getElementById("sort");
   const resetBtn = document.getElementById("reset-filters");
   const searchEl = document.getElementById("search");
@@ -32,6 +33,7 @@
   const FLAGS = ["RE", "MSG", "CI!", "CFL", "OLD"];
   const BUCKETS = ["S", "M", "L", "XL"];
   const STATES = [
+    { id: "updated", label: "updated since visit" },
     { id: "ball-in-my-court", label: "ball in my court" },
     { id: "awaiting-my-reply", label: "awaiting my reply" },
     { id: "stale", label: "stale 7d+" },
@@ -40,6 +42,8 @@
     { id: "archived", label: "archived" },
     { id: "show-hidden", label: "show hidden" },
   ];
+
+  const LOOK_BADGES = { pushed: "↑push", reply: "reply", ci: "ci", new: "new" };
 
   /** Hidden map: { pr_id: { head_sha, hidden_at } }. Auto-unhide if head_sha changed. */
   function loadHidden() {
@@ -184,6 +188,7 @@
     if (filters.branch.size && !filters.branch.has(pr.target_branch)) return false;
     if (filters.state.size) {
       const checks = {
+        "updated": (pr.since_last_look || []).length > 0,
         "ball-in-my-court": pr.my_review_state === "PENDING",
         "awaiting-my-reply": pr.awaiting_my_reply,
         "stale": pr.flags.includes("OLD"),
@@ -320,6 +325,11 @@
       ? `${visible.length} / ${denom}  ·  ${hiddenCount} hidden`
       : `${visible.length} / ${denom}`;
     if (totalCountEl) totalCountEl.textContent = filters.state.has("archived") ? "archived" : "active";
+    if (lookCountEl) {
+      const n = PRS.filter(p => !p.is_archived && (p.since_last_look || []).length).length;
+      lookCountEl.textContent = n ? `${n} updated` : "";
+      lookCountEl.title = n ? "Show only PRs updated since your last visit" : "";
+    }
 
     listEl.innerHTML = "";
     visible.forEach(pr => {
@@ -341,8 +351,11 @@
         : "";
       const hideLabel = itemHidden ? "↺" : "×";
       const hideTitle = itemHidden ? "Unhide" : "Hide until next push";
+      const lookBadges = (pr.since_last_look || [])
+        .map(t => `<span class="look-badge look-${t}">${LOOK_BADGES[t] || t}</span>`)
+        .join("");
       li.innerHTML = `
-        <span class="pr-id-group">${idBlock}${pairTag}${archivedTag}${verdictTag}</span>
+        <span class="pr-id-group">${idBlock}${pairTag}${archivedTag}${verdictTag}${lookBadges}</span>
         <span class="pr-title" title="${escapeHTML(pr.title)}">${escapeHTML(pr.title)}</span>
         <span class="pr-bucket ${pr.bucket}">${pr.bucket}</span>
         <button class="pr-hide" type="button" title="${hideTitle}" data-hide-id="${escapeHTML(pr.id)}">${hideLabel}</button>
@@ -775,6 +788,7 @@
   setupFilters();
   updateKpi();
   if (kpiEl) kpiEl.addEventListener("click", renderStats);
+  if (lookCountEl) lookCountEl.addEventListener("click", () => toggleChip("state", "updated"));
   renderList();
 
   const initial = parseHash();

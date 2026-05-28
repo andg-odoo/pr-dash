@@ -309,6 +309,7 @@ def _make_item(members: list[dict], my_login: str,
         "previously_reviewed": previously_reviewed,
         "awaiting_my_reply": awaiting_my_reply,
         "unresolved_threads": unresolved_threads,
+        "since_last_look": sorted({t for m in members for t in m.get("since_last_look", [])}),
         "flags": flags,
         "bucket": bucket,
         "bucket_score": bucket_score,
@@ -339,6 +340,25 @@ def build_payload(
     pr_dicts = [dict(r) for r in pr_rows]
     pairs = derive.detect_pairs(pr_dicts)
 
+    # "Since last look": diff each active PR's current state against what it was
+    # at the previous render, then record the new state. First run (no baseline)
+    # flags nothing. Rendering is the "look", so this also runs offline.
+    seen_rows = db.list_seen(conn)
+    first_seen_run = not seen_rows
+    now = derive.now_utc()
+    delta_map: dict[str, list[str]] = {}
+    seen_updates: list[tuple[str, str | None, str | None, str]] = []
+    for pr in pr_dicts:
+        if pr["archived_at"]:
+            continue
+        thread_sig = derive.thread_signature(threads_by_pr.get(pr["id"], []))
+        prev = seen_rows.get(pr["id"])
+        prev_tuple = (prev["head_sha"], prev["ci_state"], prev["thread_sig"]) if prev else None
+        delta_map[pr["id"]] = derive.since_last_look_tags(
+            prev_tuple, pr["head_sha"], pr["ci_state"], thread_sig, first_run=first_seen_run,
+        )
+        seen_updates.append((pr["id"], pr["head_sha"], pr["ci_state"], thread_sig))
+
     records: dict[str, dict] = {}
     for pr in pr_dicts:
         records[pr["id"]] = _build_pr_record(
@@ -348,6 +368,7 @@ def build_payload(
             threads_by_pr.get(pr["id"], []),
             my_login, stale_review_days,
         )
+        records[pr["id"]]["since_last_look"] = delta_map.get(pr["id"], [])
 
     items: list[dict] = []
     seen: set[str] = set()
@@ -366,6 +387,12 @@ def build_payload(
         BUCKET_RANK.get(p["bucket"], 1),
         -p["req_age_days"],
     ))
+
+    # Record current state as the new "last look" baseline for the next render.
+    with db.transaction(conn):
+        for pr_id, head_sha, ci_state, thread_sig in seen_updates:
+            db.upsert_seen(conn, pr_id, head_sha, ci_state, thread_sig, now)
+
     return items
 
 
