@@ -276,6 +276,27 @@ def _run_refresh(conn, cfg, *, force: bool) -> None:
                         patch = None
                     db.upsert_diff(conn, head_sha, patch, truncated, derive.now_utc())
 
+            # Snapshot the per-file change signatures of the diff I reviewed, so a
+            # later re-review can fold files unchanged since. Only when the commit
+            # I reviewed *is* the current head - otherwise the cached diff isn't
+            # the one I saw, and we'd rather have no baseline than a wrong one.
+            my_review = next(
+                (r for r in (node.get("latestReviews") or {}).get("nodes") or []
+                 if (r.get("author") or {}).get("login") == cfg.github_login),
+                None,
+            )
+            reviewed_sha = (my_review.get("commit") or {}).get("oid") if my_review else None
+            if reviewed_sha and reviewed_sha == head_sha:
+                snap = db.get_review_snapshot(conn, pr_id)
+                if not snap or snap["reviewed_sha"] != reviewed_sha:
+                    diff_row = db.get_diff(conn, head_sha)
+                    if diff_row and diff_row["patch_text"]:
+                        db.upsert_review_snapshot(
+                            conn, pr_id, reviewed_sha,
+                            json.dumps(derive.file_change_signatures(diff_row["patch_text"])),
+                            derive.now_utc(),
+                        )
+
             # Heuristic complexity
             score = derive.heuristic_score(
                 additions=pr_row["additions"],

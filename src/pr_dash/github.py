@@ -35,7 +35,7 @@ query($q: String!, $cursor: String) {
           }
         }
         latestReviews(first: 30) {
-          nodes { author { login } state }
+          nodes { author { login } state commit { oid } }
         }
         reviewThreads(first: 30) {
           nodes {

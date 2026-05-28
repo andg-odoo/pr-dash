@@ -1,6 +1,29 @@
 from pr_dash import derive
 
 
+def test_signatures_ignore_context_and_line_numbers():
+    # Same +/- lines, different context + hunk position (as after a rebase onto
+    # newer master) must hash identically.
+    before = "diff --git a/m/x.py b/m/x.py\n@@ -1,3 +1,3 @@\n ctx_a\n-old\n+new\n ctx_b\n"
+    after = "diff --git a/m/x.py b/m/x.py\n@@ -50,3 +50,3 @@\n shifted\n-old\n+new\n moved\n"
+    assert (derive.file_change_signatures(before)["m/x.py"]
+            == derive.file_change_signatures(after)["m/x.py"])
+
+
+def test_signatures_detect_real_change():
+    a = "diff --git a/m/x.py b/m/x.py\n@@ -1 +1 @@\n-old\n+new\n"
+    b = "diff --git a/m/x.py b/m/x.py\n@@ -1 +1 @@\n-old\n+newer\n"
+    assert (derive.file_change_signatures(a)["m/x.py"]
+            != derive.file_change_signatures(b)["m/x.py"])
+
+
+def test_signatures_per_file():
+    d = ("diff --git a/a.py b/a.py\n@@ -1 +1 @@\n+a\n"
+         "diff --git a/b.py b/b.py\n@@ -1 +1 @@\n+b\n")
+    assert set(derive.file_change_signatures(d)) == {"a.py", "b.py"}
+    assert derive.file_change_signatures("") == {}
+
+
 def test_path_to_module_enterprise():
     assert derive.path_to_module("odoo/enterprise", "account_accountant/models/foo.py") == "account_accountant"
     assert derive.path_to_module("odoo/enterprise", "README.md") is None

@@ -1,11 +1,40 @@
 from __future__ import annotations
 
+import hashlib
 import math
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 TASK_RE = re.compile(r"\b(task|opw)[-\s]?(\d{4,8})\b", re.IGNORECASE)
+
+_DIFF_FILE_SPLIT = re.compile(r"(?m)^(?=diff --git )")
+_DIFF_FILE_PATH = re.compile(r"diff --git a/.+? b/(.+)")
+
+
+def file_change_signatures(diff_text: str) -> dict[str, str]:
+    """Map each file path in a combined `.diff` to a hash of only its +/- lines
+    (ignoring @@ headers and context). Two diffs of the same change hash equal
+    even after a rebase shifts line numbers/context, so this is the basis for
+    detecting which files actually changed since a prior review."""
+    sigs: dict[str, str] = {}
+    if not diff_text:
+        return sigs
+    for chunk in _DIFF_FILE_SPLIT.split(diff_text):
+        if not chunk.strip():
+            continue
+        m = _DIFF_FILE_PATH.match(chunk)
+        if not m:
+            continue
+        changed = [
+            ln for ln in chunk.split("\n")
+            if (ln.startswith("+") and not ln.startswith("+++"))
+            or (ln.startswith("-") and not ln.startswith("---"))
+        ]
+        sigs[m.group(1).strip()] = hashlib.sha1(
+            "\n".join(changed).encode("utf-8", "replace")
+        ).hexdigest()[:16]
+    return sigs
 
 
 def path_to_module(repo: str, path: str) -> str | None:

@@ -35,6 +35,19 @@ def _build_pr_record(
     installable = derive.installable_modules(modules)
     complexity = db.get_complexity(conn, pr["head_sha"])
     diff = db.get_diff(conn, pr["head_sha"])
+
+    # Files whose change-content differs from what I last reviewed (or are new).
+    # None means no baseline (never reviewed, or head still == reviewed head) -
+    # the frontend then folds purely by size, with no review-delta treatment.
+    review_changed_paths = None
+    snap = db.get_review_snapshot(conn, pr["id"])
+    if snap and diff and diff["patch_text"] and snap["reviewed_sha"] != pr["head_sha"]:
+        base_sigs = json.loads(snap["signatures"])
+        cur_sigs = derive.file_change_signatures(diff["patch_text"])
+        review_changed_paths = sorted(
+            p for p, s in cur_sigs.items() if base_sigs.get(p) != s
+        )
+
     review_row = db.get_ai_review_any(conn, pr["head_sha"])
     ai_review: dict | None = None
     if review_row:
@@ -106,6 +119,7 @@ def _build_pr_record(
         "diff_available": diff is not None and diff["patch_text"] is not None,
         "diff_truncated": bool(diff and diff["truncated"]),
         "diff": diff["patch_text"] if diff and diff["patch_text"] else None,
+        "review_changed_paths": review_changed_paths,
         "archived_at": pr["archived_at"],
         "ai_review": ai_review,
     }
@@ -212,6 +226,7 @@ def _make_item(members: list[dict], my_login: str,
             "available": m["diff_available"],
             "truncated": m["diff_truncated"],
             "diff": m["diff"],
+            "review_changed_paths": m["review_changed_paths"],
             "additions": m["additions"],
             "deletions": m["deletions"],
             "changed_files": m["changed_files"],

@@ -605,14 +605,20 @@
 
       container.innerHTML = "";
 
-      // Keep files in their original PR order: render consecutive light files
-      // as one diff2html block, and drop a collapsed stub in place for each
-      // heavy/noisy file (rendered lazily on expand - that's what costs 1-2s).
+      // Keep files in their original PR order: render consecutive inline files
+      // as one diff2html block, and drop a collapsed stub in place for files
+      // that fold. A file folds when it's unchanged since my last review
+      // ("reviewed"), or just large/noisy ("heavy") - both rendered lazily on
+      // expand (that heavy render is what costs 1-2s).
       const files = splitDiffFiles(d.diff);
-      // When folds split the diff into multiple light blocks, suppress each
-      // block's "Files changed" list (it would repeat once per block). An
-      // unsplit single block keeps its list for navigation.
-      const split = files.some(isHeavyFile);
+      // review_changed_paths: files whose content differs from what I reviewed
+      // (or are new). null = no review baseline, so fold purely by size.
+      const changedSet = d.review_changed_paths ? new Set(d.review_changed_paths) : null;
+      const isReviewed = f => changedSet && !changedSet.has(f.path);
+      const willFold = f => isReviewed(f) || isHeavyFile(f);
+      // When folds split the diff into multiple inline blocks, suppress each
+      // block's "Files changed" list (it would repeat once per block).
+      const split = files.some(willFold);
       let run = [];
       const flush = () => {
         if (!run.length) return;
@@ -622,11 +628,14 @@
         run = [];
       };
       files.forEach(f => {
-        if (isHeavyFile(f)) {
+        if (isReviewed(f)) {
           flush();
-          container.appendChild(buildHeavyFileStub(f));
+          container.appendChild(buildFileStub(f, "reviewed"));
+        } else if (isHeavyFile(f)) {
+          flush();
+          container.appendChild(buildFileStub(f, changedSet ? "changed" : "heavy"));
         } else {
-          run.push(f);
+          run.push(f);  // new/changed (or no-baseline) small file → render inline
         }
       });
       flush();
@@ -670,15 +679,23 @@
     ui.highlightCode();
   }
 
-  function buildHeavyFileStub(f) {
+  // kind: "heavy" (large/noisy), "reviewed" (unchanged since my review,
+  // dimmed), or "changed" (a large file that differs from my review).
+  function buildFileStub(f, kind) {
     const stub = document.createElement("div");
-    stub.className = "diff-heavy";
-    const reason = NOISY_RE.test(f.path) ? "generated/noisy" : `${f.lines} changed lines`;
+    stub.className = "diff-heavy" + (kind === "reviewed" ? " diff-reviewed" : "");
+    const tag = kind === "reviewed" ? '<span class="diff-reviewed-tag">reviewed</span>' : "";
+    const badge = kind === "changed" ? '<span class="diff-changed-badge">changed</span>' : "";
+    const meta = kind === "reviewed"
+      ? "unchanged since your review"
+      : `+${f.added}/−${f.removed} · ${NOISY_RE.test(f.path) ? "generated/noisy" : f.lines + " changed lines"}`;
     stub.innerHTML = `
       <div class="diff-heavy-head">
         <button class="diff-heavy-toggle" type="button">▸ show</button>
+        ${tag}
         <span class="diff-heavy-path">${escapeHTML(f.path)}</span>
-        <span class="diff-heavy-meta">+${f.added}/−${f.removed} · ${reason}</span>
+        ${badge}
+        <span class="diff-heavy-meta">${meta}</span>
       </div>`;
     const host = document.createElement("div");
     stub.appendChild(host);

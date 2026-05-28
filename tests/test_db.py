@@ -72,6 +72,21 @@ def test_delete_candidates_excludes_kept_and_archived(tmp_path):
     assert {r["id"] for r in cands} == {"odoo/odoo#1"}
 
 
+def test_review_snapshot_roundtrip(tmp_path):
+    conn = _conn(tmp_path)
+    _insert(conn, "odoo/odoo#1", reviewed=1)
+    assert db.get_review_snapshot(conn, "odoo/odoo#1") is None
+
+    db.upsert_review_snapshot(conn, "odoo/odoo#1", "sha_a", '{"x.py": "h1"}', "t1")
+    row = db.get_review_snapshot(conn, "odoo/odoo#1")
+    assert row["reviewed_sha"] == "sha_a" and row["signatures"] == '{"x.py": "h1"}'
+
+    # upsert overwrites in place (new review on a new head)
+    db.upsert_review_snapshot(conn, "odoo/odoo#1", "sha_b", '{"x.py": "h2"}', "t2")
+    row = db.get_review_snapshot(conn, "odoo/odoo#1")
+    assert row["reviewed_sha"] == "sha_b" and row["signatures"] == '{"x.py": "h2"}'
+
+
 def _states(conn, pr_id):
     return {(r["kind"], r["name"]): r["state"]
             for r in conn.execute(

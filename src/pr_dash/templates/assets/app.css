@@ -936,6 +936,31 @@ body {
 }
 .diff-heavy-meta { flex: 0 0 auto; color: var(--fg-faint); font-size: 11px; }
 
+/* A file unchanged since my last review: dimmed, low-key. */
+.diff-reviewed { opacity: 0.55; }
+.diff-reviewed-tag {
+  flex: 0 0 auto;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-faint);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+/* A large file that *did* change since my review - flag it so it's not lost. */
+.diff-changed-badge {
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--bg);
+  background: var(--yellow);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
 .diff-section .d2h-wrapper {
   background: var(--bg-elev);
   border-radius: 6px;

@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 SCHEMA_SQL = """
 CREATE TABLE pr (
@@ -86,6 +86,13 @@ CREATE TABLE ai_review (
   computed_at      TEXT NOT NULL
 );
 
+CREATE TABLE review_snapshot (
+  pr_id        TEXT PRIMARY KEY REFERENCES pr(id) ON DELETE CASCADE,
+  reviewed_sha TEXT NOT NULL,
+  signatures   TEXT NOT NULL,
+  snapped_at   TEXT NOT NULL
+);
+
 CREATE INDEX idx_pr_module_pr ON pr_module(pr_id);
 CREATE INDEX idx_pr_reviewer_pr ON pr_reviewer(pr_id);
 CREATE INDEX idx_pr_thread_pr ON pr_thread(pr_id);
@@ -145,6 +152,21 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # `.patch` (mbox), so the frontend can reliably split them per file.
         # Drop cached patches so they re-fetch in the new format on next refresh.
         conn.execute("DELETE FROM pr_diff")
+    if current < 7:
+        tables = {
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        if "review_snapshot" not in tables:
+            conn.execute(
+                "CREATE TABLE review_snapshot ("
+                "  pr_id        TEXT PRIMARY KEY REFERENCES pr(id) ON DELETE CASCADE,"
+                "  reviewed_sha TEXT NOT NULL,"
+                "  signatures   TEXT NOT NULL,"
+                "  snapped_at   TEXT NOT NULL"
+                ")"
+            )
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -252,6 +274,24 @@ def upsert_diff(conn: sqlite3.Connection, head_sha: str, patch_text: str | None,
 
 def get_diff(conn: sqlite3.Connection, head_sha: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM pr_diff WHERE head_sha = ?", (head_sha,)).fetchone()
+
+
+def get_review_snapshot(conn: sqlite3.Connection, pr_id: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM review_snapshot WHERE pr_id = ?", (pr_id,)
+    ).fetchone()
+
+
+def upsert_review_snapshot(conn: sqlite3.Connection, pr_id: str, reviewed_sha: str,
+                           signatures_json: str, snapped_at: str) -> None:
+    conn.execute(
+        "INSERT INTO review_snapshot (pr_id, reviewed_sha, signatures, snapped_at) "
+        "VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(pr_id) DO UPDATE SET "
+        "reviewed_sha = excluded.reviewed_sha, signatures = excluded.signatures, "
+        "snapped_at = excluded.snapped_at",
+        (pr_id, reviewed_sha, signatures_json, snapped_at),
+    )
 
 
 def upsert_ai_review(conn: sqlite3.Connection, head_sha: str, sibling_head_sha: str,
