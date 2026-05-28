@@ -53,6 +53,21 @@ def test_framework_only_pr_has_no_test_command():
     assert any("framework-only" in c.command for c in cmds)
 
 
+def test_custom_command_templates():
+    pr = PRForCommands(repo="odoo/odoo", number=42, target_branch="19.0", modules=["sale", "account"])
+    templates = {
+        "fresh_db": "mydb create {db} --install {modules}",
+        "test": "pytest {tags} # {number} on {branch}",
+        "cleanup": "dropdb {db}",
+    }
+    cmds = {c.label: c.command for c in build(pr, REPO_PATHS, templates)}
+    assert cmds["Fresh DB"] == "mydb create pr_42 --install sale,account"
+    assert cmds["Test"] == "pytest /sale,/account # 42 on 19.0"
+    assert cmds["Cleanup"].startswith("dropdb pr_42")
+    # git checkout- steps are still appended to cleanup automatically
+    assert "git -C /home/dev/odoo checkout -" in cmds["Cleanup"]
+
+
 def test_enterprise_only_switches_odoo_to_target_branch():
     pr = PRForCommands(repo="odoo/enterprise", number=55, target_branch="19.0",
                        modules=["account_accountant"])

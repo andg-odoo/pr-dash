@@ -132,7 +132,8 @@ def _build_pr_record(
 
 
 def _make_item(members: list[dict], my_login: str,
-               repo_paths: dict[str, Path]) -> dict:
+               repo_paths: dict[str, Path],
+               command_templates: dict[str, str] | None = None) -> dict:
     """Build one renderable item from one or two PR records.
 
     For pairs, members are ordered with odoo/odoo first when possible.
@@ -220,6 +221,7 @@ def _make_item(members: list[dict], my_login: str,
             paired_number=members[1]["number"] if is_pair else None,
         ),
         repo_paths,
+        command_templates,
     )
 
     # Per-member diff payloads (so we render one diff section per repo)
@@ -343,6 +345,7 @@ def build_payload(
     my_login: str,
     repo_paths: dict[str, Path],
     stale_review_days: int,
+    command_templates: dict[str, str] | None = None,
 ) -> list[dict]:
     pr_rows = db.list_prs(conn)
     modules_by_pr = db.list_modules(conn)
@@ -391,9 +394,10 @@ def build_payload(
         paired_id = pairs.get(pr_id)
         if paired_id and paired_id in records:
             seen.add(paired_id)
-            items.append(_make_item([records[pr_id], records[paired_id]], my_login, repo_paths))
+            items.append(_make_item([records[pr_id], records[paired_id]], my_login,
+                                     repo_paths, command_templates))
         else:
-            items.append(_make_item([records[pr_id]], my_login, repo_paths))
+            items.append(_make_item([records[pr_id]], my_login, repo_paths, command_templates))
 
     items.sort(key=lambda p: (
         BUCKET_RANK.get(p["bucket"], 1),

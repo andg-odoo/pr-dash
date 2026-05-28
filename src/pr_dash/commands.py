@@ -20,7 +20,15 @@ class PRForCommands:
     paired_number: int | None = None
 
 
-def build(pr: PRForCommands, repo_paths: dict[str, Path]) -> list[Command]:
+DEFAULT_TEMPLATES = {
+    "fresh_db": "onew {db} -i {modules}",
+    "test": "otest {db} {tags}",
+    "cleanup": "ocleanup {db} y",
+}
+
+
+def build(pr: PRForCommands, repo_paths: dict[str, Path],
+          templates: dict[str, str] | None = None) -> list[Command]:
     cmds: list[Command] = []
     pr_repo_set = {pr.repo}
     pr_entries: list[tuple[str, int]] = [(pr.repo, pr.number)]
@@ -58,20 +66,25 @@ def build(pr: PRForCommands, repo_paths: dict[str, Path]) -> list[Command]:
     if checkout_steps:
         cmds.append(Command("Checkout", _chain(checkout_steps)))
 
+    t = {**DEFAULT_TEMPLATES, **(templates or {})}
     db_suffix = f"pr_{pr.number}"
+    ctx = {
+        "db": db_suffix,
+        "modules": ",".join(pr.modules),
+        "tags": ",".join(f"/{m}" for m in pr.modules),
+        "repo_path": str(repo_paths.get(pr.repo, "")),
+        "number": pr.number,
+        "branch": pr.target_branch,
+    }
     if pr.modules:
-        cmds.append(Command("Fresh DB", f"onew {db_suffix} -i {','.join(pr.modules)}"))
-        tags = ",".join(f"/{m}" for m in pr.modules)
-        cmds.append(Command("Test", f"otest {db_suffix} {tags}"))
+        cmds.append(Command("Fresh DB", t["fresh_db"].format(**ctx)))
+        cmds.append(Command("Test", t["test"].format(**ctx)))
     else:
-        cmds.append(Command(
-            "Fresh DB",
-            f"# framework-only PR - no installable modules detected\nonew {db_suffix}",
-        ))
+        cmds.append(Command("Fresh DB", "# framework-only PR - no installable modules detected"))
 
     touched_paths = [rp for _, _, rp in pr_paths] + [rp for rp, _ in sibling_paths]
     if touched_paths:
-        cleanup_steps = [f"ocleanup {db_suffix} y"]
+        cleanup_steps = [t["cleanup"].format(**ctx)]
         for rp in touched_paths:
             cleanup_steps.append(f"git -C {rp} checkout -")
         cmds.append(Command("Cleanup", _chain(cleanup_steps)))

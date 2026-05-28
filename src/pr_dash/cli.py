@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import subprocess
@@ -194,6 +195,7 @@ def refresh(no_open, force, offline, config_path):
 
     payload = render.build_payload(
         conn, cfg.github_login, cfg.repos, cfg.thresholds.stale_review_days,
+        command_templates=dataclasses.asdict(cfg.commands),
     )
     for p in payload:
         p["my_login"] = cfg.github_login

@@ -40,12 +40,23 @@ class AIConfig:
 
 
 @dataclass
+class Commands:
+    # Shell snippets for the per-PR action buttons. Placeholders:
+    # {db} {modules} {tags} {repo_path} {number} {branch}. Defaults assume the
+    # onew/otest/ocleanup Odoo-dev aliases; retemplate for your own workflow.
+    fresh_db: str = "onew {db} -i {modules}"
+    test: str = "otest {db} {tags}"
+    cleanup: str = "ocleanup {db} y"
+
+
+@dataclass
 class Config:
     github_login: str
     repos: dict[str, Path]
     thresholds: Thresholds = field(default_factory=Thresholds)
     buckets: BucketThresholds = field(default_factory=BucketThresholds)
     ai: AIConfig = field(default_factory=AIConfig)
+    commands: Commands = field(default_factory=Commands)
     cache_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "pr-dash")
 
     @property
@@ -84,6 +95,9 @@ def load(path: Path | None = None) -> Config:
     ai_raw = raw.get("ai") or {}
     ai = AIConfig(**{k: v for k, v in ai_raw.items() if k in AIConfig.__dataclass_fields__})
 
+    cmd_raw = raw.get("commands") or {}
+    commands = Commands(**{k: v for k, v in cmd_raw.items() if k in Commands.__dataclass_fields__})
+
     paths_raw = raw.get("paths") or {}
     cache_dir = Path(os.path.expanduser(paths_raw.get("cache_dir", "~/.cache/pr-dash")))
 
@@ -93,6 +107,7 @@ def load(path: Path | None = None) -> Config:
         thresholds=thresholds,
         buckets=buckets,
         ai=ai,
+        commands=commands,
         cache_dir=cache_dir,
     )
 
@@ -150,6 +165,17 @@ model = "sonnet"
 # a more honest gate than bucket-based gating, since a breadth-XL PR with a tiny
 # diff still reviews fine, and a size-L PR with a huge diff would just truncate.
 review_max_diff_chars = 40000
+
+[commands]
+# Shell snippets for the per-PR action buttons. Placeholders:
+#   {{db}} {{modules}} {{tags}} {{repo_path}} {{number}} {{branch}}
+# Defaults assume the onew/otest/ocleanup Odoo-dev aliases - replace these with
+# however you spin up a DB, run tests, and clean up. Fresh DB / Test are only
+# shown when the PR touches installable modules. (Checkout/cleanup git steps
+# are generated automatically from your [repos] paths.)
+fresh_db = "onew {{db}} -i {{modules}}"
+test = "otest {{db}} {{tags}}"
+cleanup = "ocleanup {{db}} y"
 
 [paths]
 cache_dir = "~/.cache/pr-dash"
