@@ -14,6 +14,7 @@ class Thresholds:
     staleness_minutes: int = 15
     diff_max_files: int = 100
     diff_max_lines: int = 5000
+    diff_max_bytes: int = 2_000_000
     stale_review_days: int = 7
 
 
@@ -84,6 +85,9 @@ def load(path: Path | None = None) -> Config:
     repos_raw = raw.get("repos") or {}
     if not repos_raw:
         raise ValueError(f"{path}: [repos] table is required")
+    for k, v in repos_raw.items():
+        if not isinstance(v, str):
+            raise ValueError(f"{path}: [repos].\"{k}\" must be a string path, got {type(v).__name__}")
     repos = {k: Path(os.path.expanduser(v)) for k, v in repos_raw.items()}
 
     thr_raw = raw.get("thresholds") or {}
@@ -112,14 +116,23 @@ def load(path: Path | None = None) -> Config:
     )
 
 
-def write_default(path: Path | None = None) -> Path:
+DETECT_FAILED_LOGIN = "your-github-login"
+
+
+def write_default(path: Path | None = None) -> tuple[Path, str | None]:
+    """Write a default config if none exists.
+
+    Returns (path, login): login is the detected GitHub login on a fresh write,
+    DETECT_FAILED_LOGIN if auto-detection failed, or None if the file already
+    existed and was left untouched.
+    """
     path = path or DEFAULT_CONFIG_PATH
     if path.exists():
-        return path
+        return path, None
     path.parent.mkdir(parents=True, exist_ok=True)
     login = _detect_gh_login()
     path.write_text(_render_default(login))
-    return path
+    return path, login
 
 
 def _detect_gh_login() -> str:
@@ -128,9 +141,9 @@ def _detect_gh_login() -> str:
             ["gh", "api", "user", "--jq", ".login"],
             capture_output=True, text=True, timeout=10, check=True,
         )
-        return result.stdout.strip()
+        return result.stdout.strip() or DETECT_FAILED_LOGIN
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return "your-github-login"
+        return DETECT_FAILED_LOGIN
 
 
 def _render_default(login: str) -> str:
@@ -145,6 +158,7 @@ github_login = "{login}"
 staleness_minutes = 15
 diff_max_files = 100
 diff_max_lines = 5000
+diff_max_bytes = 2000000
 stale_review_days = 7
 
 [bucket_thresholds]

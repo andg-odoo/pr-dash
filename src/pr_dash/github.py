@@ -273,12 +273,15 @@ def fetch_remaining_files(repo: str, number: int, after_cursor: str) -> list[str
     return paths
 
 
-def fetch_patch(repo: str, number: int, *, max_bytes: int = 2_000_000) -> str | None:
+def fetch_patch(repo: str, number: int) -> str | None:
     """Fetch the combined unified diff via gh REST. Returns None on failure.
 
     Uses `.diff` (one `diff --git` per file, net change) rather than `.patch`
     (mbox/format-patch with per-commit duplication and commit-message preamble)
     so the frontend can split it reliably into per-file sections.
+
+    Returns the full diff; the caller is responsible for size-based truncation
+    so it can flag a truncated diff rather than store a corrupt half-file one.
     """
     try:
         return _gh(
@@ -288,6 +291,6 @@ def fetch_patch(repo: str, number: int, *, max_bytes: int = 2_000_000) -> str | 
                 "-H", "Accept: application/vnd.github.diff",
             ],
             timeout=60,
-        )[:max_bytes]
+        )
     except GithubError:
         return None

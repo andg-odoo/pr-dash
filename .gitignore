@@ -5,6 +5,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
+# Build artifacts
+build/
+dist/
+
 # Virtualenv
 .venv/
 venv/

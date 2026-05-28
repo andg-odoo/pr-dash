@@ -1,17 +1,36 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pr-dash"
 version = "0.1.0"
 description = "Personal Odoo reviewer dashboard"
+readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Andrew Gavgavian" }]
+keywords = ["odoo", "github", "code-review", "pull-requests", "dashboard", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Version Control :: Git",
+]
 dependencies = [
     "click>=8.1",
     "jinja2>=3.1",
     "rich>=13.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/andg-odoo/pr-dash"
+Repository = "https://github.com/andg-odoo/pr-dash"
+Issues = "https://github.com/andg-odoo/pr-dash/issues"
 
 [project.optional-dependencies]
 dev = [

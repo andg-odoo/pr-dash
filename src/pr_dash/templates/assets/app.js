@@ -448,13 +448,13 @@
     if (!pr) { detailEl.innerHTML = '<div class="empty">Select a PR on the left.</div>'; return; }
 
     const taskLink = pr.task_url
-      ? `<a href="${pr.task_url}" target="_blank" rel="noopener">${escapeHTML(pr.linked_task_label || ("task-" + pr.linked_task))} ↗</a>`
+      ? `<a href="${escapeHTML(pr.task_url)}" target="_blank" rel="noopener">${escapeHTML(pr.linked_task_label || ("task-" + pr.linked_task))} ↗</a>`
       : `<a class="unavailable">No task</a>`;
     const runbotLink = pr.runbot_url
-      ? `<a href="${pr.runbot_url}" target="_blank" rel="noopener">Runbot ↗</a>`
+      ? `<a href="${escapeHTML(pr.runbot_url)}" target="_blank" rel="noopener">Runbot ↗</a>`
       : `<a class="unavailable">No runbot</a>`;
     const ghLinks = pr.members.map(m =>
-      `<a href="${m.url}" target="_blank" rel="noopener">GitHub: ${escapeHTML(m.repo_short)}#${m.number} ↗</a>`
+      `<a href="${escapeHTML(m.url)}" target="_blank" rel="noopener">GitHub: ${escapeHTML(m.repo_short)}#${m.number} ↗</a>`
     ).join("");
     const crumbsId = pr.members.map(m => `${escapeHTML(m.repo)}#${m.number}`).join(" + ");
     const pairBadge = pr.is_pair
@@ -496,7 +496,7 @@
               ${pr.ci_failures.map(f => {
                 const label = (pr.is_pair ? escapeHTML(f.repo_short) + ": " : "") + escapeHTML(f.name);
                 return f.url
-                  ? `<a href="${f.url}" target="_blank" rel="noopener">${label} ↗</a>`
+                  ? `<a href="${escapeHTML(f.url)}" target="_blank" rel="noopener">${label} ↗</a>`
                   : `<span>${label}</span>`;
               }).join("")}
             </dd>` : ""}
@@ -578,7 +578,7 @@
             </div>
           `).join("")}
           <div style="margin-top:6px;display:flex;gap:10px;">
-            ${pr.members.map(m => `<a href="${m.url}#discussion-overview" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent);">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")}
+            ${pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent);">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")}
           </div>
         </section>
         ` : ""}
@@ -592,7 +592,7 @@
             </span>
           </h3>
           <div class="diff-container" data-diff-idx="${i}">
-            ${d.available ? "" : `<div class="empty" style="padding:20px;">Diff not available${d.truncated ? " (truncated - too large)" : ""}. <a href="${d.url}/files" target="_blank" rel="noopener">View on GitHub ↗</a></div>`}
+            ${d.available ? "" : `<div class="empty" style="padding:20px;">Diff not available${d.truncated ? " (truncated - too large)" : ""}. <a href="${escapeHTML(d.url)}/files" target="_blank" rel="noopener">View on GitHub ↗</a></div>`}
           </div>
         </section>
         `).join("")}

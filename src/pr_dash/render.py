@@ -23,6 +23,20 @@ def _env() -> Environment:
     )
 
 
+def _json_for_script(payload: object) -> str:
+    """Serialize for embedding inside an inline <script>. json.dumps does not
+    escape `</script>` or the JS line separators U+2028/U+2029, so PR-controlled
+    strings (titles, bodies, branch names) could otherwise break out of the
+    script context and execute. Escaping `<` as `\\u003c` is parsed back to `<`
+    by JSON, keeping the data identical while making breakout impossible."""
+    return (
+        json.dumps(payload)
+        .replace("<", "\\u003c")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+
+
 def _build_pr_record(
     conn: sqlite3.Connection,
     pr: dict,
@@ -346,7 +360,11 @@ def build_payload(
     repo_paths: dict[str, Path],
     stale_review_days: int,
     command_templates: dict[str, str] | None = None,
-) -> list[dict]:
+) -> tuple[list[dict], list[tuple[str, str | None, str | None, str]]]:
+    """Return (items, seen_updates). The caller must persist seen_updates via
+    commit_seen_baseline() only *after* a successful render - otherwise a render
+    failure would silently advance the "last look" baseline and drop the
+    pushed/ci/reply deltas for everything that changed since."""
     pr_rows = db.list_prs(conn)
     modules_by_pr = db.list_modules(conn)
     reviewers_by_pr = db.list_reviewers(conn)
@@ -360,7 +378,6 @@ def build_payload(
     # flags nothing. Rendering is the "look", so this also runs offline.
     seen_rows = db.list_seen(conn)
     first_seen_run = not seen_rows
-    now = derive.now_utc()
     delta_map: dict[str, list[str]] = {}
     seen_updates: list[tuple[str, str | None, str | None, str]] = []
     for pr in pr_dicts:
@@ -404,12 +421,19 @@ def build_payload(
         -p["req_age_days"],
     ))
 
-    # Record current state as the new "last look" baseline for the next render.
+    return items, seen_updates
+
+
+def commit_seen_baseline(
+    conn: sqlite3.Connection,
+    seen_updates: list[tuple[str, str | None, str | None, str]],
+    now: str,
+) -> None:
+    """Record the current state as the new "last look" baseline for the next
+    render. Call only after the render has succeeded (see build_payload)."""
     with db.transaction(conn):
         for pr_id, head_sha, ci_state, thread_sig in seen_updates:
             db.upsert_seen(conn, pr_id, head_sha, ci_state, thread_sig, now)
-
-    return items
 
 
 def render(payload: list[dict], html_path: Path, *, offline: bool = False,
@@ -418,7 +442,7 @@ def render(payload: list[dict], html_path: Path, *, offline: bool = False,
     template = env.get_template("index.html.j2")
     assets_dir = TEMPLATES_DIR / "assets"
     html = template.render(
-        prs_json=json.dumps(payload),
+        prs_json=_json_for_script(payload),
         pr_count=len(payload),
         offline=offline,
         last_refresh=last_refresh or datetime.now(timezone.utc).isoformat(timespec="seconds"),

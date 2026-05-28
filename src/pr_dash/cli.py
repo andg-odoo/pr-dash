@@ -158,8 +158,10 @@ def backfill(limit, config_path):
               help="Override config file path")
 def init(config_path):
     """Write a default config file."""
-    path = config.write_default(config_path)
-    if path.read_text().splitlines()[1].endswith('"your-github-login"'):
+    path, login = config.write_default(config_path)
+    if login is None:
+        console.print(f"[yellow]Config already exists at {path}; left unchanged.[/yellow]")
+    elif login == config.DETECT_FAILED_LOGIN:
         console.print(f"[yellow]Wrote default config to {path}, but couldn't auto-detect "
                       "your GitHub login. Edit it before running pr-dash.[/yellow]")
     else:
@@ -193,7 +195,7 @@ def refresh(no_open, force, offline, config_path):
             console.print("[yellow]Falling back to cached data.[/yellow]")
             offline = True
 
-    payload = render.build_payload(
+    payload, seen_updates = render.build_payload(
         conn, cfg.github_login, cfg.repos, cfg.thresholds.stale_review_days,
         command_templates=dataclasses.asdict(cfg.commands),
     )
@@ -201,6 +203,9 @@ def refresh(no_open, force, offline, config_path):
         p["my_login"] = cfg.github_login
 
     render.render(payload, cfg.html_path, offline=offline, last_refresh=last_refresh)
+    # Only now that the render succeeded do we advance the "last look" baseline,
+    # so a render failure can't silently swallow the since-last-look deltas.
+    render.commit_seen_baseline(conn, seen_updates, derive.now_utc())
     console.print(f"[green]Rendered {len(payload)} PRs → {cfg.html_path}[/green]")
 
     if not no_open:
@@ -273,7 +278,10 @@ def _run_refresh(conn, cfg, *, force: bool) -> None:
                     db.upsert_diff(conn, head_sha, None, True, derive.now_utc())
                 else:
                     patch = github.fetch_patch(pr_row["repo"], pr_row["number"])
-                    truncated = patch is not None and patch.count("\n") > cfg.thresholds.diff_max_lines
+                    truncated = patch is not None and (
+                        patch.count("\n") > cfg.thresholds.diff_max_lines
+                        or len(patch) > cfg.thresholds.diff_max_bytes
+                    )
                     if truncated:
                         patch = None
                     db.upsert_diff(conn, head_sha, patch, truncated, derive.now_utc())

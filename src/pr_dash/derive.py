@@ -59,7 +59,7 @@ def since_last_look_tags(
     tags = []
     if p_head != head_sha:
         tags.append("pushed")
-    if (p_ci or "") != (ci_state or "") and ci_state:
+    if (p_ci or "") != (ci_state or ""):
         tags.append("ci")
     if p_sig != thread_sig:
         tags.append("reply")
