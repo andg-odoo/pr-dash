@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -12,26 +13,37 @@ _DIFF_FILE_SPLIT = re.compile(r"(?m)^(?=diff --git )")
 _DIFF_FILE_PATH = re.compile(r"diff --git a/.+? b/(.+)")
 
 
+def iter_diff_files(diff_text: str) -> Iterator[tuple[str | None, str]]:
+    """Yield (path, chunk) for each file section in a combined `.diff`.
+
+    path is the b-side path from the `diff --git` header, or None for a chunk
+    with no recognizable header (e.g. a leading preamble). Shared by the AI
+    noise-stripper and the change-signature hasher so they can never disagree
+    about file boundaries; the frontend has its own copy in app.js."""
+    if not diff_text:
+        return
+    for chunk in _DIFF_FILE_SPLIT.split(diff_text):
+        if not chunk.strip():
+            continue
+        m = _DIFF_FILE_PATH.match(chunk)
+        yield (m.group(1).strip() if m else None), chunk
+
+
 def file_change_signatures(diff_text: str) -> dict[str, str]:
     """Map each file path in a combined `.diff` to a hash of only its +/- lines
     (ignoring @@ headers and context). Two diffs of the same change hash equal
     even after a rebase shifts line numbers/context, so this is the basis for
     detecting which files actually changed since a prior review."""
     sigs: dict[str, str] = {}
-    if not diff_text:
-        return sigs
-    for chunk in _DIFF_FILE_SPLIT.split(diff_text):
-        if not chunk.strip():
-            continue
-        m = _DIFF_FILE_PATH.match(chunk)
-        if not m:
+    for path, chunk in iter_diff_files(diff_text):
+        if path is None:
             continue
         changed = [
             ln for ln in chunk.split("\n")
             if (ln.startswith("+") and not ln.startswith("+++"))
             or (ln.startswith("-") and not ln.startswith("---"))
         ]
-        sigs[m.group(1).strip()] = hashlib.sha1(
+        sigs[path] = hashlib.sha1(
             "\n".join(changed).encode("utf-8", "replace")
         ).hexdigest()[:16]
     return sigs
@@ -192,49 +204,56 @@ def previously_reviewed(timeline: list[dict], my_login: str) -> bool:
     return False
 
 
+_FAILING_STATES = {"FAILURE", "ERROR"}
+_FAILING_CONCLUSIONS = {"FAILURE", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED", "CANCELLED"}
+
+
+def _iter_checks(status_check_rollup: dict | None) -> Iterator[dict]:
+    """Yield each rollup check normalized to {name, url, failing}, hiding the
+    StatusContext vs CheckRun field-name differences (context/targetUrl/state
+    vs name/detailsUrl/conclusion)."""
+    if not status_check_rollup:
+        return
+    for ctx in (status_check_rollup.get("contexts") or {}).get("nodes") or []:
+        typename = ctx.get("__typename")
+        if typename == "StatusContext":
+            yield {
+                "name": ctx.get("context") or "(check)",
+                "url": ctx.get("targetUrl"),
+                "failing": (ctx.get("state") or "") in _FAILING_STATES,
+            }
+        elif typename == "CheckRun":
+            yield {
+                "name": ctx.get("name") or "(check)",
+                "url": ctx.get("detailsUrl"),
+                "failing": (ctx.get("conclusion") or "") in _FAILING_CONCLUSIONS,
+            }
+
+
 def status_check_state(status_check_rollup: dict | None) -> tuple[str | None, str | None]:
     """Return (overall_state, runbot_url) from a statusCheckRollup."""
     if not status_check_rollup:
         return None, None
-    state = status_check_rollup.get("state")
-    contexts = ((status_check_rollup.get("contexts") or {}).get("nodes") or [])
-    runbot = None
-    # Prefer the main 'ci/runbot' context; fall back to any runbot.odoo.com URL
-    for ctx in contexts:
-        if ctx.get("__typename") == "StatusContext":
-            url = ctx.get("targetUrl") or ""
-            name = ctx.get("context") or ""
-            if name == "ci/runbot" and "runbot.odoo.com" in url:
-                runbot = url
-                break
-    if not runbot:
-        for ctx in contexts:
-            url = (ctx.get("targetUrl") if ctx.get("__typename") == "StatusContext"
-                   else ctx.get("detailsUrl"))
-            if url and "runbot.odoo.com" in url:
-                runbot = url
-                break
-    return state, runbot
-
-
-_FAILING_STATES = {"FAILURE", "ERROR"}
-_FAILING_CONCLUSIONS = {"FAILURE", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED", "CANCELLED"}
+    checks = list(_iter_checks(status_check_rollup))
+    # Prefer the main 'ci/runbot' context; fall back to any runbot.odoo.com URL.
+    runbot = next(
+        (c["url"] for c in checks
+         if c["name"] == "ci/runbot" and "runbot.odoo.com" in (c["url"] or "")),
+        None,
+    ) or next(
+        (c["url"] for c in checks if "runbot.odoo.com" in (c["url"] or "")),
+        None,
+    )
+    return status_check_rollup.get("state"), runbot
 
 
 def failing_checks(status_check_rollup: dict | None) -> list[dict]:
     """Extract the individual failing checks (name + url) from a rollup, so a
     reviewer can see *which* check is red rather than just an overall FAILURE."""
-    if not status_check_rollup:
-        return []
-    out: list[dict] = []
-    for ctx in (status_check_rollup.get("contexts") or {}).get("nodes") or []:
-        if ctx.get("__typename") == "StatusContext":
-            if (ctx.get("state") or "") in _FAILING_STATES:
-                out.append({"name": ctx.get("context") or "(check)", "url": ctx.get("targetUrl")})
-        elif ctx.get("__typename") == "CheckRun":
-            if (ctx.get("conclusion") or "") in _FAILING_CONCLUSIONS:
-                out.append({"name": ctx.get("name") or "(check)", "url": ctx.get("detailsUrl")})
-    return out
+    return [
+        {"name": c["name"], "url": c["url"]}
+        for c in _iter_checks(status_check_rollup) if c["failing"]
+    ]
 
 
 def is_personally_requested(review_requests: list[dict], my_login: str) -> bool:

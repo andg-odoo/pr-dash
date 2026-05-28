@@ -7,6 +7,8 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
+from pr_dash import derive
+
 log = logging.getLogger(__name__)
 
 # Generated / translation files carry no review signal but eat the prompt's
@@ -17,22 +19,14 @@ _NOISE_RE = re.compile(
     r"|((^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$)",
     re.IGNORECASE,
 )
-_FILE_SPLIT_RE = re.compile(r"(?m)^(?=diff --git )")
-_FILE_PATH_RE = re.compile(r"diff --git a/.+? b/(.+)")
 
 
 def _strip_noise(diff: str) -> tuple[str, list[str]]:
     """Drop generated/translation files from a combined `.diff` so the model's
     token budget goes to reviewable code. Returns (kept_diff, dropped_paths)."""
-    if not diff:
-        return diff, []
     kept: list[str] = []
     dropped: list[str] = []
-    for chunk in _FILE_SPLIT_RE.split(diff):
-        if not chunk.strip():
-            continue
-        m = _FILE_PATH_RE.match(chunk)
-        path = m.group(1).strip() if m else ""
+    for path, chunk in derive.iter_diff_files(diff):
         if path and _NOISE_RE.search(path):
             dropped.append(path)
         else:

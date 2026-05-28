@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
+
+from pr_dash.config import Commands
 
 
 @dataclass
@@ -20,11 +23,9 @@ class PRForCommands:
     paired_number: int | None = None
 
 
-DEFAULT_TEMPLATES = {
-    "fresh_db": "onew {db} -i {modules}",
-    "test": "otest {db} {tags}",
-    "cleanup": "ocleanup {db} y",
-}
+# Single source of truth for the command snippets is the Commands dataclass in
+# config.py; this is just its defaults, used when no [commands] table is configured.
+DEFAULT_TEMPLATES = dataclasses.asdict(Commands())
 
 
 def build(pr: PRForCommands, repo_paths: dict[str, Path],
@@ -92,7 +93,7 @@ def build(pr: PRForCommands, repo_paths: dict[str, Path],
     return cmds
 
 
-def _chain(steps: list[str], indent: str = "  ") -> str:
+def _chain(steps: list[str]) -> str:
     """Join shell steps with `&& \\` and a newline, indenting continuations.
 
     The result is one logical command (chained with &&), but readable and
@@ -101,7 +102,4 @@ def _chain(steps: list[str], indent: str = "  ") -> str:
     """
     if len(steps) == 1:
         return steps[0]
-    out = [steps[0]]
-    for s in steps[1:]:
-        out.append(f"  && {s}" if indent == "  " else f"{indent}&& {s}")
-    return " \\\n".join(out)
+    return " \\\n".join([steps[0]] + [f"  && {s}" for s in steps[1:]])

@@ -213,19 +213,28 @@ def transaction(conn: sqlite3.Connection) -> Iterator[None]:
         raise
 
 
+def _upsert(conn: sqlite3.Connection, table: str, row: dict,
+            conflict_keys: list[str]) -> None:
+    """INSERT ... ON CONFLICT(conflict_keys) DO UPDATE, setting every non-key
+    column from the inserted row. Shared by all the upsert_* helpers so a new
+    column only needs to be added to the row dict, not to a hand-written SET."""
+    cols = list(row.keys())
+    placeholders = ", ".join(f":{c}" for c in cols)
+    conflict = ", ".join(conflict_keys)
+    updates = ", ".join(f"{c} = excluded.{c}" for c in cols if c not in conflict_keys)
+    conn.execute(
+        f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders}) "
+        f"ON CONFLICT({conflict}) DO UPDATE SET {updates}",
+        row,
+    )
+
+
 def get_cached_pr(conn: sqlite3.Connection, pr_id: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM pr WHERE id = ?", (pr_id,)).fetchone()
 
 
 def upsert_pr(conn: sqlite3.Connection, row: dict) -> None:
-    cols = list(row.keys())
-    placeholders = ", ".join(f":{c}" for c in cols)
-    updates = ", ".join(f"{c} = excluded.{c}" for c in cols if c != "id")
-    sql = (
-        f"INSERT INTO pr ({', '.join(cols)}) VALUES ({placeholders}) "
-        f"ON CONFLICT(id) DO UPDATE SET {updates}"
-    )
-    conn.execute(sql, row)
+    _upsert(conn, "pr", row, ["id"])
 
 
 def replace_modules(conn: sqlite3.Connection, pr_id: str, modules: list[str]) -> None:
@@ -278,14 +287,7 @@ def replace_threads(conn: sqlite3.Connection, pr_id: str, threads: list[dict]) -
 
 
 def upsert_complexity(conn: sqlite3.Connection, row: dict) -> None:
-    cols = list(row.keys())
-    placeholders = ", ".join(f":{c}" for c in cols)
-    updates = ", ".join(f"{c} = excluded.{c}" for c in cols if c != "head_sha")
-    sql = (
-        f"INSERT INTO complexity ({', '.join(cols)}) VALUES ({placeholders}) "
-        f"ON CONFLICT(head_sha) DO UPDATE SET {updates}"
-    )
-    conn.execute(sql, row)
+    _upsert(conn, "complexity", row, ["head_sha"])
 
 
 def get_complexity(conn: sqlite3.Connection, head_sha: str) -> sqlite3.Row | None:
@@ -294,14 +296,12 @@ def get_complexity(conn: sqlite3.Connection, head_sha: str) -> sqlite3.Row | Non
 
 def upsert_diff(conn: sqlite3.Connection, head_sha: str, patch_text: str | None,
                 truncated: bool, fetched_at: str) -> None:
-    conn.execute(
-        "INSERT INTO pr_diff (head_sha, patch_text, truncated, fetched_at) "
-        "VALUES (?, ?, ?, ?) "
-        "ON CONFLICT(head_sha) DO UPDATE SET "
-        "patch_text = excluded.patch_text, truncated = excluded.truncated, "
-        "fetched_at = excluded.fetched_at",
-        (head_sha, patch_text, int(truncated), fetched_at),
-    )
+    _upsert(conn, "pr_diff", {
+        "head_sha": head_sha,
+        "patch_text": patch_text,
+        "truncated": int(truncated),
+        "fetched_at": fetched_at,
+    }, ["head_sha"])
 
 
 def get_diff(conn: sqlite3.Connection, head_sha: str) -> sqlite3.Row | None:
@@ -316,14 +316,12 @@ def get_review_snapshot(conn: sqlite3.Connection, pr_id: str) -> sqlite3.Row | N
 
 def upsert_review_snapshot(conn: sqlite3.Connection, pr_id: str, reviewed_sha: str,
                            signatures_json: str, snapped_at: str) -> None:
-    conn.execute(
-        "INSERT INTO review_snapshot (pr_id, reviewed_sha, signatures, snapped_at) "
-        "VALUES (?, ?, ?, ?) "
-        "ON CONFLICT(pr_id) DO UPDATE SET "
-        "reviewed_sha = excluded.reviewed_sha, signatures = excluded.signatures, "
-        "snapped_at = excluded.snapped_at",
-        (pr_id, reviewed_sha, signatures_json, snapped_at),
-    )
+    _upsert(conn, "review_snapshot", {
+        "pr_id": pr_id,
+        "reviewed_sha": reviewed_sha,
+        "signatures": signatures_json,
+        "snapped_at": snapped_at,
+    }, ["pr_id"])
 
 
 def list_seen(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
@@ -332,28 +330,26 @@ def list_seen(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
 
 def upsert_seen(conn: sqlite3.Connection, pr_id: str, head_sha: str | None,
                 ci_state: str | None, thread_sig: str, seen_at: str) -> None:
-    conn.execute(
-        "INSERT INTO seen (pr_id, head_sha, ci_state, thread_sig, seen_at) "
-        "VALUES (?, ?, ?, ?, ?) "
-        "ON CONFLICT(pr_id) DO UPDATE SET "
-        "head_sha = excluded.head_sha, ci_state = excluded.ci_state, "
-        "thread_sig = excluded.thread_sig, seen_at = excluded.seen_at",
-        (pr_id, head_sha, ci_state, thread_sig, seen_at),
-    )
+    _upsert(conn, "seen", {
+        "pr_id": pr_id,
+        "head_sha": head_sha,
+        "ci_state": ci_state,
+        "thread_sig": thread_sig,
+        "seen_at": seen_at,
+    }, ["pr_id"])
 
 
 def upsert_ai_review(conn: sqlite3.Connection, head_sha: str, sibling_head_sha: str,
                      summary: str, concerns_json: str, verdict: str,
                      computed_at: str) -> None:
-    conn.execute(
-        "INSERT INTO ai_review (head_sha, sibling_head_sha, summary, concerns, "
-        "verdict, computed_at) VALUES (?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT(head_sha) DO UPDATE SET "
-        "sibling_head_sha = excluded.sibling_head_sha, "
-        "summary = excluded.summary, concerns = excluded.concerns, "
-        "verdict = excluded.verdict, computed_at = excluded.computed_at",
-        (head_sha, sibling_head_sha, summary, concerns_json, verdict, computed_at),
-    )
+    _upsert(conn, "ai_review", {
+        "head_sha": head_sha,
+        "sibling_head_sha": sibling_head_sha,
+        "summary": summary,
+        "concerns": concerns_json,
+        "verdict": verdict,
+        "computed_at": computed_at,
+    }, ["head_sha"])
 
 
 def get_ai_review(conn: sqlite3.Connection, head_sha: str,

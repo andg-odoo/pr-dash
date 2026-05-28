@@ -18,6 +18,18 @@ console = Console()
 log = logging.getLogger("pr_dash")
 
 
+def _load_config_or_exit(config_path):
+    """Load config, printing a friendly message and exiting on failure."""
+    try:
+        return config.load(config_path)
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except ValueError as e:
+        console.print(f"[red]Config error: {e}[/red]")
+        sys.exit(1)
+
+
 @click.group(invoke_without_command=True)
 @click.option("--no-open", is_flag=True, help="Skip xdg-open of generated HTML")
 @click.option("--force", is_flag=True, help="Ignore staleness window, refetch everything")
@@ -49,14 +61,7 @@ def backfill(limit, config_path):
     submission. Skips already-cached IDs. No AI analysis, no diff fetch -
     if a PR ever re-enters the active set, the normal refresh path handles it.
     """
-    try:
-        cfg = config.load(config_path)
-    except FileNotFoundError as e:
-        console.print(f"[red]{e}[/red]")
-        sys.exit(1)
-    except ValueError as e:
-        console.print(f"[red]Config error: {e}[/red]")
-        sys.exit(1)
+    cfg = _load_config_or_exit(config_path)
 
     conn = db.connect(cfg.db_path)
 
@@ -175,14 +180,7 @@ def init(config_path):
 @click.option("--config", "config_path", type=click.Path(path_type=Path))
 def refresh(no_open, force, offline, config_path):
     """Refresh cache and render dashboard (default action)."""
-    try:
-        cfg = config.load(config_path)
-    except FileNotFoundError as e:
-        console.print(f"[red]{e}[/red]")
-        sys.exit(1)
-    except ValueError as e:
-        console.print(f"[red]Config error: {e}[/red]")
-        sys.exit(1)
+    cfg = _load_config_or_exit(config_path)
 
     conn = db.connect(cfg.db_path)
     last_refresh = derive.now_utc()
