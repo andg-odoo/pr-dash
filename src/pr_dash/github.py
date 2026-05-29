@@ -197,13 +197,22 @@ def search_personal_review_requested(login: str) -> tuple[list[dict], RateLimit 
     return nodes, rl
 
 
-def search_reviewed_by(login: str, *, limit: int = 1000) -> tuple[list[dict], RateLimit | None]:
+def search_reviewed_by(
+    login: str, *, limit: int = 1000, since: str | None = None,
+) -> tuple[list[dict], RateLimit | None]:
     """Return PRs where `login` has submitted at least one review.
 
     Used for backfilling historical review data into the cache for KPI counts.
-    Caps at `limit` results. GitHub search itself caps at 1000.
+    Caps at `limit` results. GitHub search itself caps at 1000, so for a
+    long-tenured reviewer the results are sorted updated-newest-first to keep
+    the most recent reviews when that ceiling is hit. `since` (a YYYY-MM-DD
+    date) bounds the window via the PR's `updated:` field - the review's own
+    date isn't directly queryable, but PR update time is a close proxy.
     """
     q = f"is:pr reviewed-by:{login}"
+    if since:
+        q += f" updated:>={since}"
+    q += " sort:updated-desc"
     nodes: list[dict] = []
     cursor = None
     rl: RateLimit | None = None

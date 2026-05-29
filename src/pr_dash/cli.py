@@ -52,15 +52,28 @@ def cli(ctx, no_open, force, offline, config_path, verbose):
 @cli.command()
 @click.option("--limit", default=1000, type=int,
               help="Max historical PRs to backfill (GitHub search caps at 1000).")
+@click.option("--since", default=None, metavar="YYYY-MM-DD",
+              help="Only backfill PRs updated on/after this date. Useful when "
+                   "you've reviewed more than 1000 PRs and only want a recent window.")
 @click.option("--config", "config_path", type=click.Path(path_type=Path))
-def backfill(limit, config_path):
+def backfill(limit, since, config_path):
     """One-shot backfill of historical reviews for accurate KPI counts.
 
     Fetches PRs where you've submitted a review (regardless of current request
     state) and inserts minimal archived rows keyed by your latest review
     submission. Skips already-cached IDs. No AI analysis, no diff fetch -
     if a PR ever re-enters the active set, the normal refresh path handles it.
+
+    Results are capped at --limit (GitHub's own ceiling is 1000), newest-updated
+    first. If you've reviewed more than that, narrow the window with --since.
     """
+    if since is not None:
+        try:
+            datetime.strptime(since, "%Y-%m-%d")
+        except ValueError:
+            console.print(f"[red]--since must be a YYYY-MM-DD date, got {since!r}[/red]")
+            sys.exit(1)
+
     cfg = _load_config_or_exit(config_path)
 
     conn = db.connect(cfg.db_path)
@@ -69,7 +82,7 @@ def backfill(limit, config_path):
                   console=console, transient=True) as progress:
         task = progress.add_task("Fetching historical reviews from GitHub...", total=None)
         try:
-            nodes, rate = github.search_reviewed_by(cfg.github_login, limit=limit)
+            nodes, rate = github.search_reviewed_by(cfg.github_login, limit=limit, since=since)
         except github.GithubError as e:
             console.print(f"[red]GitHub error: {e}[/red]")
             sys.exit(1)

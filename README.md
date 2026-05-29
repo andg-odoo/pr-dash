@@ -125,6 +125,7 @@ pr-dash --no-open        refresh and render, but don't open a browser
 pr-dash --force          ignore the staleness window, re-fetch everything
 pr-dash --offline        render from cache only (no network)
 pr-dash backfill         one-time import of historical reviews (KPI history)
+pr-dash backfill --since 2025-01-01   limit backfill to a recent window
 pr-dash init             write a default config
 pr-dash -v ...           verbose logging
 pr-dash --config PATH    use an alternate config file
