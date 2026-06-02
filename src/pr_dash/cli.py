@@ -220,16 +220,48 @@ def refresh(no_open, force, offline, config_path):
     console.print(f"[green]Rendered {len(payload)} PRs → {cfg.html_path}[/green]")
 
     if not no_open:
-        try:
-            subprocess.Popen(
-                ["xdg-open", str(cfg.html_path)],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-        except FileNotFoundError:
-            console.print(f"[yellow]Open manually: file://{cfg.html_path}[/yellow]")
+        _open_html(cfg.html_path)
+
+
+@cli.command()
+@click.option("--no-open", is_flag=True)
+@click.option("--config", "config_path", type=click.Path(path_type=Path))
+def rerender(no_open, config_path):
+    """Re-render the dashboard from cache (no fetch, no offline banner).
+
+    Use after editing templates or static assets: rebuilds the HTML from the
+    existing cache without contacting GitHub. Unlike `refresh --offline`, it
+    omits the offline banner and leaves the since-last-look baseline untouched,
+    since no new data was fetched.
+    """
+    cfg = _load_config_or_exit(config_path)
+    conn = db.connect(cfg.db_path)
+
+    payload, _ = render.build_payload(
+        conn, cfg.github_login, cfg.repos, cfg.thresholds.stale_review_days,
+        command_templates=dataclasses.asdict(cfg.commands),
+    )
+    for p in payload:
+        p["my_login"] = cfg.github_login
+
+    render.render(payload, cfg.html_path, offline=False)
+    console.print(f"[green]Re-rendered {len(payload)} PRs → {cfg.html_path}[/green]")
+
+    if not no_open:
+        _open_html(cfg.html_path)
+
+
+def _open_html(html_path: Path) -> None:
+    try:
+        subprocess.Popen(
+            ["xdg-open", str(html_path)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except FileNotFoundError:
+        console.print(f"[yellow]Open manually: file://{html_path}[/yellow]")
 
 
 def _run_refresh(conn, cfg, *, force: bool) -> None:
