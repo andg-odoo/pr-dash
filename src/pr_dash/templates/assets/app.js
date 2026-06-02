@@ -273,16 +273,22 @@
     const repos = Object.entries(repoCounts).sort((a, b) => b[1] - a[1]);
     const repoMax = Math.max(...repos.map(r => r[1]), 1);
 
-    // Six rolling 7-day buckets; bucket 0 = the most recent week.
+    // Six Monday-based calendar weeks; bucket 0 = the current work week.
+    const startOfWeek = d => {
+      const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); // back up to Monday
+      return x;
+    };
+    const curWeek = startOfWeek(now);
     const buckets = new Array(6).fill(0);
     arch.forEach(p => {
-      const b = Math.floor((now - at(p)) / dayMs / 7);
+      const b = Math.round((curWeek - startOfWeek(at(p))) / dayMs / 7);
       if (b >= 0 && b < 6) buckets[b]++;
     });
     const weekMax = Math.max(...buckets, 1);
     const weekBars = [];
     for (let b = 5; b >= 0; b--) {
-      const start = new Date(now.getTime() - (b * 7 + 6) * dayMs);
+      const start = new Date(curWeek.getTime() - b * 7 * dayMs);
       weekBars.push(statBar(b === 0 ? "this wk" : fmtMD(start), buckets[b], weekMax));
     }
 
