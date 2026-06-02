@@ -542,6 +542,7 @@ def _node_to_rows(node: dict, my_login: str) -> tuple[dict, list[str], list[dict
         "title": node["title"],
         "url": node["url"],
         "author": (node.get("author") or {}).get("login") or "(unknown)",
+        "is_draft": int(bool(node.get("isDraft"))),
         "target_branch": node["baseRefName"],
         "head_branch": node["headRefName"],
         "head_sha": node["headRefOid"],

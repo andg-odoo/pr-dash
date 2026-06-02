@@ -39,6 +39,7 @@
     { id: "stale", label: "stale 7d+" },
     { id: "re-review", label: "re-review" },
     { id: "ci-failed", label: "CI failed" },
+    { id: "drafts", label: "drafts (backlog)" },
     { id: "archived", label: "archived" },
     { id: "show-hidden", label: "show hidden" },
   ];
@@ -183,6 +184,12 @@
     if (pr.is_archived && !showArchived) return false;
     if (!pr.is_archived && showArchived) return false;
 
+    // Drafts: kept out of the default "ready to review" queue. The 'drafts'
+    // chip flips into the backlog view of just the drafts.
+    const showDrafts = filters.state.has("drafts");
+    if (pr.is_draft && !showDrafts) return false;
+    if (!pr.is_draft && showDrafts) return false;
+
     if (filters.repo.size && !pr.members.some(m => filters.repo.has(m.repo))) return false;
     if (filters.bucket.size && !filters.bucket.has(pr.bucket)) return false;
     if (filters.branch.size && !filters.branch.has(pr.target_branch)) return false;
@@ -194,6 +201,7 @@
         "stale": pr.flags.includes("OLD"),
         "re-review": pr.previously_reviewed,
         "ci-failed": pr.ci_state === "FAILURE" || pr.ci_state === "ERROR",
+        "drafts": pr.is_draft,
         "archived": pr.is_archived,
         "show-hidden": true,
       };
@@ -324,15 +332,21 @@
     visible.sort((a, b) => sortKey(a) - sortKey(b));
     visiblePRs = visible;
     const hiddenCount = PRS.filter(p => isHidden(p)).length;
-    const activeTotal = PRS.filter(p => !p.is_archived).length;
-    const archivedTotal = PRS.length - activeTotal;
-    const denom = filters.state.has("archived") ? archivedTotal : activeTotal;
+    // The default "ready" queue excludes both archived and draft PRs; each has
+    // its own exclusive view (chip) with its own total.
+    const archivedTotal = PRS.filter(p => p.is_archived).length;
+    const draftTotal = PRS.filter(p => p.is_draft && !p.is_archived).length;
+    const activeTotal = PRS.filter(p => !p.is_archived && !p.is_draft).length;
+    const view = filters.state.has("archived") ? "archived"
+      : filters.state.has("drafts") ? "drafts" : "active";
+    const denom = view === "archived" ? archivedTotal
+      : view === "drafts" ? draftTotal : activeTotal;
     visibleCountEl.textContent = hiddenCount
       ? `${visible.length} / ${denom}  ·  ${hiddenCount} hidden`
       : `${visible.length} / ${denom}`;
-    if (totalCountEl) totalCountEl.textContent = filters.state.has("archived") ? "archived" : "active";
+    if (totalCountEl) totalCountEl.textContent = view;
     if (lookCountEl) {
-      const n = PRS.filter(p => !p.is_archived && (p.since_last_look || []).length).length;
+      const n = PRS.filter(p => !p.is_archived && !p.is_draft && (p.since_last_look || []).length).length;
       lookCountEl.textContent = n ? `${n} updated` : "";
       lookCountEl.title = n ? "Show only PRs updated since your last visit" : "";
     }
@@ -349,6 +363,7 @@
         `<span class="pr-id">${escapeHTML(m.repo_short)}#${m.number}</span>`
       ).join('<span class="pair-sep">+</span>');
       const pairTag = pr.is_pair ? '<span class="pair-tag">PAIR</span>' : "";
+      const draftTag = pr.is_draft ? '<span class="draft-tag">DRAFT</span>' : "";
       const archivedTag = pr.is_archived ? '<span class="archived-tag">ARCHIVED</span>' : "";
       const reviewedCount = (pr.ai_reviews || []).length;
       const isPartialReview = pr.is_pair && reviewedCount > 0 && reviewedCount < pr.members.length;
@@ -361,7 +376,7 @@
         .map(t => `<span class="look-badge look-${t}">${LOOK_BADGES[t] || t}</span>`)
         .join("");
       li.innerHTML = `
-        <span class="pr-id-group">${idBlock}${pairTag}${archivedTag}${verdictTag}${lookBadges}</span>
+        <span class="pr-id-group">${idBlock}${pairTag}${draftTag}${archivedTag}${verdictTag}${lookBadges}</span>
         <span class="pr-title" title="${escapeHTML(pr.title)}">${escapeHTML(pr.title)}</span>
         <span class="pr-bucket ${pr.bucket}">${pr.bucket}</span>
         <button class="pr-hide" type="button" title="${hideTitle}" data-hide-id="${escapeHTML(pr.id)}">${hideLabel}</button>
@@ -466,6 +481,9 @@
     const pairBadge = pr.is_pair
       ? `<span class="pair-badge">paired</span>`
       : "";
+    const draftBadge = pr.is_draft
+      ? `<span class="draft-badge" title="Marked as a draft - not ready for review yet">draft</span>`
+      : "";
     const archivedBadge = pr.is_archived
       ? `<span class="archived-badge" title="No longer requested for review${pr.archived_at ? " · archived " + pr.archived_at.slice(0, 10) : ""}">archived</span>`
       : "";
@@ -473,7 +491,7 @@
     detailEl.innerHTML = `
       <div class="detail">
         <div class="detail-header">
-          <h2>${pairBadge}${archivedBadge}${escapeHTML(pr.title)}</h2>
+          <h2>${pairBadge}${draftBadge}${archivedBadge}${escapeHTML(pr.title)}</h2>
           <div class="crumbs">
             <span>${crumbsId}</span> ·
             <span>@${escapeHTML(pr.author)}</span> ·
@@ -807,7 +825,7 @@
   renderList();
 
   const initial = parseHash();
-  const firstActive = PRS.find(p => !p.is_archived);
+  const firstActive = PRS.find(p => !p.is_archived && !p.is_draft);
   if (initial) selectPR(initial);
   else if (firstActive) selectPR(firstActive.id);
   else if (PRS.length) selectPR(PRS[0].id);

@@ -108,6 +108,7 @@ def _build_pr_record(
         "title": pr["title"],
         "url": pr["url"],
         "author": pr["author"],
+        "is_draft": bool(pr["is_draft"]),
         "body": pr["body"] or "",
         "target_branch": pr["target_branch"],
         "head_branch": pr["head_branch"],
@@ -207,6 +208,8 @@ def _make_item(members: list[dict], my_login: str,
             threads.append({**t, "member_repo_short": m["repo_short"], "member_url": m["url"]})
 
     # Aggregated derived fields
+    # A pair counts as draft if either half is - neither is ready to review.
+    is_draft = any(m["is_draft"] for m in members)
     awaiting_my_reply = any(m["awaiting_my_reply"] for m in members)
     previously_reviewed = any(m["previously_reviewed"] for m in members)
     unresolved_threads = sum(m["unresolved_threads"] for m in members)
@@ -305,6 +308,7 @@ def _make_item(members: list[dict], my_login: str,
         ],
         "title": primary["title"],
         "author": primary["author"],
+        "is_draft": is_draft,
         "body": primary["body"],
         "target_branch": primary["target_branch"],
         "head_branch": primary["head_branch"],

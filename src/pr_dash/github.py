@@ -13,6 +13,7 @@ query($q: String!, $cursor: String) {
         url
         number
         title
+        isDraft
         createdAt
         updatedAt
         mergeable

@@ -10,6 +10,7 @@ loop:
 
 - **Personal-only queue** - drops team-only requests, the noise GitHub can't filter.
 - **Triage signals** - complexity bucket, age, ball-in-whose-court, CI state, odoo↔enterprise pairing.
+- **Drafts out of the queue** - PRs marked draft are kept out of the default "ready to review" list; a `drafts (backlog)` toggle surfaces them when you want to glance.
 - **Search & keyboard nav** - `/` to search, `j`/`k` to move, `o` to open, `h` to hide.
 - **Inline diffs** - per-file, with large/generated files folded so big PRs stay snappy.
 - **Changed-since-review** - on a re-review, files you've already seen fold away; only new work is highlighted (robust to rebase + force-push).
