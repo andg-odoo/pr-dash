@@ -41,6 +41,37 @@ class AIConfig:
 
 
 @dataclass
+class RepoSpec:
+    """Where a repo's working copy lives.
+
+    `default` is a single clone path (the classic layout). `pattern` is an
+    optional worktree template containing `{branch}`; when set, the worktree for
+    a given target branch is preferred and `default` is the fallback for branches
+    that have no worktree checked out.
+    """
+    default: Path | None = None
+    pattern: str | None = None
+
+    def worktree_for(self, branch: str) -> Path | None:
+        """Return the branch's worktree path if the pattern resolves to an
+        existing directory, else None. Existence-gated so a branch without a
+        worktree falls back to `default` instead of pointing at a missing dir."""
+        if not (self.pattern and branch):
+            return None
+        p = Path(os.path.expanduser(self.pattern.format(branch=branch)))
+        return p if p.is_dir() else None
+
+    def resolve(self, branch: str) -> tuple[Path | None, bool]:
+        """Resolve to (path, is_worktree). is_worktree is True only when a
+        branch-specific worktree was found - callers use it to skip the
+        branch-switching steps a shared clone would need."""
+        wt = self.worktree_for(branch)
+        if wt is not None:
+            return wt, True
+        return self.default, False
+
+
+@dataclass
 class Commands:
     # Shell snippets for the per-PR action buttons. Placeholders:
     # {db} {modules} {tags} {repo_path} {number} {branch}. Defaults assume the
@@ -53,7 +84,7 @@ class Commands:
 @dataclass
 class Config:
     github_login: str
-    repos: dict[str, Path]
+    repos: dict[str, RepoSpec]
     thresholds: Thresholds = field(default_factory=Thresholds)
     buckets: BucketThresholds = field(default_factory=BucketThresholds)
     ai: AIConfig = field(default_factory=AIConfig)
@@ -85,10 +116,7 @@ def load(path: Path | None = None) -> Config:
     repos_raw = raw.get("repos") or {}
     if not repos_raw:
         raise ValueError(f"{path}: [repos] table is required")
-    for k, v in repos_raw.items():
-        if not isinstance(v, str):
-            raise ValueError(f"{path}: [repos].\"{k}\" must be a string path, got {type(v).__name__}")
-    repos = {k: Path(os.path.expanduser(v)) for k, v in repos_raw.items()}
+    repos = {k: _parse_repo_spec(path, k, v) for k, v in repos_raw.items()}
 
     thr_raw = raw.get("thresholds") or {}
     thresholds = Thresholds(**{k: v for k, v in thr_raw.items() if k in Thresholds.__dataclass_fields__})
@@ -113,6 +141,32 @@ def load(path: Path | None = None) -> Config:
         ai=ai,
         commands=commands,
         cache_dir=cache_dir,
+    )
+
+
+def _parse_repo_spec(path: Path, key: str, value: object) -> RepoSpec:
+    """A repo entry is either a string clone path, or a table with `pattern`
+    (a `{branch}` worktree template) and/or `default` (the fallback clone)."""
+    def _expand(p: object, field: str) -> Path:
+        if not isinstance(p, str):
+            raise ValueError(f'{path}: [repos]."{key}".{field} must be a string path, got {type(p).__name__}')
+        return Path(os.path.expanduser(p))
+
+    if isinstance(value, str):
+        return RepoSpec(default=Path(os.path.expanduser(value)))
+    if isinstance(value, dict):
+        pattern = value.get("pattern")
+        default = value.get("default")
+        if pattern is not None and (not isinstance(pattern, str) or "{branch}" not in pattern):
+            raise ValueError(f'{path}: [repos]."{key}".pattern must be a string containing "{{branch}}"')
+        if pattern is None and default is None:
+            raise ValueError(f'{path}: [repos]."{key}" must set "pattern", "default", or both')
+        return RepoSpec(
+            default=_expand(default, "default") if default is not None else None,
+            pattern=pattern,
+        )
+    raise ValueError(
+        f'{path}: [repos]."{key}" must be a string path or a table, got {type(value).__name__}'
     )
 
 
@@ -151,8 +205,17 @@ def _render_default(login: str) -> str:
 github_login = "{login}"
 
 [repos]
+# Each repo is either a single clone path...
 "odoo/odoo" = "~/Dev/src/odoo"
 "odoo/enterprise" = "~/Dev/src/enterprise"
+# ...or, if you keep one git worktree per version, a table with a `{{branch}}`
+# pattern. The worktree matching a PR's target branch is used for its commands;
+# `default` is the fallback for branches with no worktree checked out. `{{branch}}`
+# can sit anywhere in the path - as a suffix (odoo-{{branch}}) or a parent dir
+# ({{branch}}/odoo if you group both repos under one per-branch directory):
+#   [repos."odoo/odoo"]
+#   pattern = "~/Dev/worktrees/odoo-{{branch}}"
+#   default = "~/Dev/src/odoo"
 
 [thresholds]
 staleness_minutes = 15

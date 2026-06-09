@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
-from pathlib import Path
 
-from pr_dash.config import Commands
+from pr_dash.config import Commands, RepoSpec
 
 
 @dataclass
@@ -28,38 +27,49 @@ class PRForCommands:
 DEFAULT_TEMPLATES = dataclasses.asdict(Commands())
 
 
-def build(pr: PRForCommands, repo_paths: dict[str, Path],
+def build(pr: PRForCommands, repos: dict[str, RepoSpec],
           templates: dict[str, str] | None = None) -> list[Command]:
     cmds: list[Command] = []
+    branch = pr.target_branch
     pr_repo_set = {pr.repo}
     pr_entries: list[tuple[str, int]] = [(pr.repo, pr.number)]
     if pr.paired_repo and pr.paired_number:
         pr_entries.append((pr.paired_repo, pr.paired_number))
         pr_repo_set.add(pr.paired_repo)
 
-    # Resolve paths for the PR's repos
+    # Resolve each PR repo to the path for this target branch (a per-version
+    # worktree when configured, else the single clone).
     pr_paths: list[tuple[str, int, str]] = []
     for r, n in pr_entries:
-        rp = repo_paths.get(r)
-        if rp is None:
+        spec = repos.get(r)
+        if spec is None:
             continue
-        pr_paths.append((r, n, str(rp)))
+        path, _ = spec.resolve(branch)
+        if path is None:
+            continue
+        pr_paths.append((r, n, str(path)))
 
-    # For single-repo PRs, also switch the *other* configured repos to target_branch
-    # so the DB is built against matching framework + addons versions.
-    # Skip if we couldn't resolve the PR's own repo - switching siblings alone is pointless.
-    sibling_paths: list[tuple[str, str]] = []  # (path, branch)
+    # For single-repo PRs, the *other* configured repos must be on target_branch
+    # so the DB builds against matching framework + addons versions.
+    # A per-version worktree is already on that branch, so it needs no switching
+    # (and must not be mutated); a shared clone gets the fetch/checkout/merge dance.
+    # Skip entirely if we couldn't resolve the PR's own repo.
+    sibling_switch: list[str] = []  # shared-clone paths to switch (and restore)
     is_single_repo = pr.paired_repo is None
-    if pr_paths and is_single_repo and pr.target_branch:
-        for r, rp in repo_paths.items():
-            if r not in pr_repo_set:
-                sibling_paths.append((str(rp), pr.target_branch))
+    if pr_paths and is_single_repo and branch:
+        for r, spec in repos.items():
+            if r in pr_repo_set:
+                continue
+            path, is_worktree = spec.resolve(branch)
+            if path is None or is_worktree:
+                continue  # worktree already on target_branch - nothing to do
+            sibling_switch.append(str(path))
 
     checkout_steps: list[str] = []
     for _, n, rp in pr_paths:
         checkout_steps.append(f"git -C {rp} fetch origin pull/{n}/head:pr-{n}")
         checkout_steps.append(f"git -C {rp} checkout pr-{n}")
-    for rp, branch in sibling_paths:
+    for rp in sibling_switch:
         checkout_steps.append(f"git -C {rp} fetch origin {branch}")
         checkout_steps.append(f"git -C {rp} checkout {branch}")
         checkout_steps.append(f"git -C {rp} merge --ff-only origin/{branch}")
@@ -69,13 +79,14 @@ def build(pr: PRForCommands, repo_paths: dict[str, Path],
 
     t = {**DEFAULT_TEMPLATES, **(templates or {})}
     db_suffix = f"pr_{pr.number}"
+    pr_repo_path = next((rp for r, _, rp in pr_paths if r == pr.repo), "")
     ctx = {
         "db": db_suffix,
         "modules": ",".join(pr.modules),
         "tags": ",".join(f"/{m}" for m in pr.modules),
-        "repo_path": str(repo_paths.get(pr.repo, "")),
+        "repo_path": pr_repo_path,
         "number": pr.number,
-        "branch": pr.target_branch,
+        "branch": branch,
     }
     if pr.modules:
         cmds.append(Command("Fresh DB", t["fresh_db"].format(**ctx)))
@@ -83,7 +94,9 @@ def build(pr: PRForCommands, repo_paths: dict[str, Path],
     else:
         cmds.append(Command("Fresh DB", "# framework-only PR - no installable modules detected"))
 
-    touched_paths = [rp for _, _, rp in pr_paths] + [rp for rp, _ in sibling_paths]
+    # Only paths we actually checked out need restoring. Worktree siblings were
+    # never touched, so they stay out of cleanup.
+    touched_paths = [rp for _, _, rp in pr_paths] + sibling_switch
     if touched_paths:
         cleanup_steps = [t["cleanup"].format(**ctx)]
         for rp in touched_paths:

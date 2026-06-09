@@ -72,6 +72,8 @@ github_login = "your-login"      # auto-detected by `pr-dash init`
 [repos]                          # repo -> local clone path
 "odoo/odoo" = "~/Dev/src/odoo"
 "odoo/enterprise" = "~/Dev/src/enterprise"
+# If you keep one git worktree per version, give a `{branch}` pattern instead of
+# a single path (see "Per-version worktrees" below).
 
 [thresholds]
 staleness_minutes = 15           # skip re-fetching PRs fetched more recently than this
@@ -110,13 +112,57 @@ template. Placeholders:
 | `{db}`         | `pr_<number>` (a DB name)              |
 | `{modules}`    | comma-separated installable modules    |
 | `{tags}`       | test tags, e.g. `/sale,/account`       |
-| `{repo_path}`  | local path of the PR's repo            |
+| `{repo_path}`  | local path of the PR's repo (worktree-resolved, see below) |
 | `{number}`     | PR number                              |
 | `{branch}`     | target branch                          |
 
 The defaults assume the `onew` / `otest` / `ocleanup` Odoo-dev shell aliases -
 replace them with however you create a database, run tests, and tear down. Fresh
 DB / Test are only shown when the PR touches installable modules.
+
+### Per-version worktrees
+
+If you keep a separate git worktree per version, point a repo at a `{branch}`
+pattern with a `default` fallback:
+
+```toml
+[repos."odoo/odoo"]
+pattern = "~/Dev/worktrees/odoo-{branch}"   # {branch} = the PR's target branch
+default = "~/Dev/src/odoo"                   # used when no worktree exists for the branch
+
+[repos."odoo/enterprise"]
+pattern = "~/Dev/worktrees/enterprise-{branch}"
+default = "~/Dev/src/enterprise"
+```
+
+`{branch}` is a plain substitution, so it can sit anywhere in the path - whether
+the version is a trailing suffix or a parent directory. If you group both repos
+under one per-branch directory, put `{branch}` mid-path instead:
+
+```toml
+[repos."odoo/odoo"]
+pattern = "~/Dev/worktrees/{branch}/odoo"
+default = "~/Dev/src/odoo"
+
+[repos."odoo/enterprise"]
+pattern = "~/Dev/worktrees/{branch}/enterprise"
+default = "~/Dev/src/enterprise"
+```
+
+With this, the generated commands are version-accurate:
+
+- **Checkout** runs in the worktree matching the PR's target branch, so
+  `{repo_path}` and the `git fetch ... && git checkout pr-<n>` steps target the
+  right directory instead of a single fixed clone.
+- The **sibling switch steps** (fetching + checking out the target branch in the
+  *other* repo to keep framework and addons versions aligned) are **dropped** -
+  that repo's worktree is already on the right version, so there's nothing to
+  switch and nothing to restore on cleanup.
+- A branch with **no worktree checked out** (the pattern dir is missing) falls
+  back to `default`, restoring the classic single-clone behaviour for that PR.
+
+Because `{branch}` is a placeholder, you can also wire worktree paths into your
+own **Fresh DB** / **Test** snippets, e.g. `--addons-path ~/Dev/worktrees/odoo-{branch}/addons,...`.
 
 ## Usage
 

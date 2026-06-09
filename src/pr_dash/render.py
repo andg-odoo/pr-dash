@@ -10,6 +10,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from pr_dash import db, derive
+from pr_dash.config import RepoSpec
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -147,7 +148,7 @@ def _build_pr_record(
 
 
 def _make_item(members: list[dict], my_login: str,
-               repo_paths: dict[str, Path],
+               repos: dict[str, RepoSpec],
                command_templates: dict[str, str] | None = None) -> dict:
     """Build one renderable item from one or two PR records.
 
@@ -237,7 +238,7 @@ def _make_item(members: list[dict], my_login: str,
             paired_repo=members[1]["repo"] if is_pair else None,
             paired_number=members[1]["number"] if is_pair else None,
         ),
-        repo_paths,
+        repos,
         command_templates,
     )
 
@@ -361,7 +362,7 @@ def _make_item(members: list[dict], my_login: str,
 def build_payload(
     conn: sqlite3.Connection,
     my_login: str,
-    repo_paths: dict[str, Path],
+    repos: dict[str, RepoSpec],
     stale_review_days: int,
     command_templates: dict[str, str] | None = None,
 ) -> tuple[list[dict], list[tuple[str, str | None, str | None, str]]]:
@@ -416,9 +417,9 @@ def build_payload(
         if paired_id and paired_id in records:
             seen.add(paired_id)
             items.append(_make_item([records[pr_id], records[paired_id]], my_login,
-                                     repo_paths, command_templates))
+                                     repos, command_templates))
         else:
-            items.append(_make_item([records[pr_id]], my_login, repo_paths, command_templates))
+            items.append(_make_item([records[pr_id]], my_login, repos, command_templates))
 
     items.sort(key=lambda p: (
         BUCKET_RANK.get(p["bucket"], 1),
