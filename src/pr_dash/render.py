@@ -249,6 +249,7 @@ def _make_item(members: list[dict], my_login: str,
             "repo_short": m["repo_short"],
             "number": m["number"],
             "url": m["url"],
+            "closed": bool(m["archived_at"]),
             "available": m["diff_available"],
             "truncated": m["diff_truncated"],
             "diff": m["diff"],
@@ -308,7 +309,8 @@ def _make_item(members: list[dict], my_login: str,
         "head_sha": primary["head_sha"],
         "members": [
             {"repo": m["repo"], "repo_short": m["repo_short"], "number": m["number"],
-             "url": m["url"], "head_sha": m["head_sha"]}
+             "url": m["url"], "head_sha": m["head_sha"],
+             "closed": bool(m["archived_at"])}
             for m in members
         ],
         "title": primary["title"],

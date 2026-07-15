@@ -851,6 +851,51 @@ body {
   line-height: 1.4;
 }
 
+/* Paired PR where one half is closed (no longer open for review) */
+.pr-id-closed {
+  color: var(--fg-faint);
+  text-decoration: line-through;
+  text-decoration-color: var(--red);
+}
+
+.pr-row .pair-tag-partial {
+  color: var(--orange);
+  background: rgba(224, 144, 74, 0.14);
+}
+
+.gh-link-closed {
+  color: var(--fg-dim) !important;
+  text-decoration: line-through;
+  text-decoration-color: var(--red);
+}
+
+.pair-mixed-notice {
+  background: rgba(224, 144, 74, 0.12);
+  border: 1px solid rgba(224, 144, 74, 0.35);
+  border-left: 3px solid var(--orange);
+  color: var(--fg);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 10px 0 4px;
+}
+.pair-mixed-notice strong { color: var(--orange); }
+
+.diff-section-closed { opacity: 0.62; }
+.diff-section-closed:hover { opacity: 1; }
+
+.diff-closed-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--red);
+  background: rgba(224, 104, 104, 0.16);
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.06em;
+  vertical-align: middle;
+}
+
 .verdict-partial {
   font-size: 8px;
   font-weight: 700;

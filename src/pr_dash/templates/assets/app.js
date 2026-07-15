@@ -360,15 +360,21 @@
         + (pr.is_archived ? " archived-row" : "");
       li.dataset.id = pr.id;
       const idBlock = pr.members.map(m =>
-        `<span class="pr-id">${escapeHTML(m.repo_short)}#${m.number}</span>`
+        `<span class="pr-id${m.closed ? " pr-id-closed" : ""}"${m.closed ? ' title="closed - no longer open for review"' : ""}>${escapeHTML(m.repo_short)}#${m.number}</span>`
       ).join('<span class="pair-sep">+</span>');
-      const pairTag = pr.is_pair ? '<span class="pair-tag">PAIR</span>' : "";
+      const openMemberCount = pr.members.filter(m => !m.closed).length;
+      const mixedPair = pr.is_pair && openMemberCount > 0 && openMemberCount < pr.members.length;
+      const pairTag = pr.is_pair
+        ? (mixedPair
+            ? `<span class="pair-tag pair-tag-partial" title="Only ${openMemberCount} of ${pr.members.length} halves still open">${openMemberCount}/${pr.members.length} OPEN</span>`
+            : '<span class="pair-tag">PAIR</span>')
+        : "";
       const draftTag = pr.is_draft ? '<span class="draft-tag">DRAFT</span>' : "";
       const archivedTag = pr.is_archived ? '<span class="archived-tag">ARCHIVED</span>' : "";
       const reviewedCount = (pr.ai_reviews || []).length;
       const isPartialReview = pr.is_pair && reviewedCount > 0 && reviewedCount < pr.members.length;
       const verdictTag = (pr.ai_review_verdict === "minor" || pr.ai_review_verdict === "major")
-        ? `<span class="verdict-tag verdict-tag-${pr.ai_review_verdict}" title="claude flagged ${pr.ai_review_verdict} concerns${isPartialReview ? " - only " + reviewedCount + " of " + pr.members.length + " halves analyzed (other diff too large)" : ""}">${pr.ai_review_verdict.toUpperCase()}${isPartialReview ? ' <span class="verdict-partial">' + reviewedCount + '/' + pr.members.length + '</span>' : ''}</span>`
+        ? `<span class="verdict-tag verdict-tag-${pr.ai_review_verdict}" title="claude flagged ${pr.ai_review_verdict} concerns${isPartialReview ? " - only " + reviewedCount + " of " + pr.members.length + " halves analyzed" : ""}">${pr.ai_review_verdict.toUpperCase()}${isPartialReview ? ' <span class="verdict-partial">' + reviewedCount + '/' + pr.members.length + '</span>' : ''}</span>`
         : "";
       const hideLabel = itemHidden ? "↺" : "×";
       const hideTitle = itemHidden ? "Unhide" : "Hide until next push";
@@ -475,8 +481,28 @@
       ? `<a href="${escapeHTML(pr.runbot_url)}" target="_blank" rel="noopener">Runbot ↗</a>`
       : `<a class="unavailable">No runbot</a>`;
     const ghLinks = pr.members.map(m =>
-      `<a href="${escapeHTML(m.url)}" target="_blank" rel="noopener">GitHub: ${escapeHTML(m.repo_short)}#${m.number} ↗</a>`
+      `<a href="${escapeHTML(m.url)}" target="_blank" rel="noopener"${m.closed ? ' class="gh-link-closed" title="This half is closed"' : ""}>GitHub: ${escapeHTML(m.repo_short)}#${m.number}${m.closed ? " (closed)" : ""} ↗</a>`
     ).join("");
+    const openMembers = pr.members.filter(m => !m.closed);
+    const closedMembers = pr.members.filter(m => m.closed);
+    const mixedPair = pr.is_pair && openMembers.length > 0 && closedMembers.length > 0;
+    const mixedNotice = mixedPair
+      ? `<div class="pair-mixed-notice" title="A paired PR whose other half is no longer open">
+          <strong>Only ${openMembers.map(m => escapeHTML(m.repo_short) + "#" + m.number).join(", ")} ${openMembers.length === 1 ? "is" : "are"} still open.</strong>
+          ${closedMembers.map(m => escapeHTML(m.repo_short) + "#" + m.number).join(", ")} ${closedMembers.length === 1 ? "is" : "are"} closed - its diff, commands and stats below still include the closed half.
+        </div>`
+      : "";
+    // Why is a half missing from the AI first-pass? closed > over-budget > not-yet-reviewed.
+    const reviewedKeys = new Set((pr.ai_reviews || []).map(r => r.repo_short + "#" + r.number));
+    const missingHalves = pr.members
+      .filter(m => !reviewedKeys.has(m.repo_short + "#" + m.number))
+      .map(m => {
+        const d = pr.diffs.find(x => x.repo_short === m.repo_short && x.number === m.number);
+        const reason = m.closed ? " is closed"
+          : (d && (!d.available || d.truncated)) ? "'s diff was too large to review"
+          : " hasn't been reviewed yet";
+        return escapeHTML(m.repo_short) + "#" + m.number + reason;
+      });
     const crumbsId = pr.members.map(m => `${escapeHTML(m.repo)}#${m.number}`).join(" + ");
     const pairBadge = pr.is_pair
       ? `<span class="pair-badge">paired</span>`
@@ -505,6 +531,8 @@
           ${taskLink}
           <button class="detail-hide" type="button" data-detail-hide="${escapeHTML(pr.id)}">${isHidden(pr) ? "Unhide" : "Hide until next push"}</button>
         </div>
+
+        ${mixedNotice}
 
         <section class="section">
           <h3>Status</h3>
@@ -549,7 +577,7 @@
           ${pr.is_pair && pr.ai_reviews.length < pr.members.length ? `
             <div class="ai-partial-notice">
               Only ${pr.ai_reviews.length} of ${pr.members.length} halves analyzed -
-              the other half's diff didn't fit the review budget.
+              ${missingHalves.join("; ")}.
               Findings below are for ${pr.ai_reviews.map(r => escapeHTML(r.repo_short) + "#" + r.number).join(", ")} only.
             </div>
           ` : ""}
@@ -608,9 +636,9 @@
         ` : ""}
 
         ${pr.diffs.map((d, i) => `
-        <section class="diff-section">
+        <section class="diff-section${d.closed ? " diff-section-closed" : ""}">
           <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--fg-dim);">
-            Diff: ${escapeHTML(d.repo_short)}#${d.number}
+            Diff: ${escapeHTML(d.repo_short)}#${d.number}${d.closed ? ' <span class="diff-closed-badge">CLOSED</span>' : ""}
             <span style="color:var(--fg-faint);font-weight:normal;text-transform:none;letter-spacing:0;">
               · +${d.additions}/−${d.deletions} · ${d.changed_files}f
             </span>
