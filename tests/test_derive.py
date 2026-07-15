@@ -86,7 +86,12 @@ def test_parse_linked_task():
     assert derive.parse_linked_task("task 4567") == ("task", "4567")
     assert derive.parse_linked_task("opw-987654") == ("opw", "987654")
     assert derive.parse_linked_task("Opw 12345") == ("opw", "12345")
+    # markdown-linked / tilde forms found in real PR bodies
+    assert derive.parse_linked_task("task-[6234716](https://odoo.com/web#id=6234716)") == ("task", "6234716")
+    assert derive.parse_linked_task("task ~6234716") == ("task", "6234716")
+    assert derive.parse_linked_task("task-~6234716") == ("task", "6234716")
     assert derive.parse_linked_task("OPW-22") is None  # too short
+    assert derive.parse_linked_task("task list has 12345 items") is None  # noise class stops at letters
     assert derive.parse_linked_task("no task here") is None
     assert derive.parse_linked_task(None) is None
 

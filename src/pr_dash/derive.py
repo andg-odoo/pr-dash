@@ -7,7 +7,10 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-TASK_RE = re.compile(r"\b(task|opw)[-\s]?(\d{4,8})\b", re.IGNORECASE)
+# Tolerate the separators/noise that appear between the keyword and the id in PR
+# bodies: a hyphen, spaces, a tilde, or a markdown link opening (`[`, sometimes
+# with a leading `#`), e.g. `task-6234716`, `task ~6234716`, `task-[6234716](url)`.
+TASK_RE = re.compile(r"\b(task|opw)[-\s~\[#]*(\d{4,8})\b", re.IGNORECASE)
 
 _DIFF_FILE_SPLIT = re.compile(r"(?m)^(?=diff --git )")
 _DIFF_FILE_PATH = re.compile(r"diff --git a/.+? b/(.+)")
