@@ -909,6 +909,7 @@ body {
 
 .ai-concern {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 8px;
   padding: 4px 0;
@@ -931,7 +932,7 @@ body {
 .ai-sev-med { background: var(--orange); color: #0f1115; }
 .ai-sev-low { background: var(--chip-bg); color: var(--fg-dim); border: 1px solid var(--border); }
 
-.ai-msg { flex: 1 1 auto; color: var(--fg); }
+.ai-msg { flex: 1 1 220px; min-width: 0; color: var(--fg); }
 
 .ai-where {
   font-family: ui-monospace, monospace;
@@ -940,7 +941,9 @@ body {
   background: var(--bg-elev);
   padding: 1px 5px;
   border-radius: 3px;
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .thread {

@@ -269,7 +269,11 @@ def _make_item(members: list[dict], my_login: str,
         if not review:
             continue
         cached_sibling = review.get("sibling_head_sha") or ""
-        expected_sibling = members[1 - idx]["head_sha"] if is_pair else ""
+        # Only demand sibling context when the partner is still active -
+        # _build_review_queue skips archived siblings, so a review computed
+        # while the partner was already closed is legitimately pair-blind.
+        sib = members[1 - idx] if is_pair else None
+        expected_sibling = sib["head_sha"] if sib and not sib["archived_at"] else ""
         if cached_sibling != expected_sibling:
             continue
         ai_reviews.append({
