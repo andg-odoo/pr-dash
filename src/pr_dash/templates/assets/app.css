@@ -634,6 +634,57 @@ body {
   border-color: var(--red);
 }
 
+.discord-copy { position: relative; display: inline-flex; }
+
+.discord-btn {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  padding: 5px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.discord-btn:hover { background: var(--bg-elev2); border-color: var(--accent); }
+.discord-btn.copied { background: var(--green); color: #0f1115; border-color: var(--green); }
+
+.discord-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+}
+.discord-pop[hidden] { display: none; }
+
+.discord-pop-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-dim);
+}
+
+.discord-stars { display: inline-flex; gap: 2px; }
+
+.ds-star {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  font-size: 20px;
+  line-height: 1;
+  vertical-align: middle;
+  color: var(--yellow);
+  cursor: pointer;
+}
+
 .section {
   margin-bottom: 18px;
   background: var(--bg-elev);

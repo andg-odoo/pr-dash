@@ -471,6 +471,69 @@
     });
   }
 
+  /** Build the Discord hand-off message: a star line for reviewer difficulty
+   *  followed by one masked link per still-open PR. A paired PR with both
+   *  halves open bundles both links under a single star line; closed halves
+   *  (no longer reviewable) are dropped. */
+  function buildDiscordMessage(pr, rating) {
+    const stars = "★".repeat(rating) + "☆".repeat(5 - rating);
+    const open = pr.members.filter(m => !m.closed);
+    const links = (open.length ? open : pr.members)
+      .map(m => `[${m.title}](${m.url})`);
+    return stars + "\n" + links.join("\n");
+  }
+
+  /** Star-picker popover on the "discord" button: hover previews the rating,
+   *  click copies the formatted message to the clipboard. */
+  function wireDiscordCopy(root, pr) {
+    const wrap = root.querySelector(".discord-copy");
+    if (!wrap) return;
+    const btn = wrap.querySelector(".discord-btn");
+    const pop = wrap.querySelector(".discord-pop");
+    const stars = [...wrap.querySelectorAll(".ds-star")];
+
+    const paint = n => stars.forEach(s =>
+      s.textContent = Number(s.dataset.r) <= n ? "★" : "☆");
+    // Dismiss on any click outside the widget. Registered only while open and
+    // torn down on close, so re-rendering the detail pane leaks no listeners.
+    const onOutside = (e) => { if (!wrap.contains(e.target)) close(); };
+    const close = () => {
+      pop.hidden = true;
+      paint(0);
+      document.removeEventListener("click", onOutside);
+    };
+    const open = () => {
+      pop.hidden = false;
+      paint(0);
+      document.addEventListener("click", onOutside);
+    };
+
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      pop.hidden ? open() : close();
+    });
+
+    stars.forEach(s => {
+      const r = Number(s.dataset.r);
+      s.addEventListener("mouseenter", () => paint(r));
+      s.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const msg = buildDiscordMessage(pr, r);
+        navigator.clipboard.writeText(msg).then(() => {
+          btn.textContent = "copied " + "★".repeat(r) + "☆".repeat(5 - r);
+          btn.classList.add("copied");
+          setTimeout(() => {
+            btn.textContent = "discord ★";
+            btn.classList.remove("copied");
+          }, 1400);
+        });
+        close();
+      });
+    });
+    wrap.querySelector(".discord-stars")
+      .addEventListener("mouseleave", () => paint(0));
+  }
+
   function renderDetail(pr) {
     if (!pr) { detailEl.innerHTML = '<div class="empty">Select a PR on the left.</div>'; return; }
 
@@ -529,6 +592,15 @@
           ${ghLinks}
           ${runbotLink}
           ${taskLink}
+          <div class="discord-copy">
+            <button class="discord-btn" type="button" title="Copy a Discord hand-off message with a difficulty rating for the final reviewer">discord ★</button>
+            <div class="discord-pop" hidden>
+              <span class="discord-pop-label">difficulty for final reviewer</span>
+              <span class="discord-stars">
+                ${[1, 2, 3, 4, 5].map(r => `<button class="ds-star" type="button" data-r="${r}" title="${r} / 5">☆</button>`).join("")}
+              </span>
+            </div>
+          </div>
           <button class="detail-hide" type="button" data-detail-hide="${escapeHTML(pr.id)}">${isHidden(pr) ? "Unhide" : "Hide until next push"}</button>
         </div>
 
@@ -659,6 +731,8 @@
         renderDetail(pr);
       });
     }
+
+    wireDiscordCopy(detailEl, pr);
 
     detailEl.querySelectorAll(".cmd-copy").forEach(btn => {
       btn.addEventListener("click", () => {
