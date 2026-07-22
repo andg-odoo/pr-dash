@@ -126,6 +126,8 @@ def backfill(limit, since, config_path):
                     # (earlier backfills that predate verdict capture).
                     if cached["archived_at"]:
                         db.set_my_review_state(conn, pr_id, cfg.github_login, my_state)
+                        if node.get("state"):
+                            db.set_pr_state(conn, pr_id, node["state"])
                         updated += 1
                     else:
                         skipped += 1
@@ -157,6 +159,7 @@ def backfill(limit, since, config_path):
                     "linked_task_kind": None,
                     "body": None,
                     "archived_at": latest_review_at,
+                    "state": node.get("state") or "OPEN",
                     "fetched_at": now,
                 }
                 db.upsert_pr(conn, pr_row)
@@ -385,6 +388,12 @@ def _run_refresh(conn, cfg, *, force: bool) -> None:
         if archived or deleted:
             log.debug("swept: %d archived, %d deleted", archived, deleted)
 
+        # Archived halves of still-active pairs may have genuinely closed since
+        # they left the request set (the search only returns open PRs, so their
+        # cached state never updates). Re-check just those so the UI can tell
+        # "closed on GitHub" apart from "merely reviewed by me".
+        _reconcile_sibling_states(conn, kept_ids)
+
         if cfg.ai.enabled and cfg.ai.review_enabled:
             review_candidates, sibling_shas = _build_review_queue(
                 conn, kept_ids, cfg.ai.review_max_diff_chars,
@@ -429,6 +438,38 @@ def _reconcile_reviewed(conn, kept_ids: set[str], login: str) -> bool:
         db.mark_reviewed(conn, reviewed)
         log.debug("reconciled %d fallen-out PRs as reviewed", len(reviewed))
     return True
+
+
+def _reconcile_sibling_states(conn, kept_ids: set[str]) -> None:
+    """Refresh the GitHub state of archived pair-siblings of active PRs.
+
+    Only mixed pairs render an archived member, so only those need a live
+    state - a handful of PRs at most, one batched request. Best-effort: on a
+    GitHub failure the cached state stays, which the UI renders as still open.
+    """
+    prs = [dict(r) for r in db.list_prs(conn)]
+    pairs = derive.detect_pairs(prs)
+    by_id = {p["id"]: p for p in prs}
+    stale = [
+        by_id[sib_id]
+        for pr_id, sib_id in pairs.items()
+        if pr_id in kept_ids and sib_id not in kept_ids
+        and by_id[sib_id]["archived_at"] and by_id[sib_id]["state"] == "OPEN"
+    ]
+    if not stale:
+        return
+    refs = [(p["repo"], p["number"], p["id"]) for p in stale]
+    try:
+        states = github.fetch_pr_states(refs)
+    except github.GithubError as e:
+        log.warning("pair-sibling state check failed (%s); keeping cached states", e)
+        return
+    changed = {pr_id: s for pr_id, s in states.items() if s != "OPEN"}
+    if changed:
+        with db.transaction(conn):
+            for pr_id, state in changed.items():
+                db.set_pr_state(conn, pr_id, state)
+        log.debug("marked %d archived pair-siblings closed", len(changed))
 
 
 def _build_review_queue(
@@ -563,6 +604,7 @@ def _node_to_rows(node: dict, my_login: str) -> tuple[dict, list[str], list[dict
         "linked_task_kind": task_kind,
         "body": node.get("body"),
         "archived_at": None,
+        "state": node.get("state") or "OPEN",
         "fetched_at": derive.now_utc(),
     }
     return pr_row, modules, reviewers, th.threads

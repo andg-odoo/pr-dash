@@ -13,6 +13,7 @@ query($q: String!, $cursor: String) {
         url
         number
         title
+        state
         isDraft
         createdAt
         updatedAt
@@ -100,6 +101,7 @@ query($q: String!, $cursor: String) {
         url
         number
         title
+        state
         createdAt
         updatedAt
         mergeable
@@ -266,6 +268,35 @@ def fetch_reviewed_prs(
             if any((n.get("author") or {}).get("login") == login for n in nodes):
                 reviewed.add(pr_id)
     return reviewed
+
+
+def fetch_pr_states(
+    refs: list[tuple[str, int, str]], *, chunk_size: int = 25,
+) -> dict[str, str]:
+    """Given (repo, number, pr_id) triples, return pr_id -> current PR state
+    (OPEN / CLOSED / MERGED). Batched via GraphQL field aliases.
+
+    Used to re-check archived pair-siblings of still-active PRs: they left the
+    `review-requested:` search (which only returns open PRs), so their cached
+    state goes stale the moment robodoo closes them.
+    """
+    states: dict[str, str] = {}
+    for start in range(0, len(refs), chunk_size):
+        chunk = refs[start:start + chunk_size]
+        parts = []
+        for i, (repo, number, _) in enumerate(chunk):
+            owner, name = repo.split("/", 1)
+            parts.append(
+                f'p{i}: repository(owner: "{owner}", name: "{name}") {{ '
+                f'pullRequest(number: {number}) {{ state }} }}'
+            )
+        query = "query {\n" + "\n".join(parts) + "\n}"
+        data = _graphql(query, {})
+        for i, (_, _, pr_id) in enumerate(chunk):
+            pr = (data.get(f"p{i}") or {}).get("pullRequest") or {}
+            if pr.get("state"):
+                states[pr_id] = pr["state"]
+    return states
 
 
 def fetch_remaining_files(repo: str, number: int, after_cursor: str) -> list[str]:

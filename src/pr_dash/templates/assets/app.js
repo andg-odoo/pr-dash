@@ -359,14 +359,25 @@
         + (itemHidden ? " hidden-row" : "")
         + (pr.is_archived ? " archived-row" : "");
       li.dataset.id = pr.id;
-      const idBlock = pr.members.map(m =>
-        `<span class="pr-id${m.closed ? " pr-id-closed" : ""}"${m.closed ? ' title="closed - no longer open for review"' : ""}>${escapeHTML(m.repo_short)}#${m.number}</span>`
-      ).join('<span class="pair-sep">+</span>');
-      const openMemberCount = pr.members.filter(m => !m.closed).length;
-      const mixedPair = pr.is_pair && openMemberCount > 0 && openMemberCount < pr.members.length;
+      const idBlock = pr.members.map(m => {
+        const cls = m.closed ? " pr-id-closed"
+          : (m.reviewed && !pr.is_archived) ? " pr-id-reviewed" : "";
+        const title = m.closed ? ' title="closed on GitHub"'
+          : (m.reviewed && !pr.is_archived) ? ' title="already reviewed by you - still open on GitHub"' : "";
+        return `<span class="pr-id${cls}"${title}>${escapeHTML(m.repo_short)}#${m.number}</span>`;
+      }).join('<span class="pair-sep">+</span>');
+      const closedMemberCount = pr.members.filter(m => m.closed).length;
+      const doneMemberCount = pr.is_archived ? 0
+        : pr.members.filter(m => !m.closed && m.reviewed).length;
+      const openMemberCount = pr.members.length - closedMemberCount;
+      const mixedPair = pr.is_pair
+        && (closedMemberCount + doneMemberCount) > 0
+        && (closedMemberCount + doneMemberCount) < pr.members.length;
       const pairTag = pr.is_pair
         ? (mixedPair
-            ? `<span class="pair-tag pair-tag-partial" title="Only ${openMemberCount} of ${pr.members.length} halves still open">${openMemberCount}/${pr.members.length} OPEN</span>`
+            ? (closedMemberCount
+                ? `<span class="pair-tag pair-tag-partial" title="Only ${openMemberCount} of ${pr.members.length} halves still open on GitHub">${openMemberCount}/${pr.members.length} OPEN</span>`
+                : `<span class="pair-tag pair-tag-partial" title="${doneMemberCount} of ${pr.members.length} halves already reviewed by you - both still open on GitHub">${doneMemberCount}/${pr.members.length} REVIEWED</span>`)
             : '<span class="pair-tag">PAIR</span>')
         : "";
       const draftTag = pr.is_draft ? '<span class="draft-tag">DRAFT</span>' : "";
@@ -543,16 +554,29 @@
     const runbotLink = pr.runbot_url
       ? `<a href="${escapeHTML(pr.runbot_url)}" target="_blank" rel="noopener">Runbot ↗</a>`
       : `<a class="unavailable">No runbot</a>`;
-    const ghLinks = pr.members.map(m =>
-      `<a href="${escapeHTML(m.url)}" target="_blank" rel="noopener"${m.closed ? ' class="gh-link-closed" title="This half is closed"' : ""}>GitHub: ${escapeHTML(m.repo_short)}#${m.number}${m.closed ? " (closed)" : ""} ↗</a>`
-    ).join("");
-    const openMembers = pr.members.filter(m => !m.closed);
+    const ghLinks = pr.members.map(m => {
+      const attrs = m.closed ? ' class="gh-link-closed" title="This half is closed on GitHub"'
+        : (m.reviewed && !pr.is_archived) ? ' title="Already reviewed by you - still open on GitHub"' : "";
+      const suffix = m.closed ? " (closed)"
+        : (m.reviewed && !pr.is_archived) ? " (reviewed)" : "";
+      return `<a href="${escapeHTML(m.url)}" target="_blank" rel="noopener"${attrs}>GitHub: ${escapeHTML(m.repo_short)}#${m.number}${suffix} ↗</a>`;
+    }).join("");
     const closedMembers = pr.members.filter(m => m.closed);
-    const mixedPair = pr.is_pair && openMembers.length > 0 && closedMembers.length > 0;
-    const mixedNotice = mixedPair
-      ? `<div class="pair-mixed-notice" title="A paired PR whose other half is no longer open">
-          <strong>Only ${openMembers.map(m => escapeHTML(m.repo_short) + "#" + m.number).join(", ")} ${openMembers.length === 1 ? "is" : "are"} still open.</strong>
-          ${closedMembers.map(m => escapeHTML(m.repo_short) + "#" + m.number).join(", ")} ${closedMembers.length === 1 ? "is" : "are"} closed - its diff, commands and stats below still include the closed half.
+    const reviewedMembers = pr.is_archived ? []
+      : pr.members.filter(m => !m.closed && m.reviewed);
+    const activeMembers = pr.members.filter(
+      m => !m.closed && !reviewedMembers.includes(m));
+    const names = ms => ms.map(m => escapeHTML(m.repo_short) + "#" + m.number).join(", ");
+    const noticeParts = [];
+    if (closedMembers.length) {
+      noticeParts.push(`<strong>${names(closedMembers)} ${closedMembers.length === 1 ? "is" : "are"} closed on GitHub.</strong>`);
+    }
+    if (reviewedMembers.length) {
+      noticeParts.push(`You already reviewed ${names(reviewedMembers)} - still open, just no longer in your review queue.`);
+    }
+    const mixedNotice = (pr.is_pair && noticeParts.length && activeMembers.length)
+      ? `<div class="pair-mixed-notice" title="A paired PR whose other half left your review queue">
+          ${noticeParts.join(" ")} The diff, commands and stats below still cover both halves.
         </div>`
       : "";
     // Why is a half missing from the AI first-pass? closed > over-budget > not-yet-reviewed.
@@ -562,6 +586,7 @@
       .map(m => {
         const d = pr.diffs.find(x => x.repo_short === m.repo_short && x.number === m.number);
         const reason = m.closed ? " is closed"
+          : m.reviewed ? " was already reviewed by you"
           : (d && (!d.available || d.truncated)) ? "'s diff was too large to review"
           : " hasn't been reviewed yet";
         return escapeHTML(m.repo_short) + "#" + m.number + reason;
@@ -708,9 +733,9 @@
         ` : ""}
 
         ${pr.diffs.map((d, i) => `
-        <section class="diff-section${d.closed ? " diff-section-closed" : ""}">
+        <section class="diff-section${(d.closed || (d.reviewed && !pr.is_archived)) ? " diff-section-closed" : ""}">
           <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--fg-dim);">
-            Diff: ${escapeHTML(d.repo_short)}#${d.number}${d.closed ? ' <span class="diff-closed-badge">CLOSED</span>' : ""}
+            Diff: ${escapeHTML(d.repo_short)}#${d.number}${d.closed ? ' <span class="diff-closed-badge">CLOSED</span>' : (d.reviewed && !pr.is_archived) ? ' <span class="diff-reviewed-badge">REVIEWED</span>' : ""}
             <span style="color:var(--fg-faint);font-weight:normal;text-transform:none;letter-spacing:0;">
               · +${d.additions}/−${d.deletions} · ${d.changed_files}f
             </span>

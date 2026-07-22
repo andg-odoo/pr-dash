@@ -909,6 +909,11 @@ body {
   text-decoration-color: var(--red);
 }
 
+/* Paired PR where one half is still open but already reviewed by me */
+.pr-id-reviewed {
+  color: var(--fg-faint);
+}
+
 .pr-row .pair-tag-partial {
   color: var(--orange);
   background: rgba(224, 144, 74, 0.14);
@@ -941,6 +946,17 @@ body {
   font-weight: 700;
   color: var(--red);
   background: rgba(224, 104, 104, 0.16);
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.06em;
+  vertical-align: middle;
+}
+
+.diff-reviewed-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--green);
+  background: rgba(106, 208, 138, 0.16);
   padding: 1px 5px;
   border-radius: 3px;
   letter-spacing: 0.06em;

@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 SCHEMA_SQL = """
 CREATE TABLE pr (
@@ -36,6 +36,7 @@ CREATE TABLE pr (
   linked_task_kind     TEXT,
   body                 TEXT,
   archived_at          TEXT,
+  state                TEXT NOT NULL DEFAULT 'OPEN',
   fetched_at           TEXT NOT NULL
 );
 
@@ -204,6 +205,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(pr)").fetchall()}
         if "is_draft" not in cols:
             conn.execute("ALTER TABLE pr ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0")
+    if current < 11:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(pr)").fetchall()}
+        if "state" not in cols:
+            # Pre-existing archived rows default to OPEN; the refresh re-checks
+            # the ones that matter (archived siblings of active pairs).
+            conn.execute("ALTER TABLE pr ADD COLUMN state TEXT NOT NULL DEFAULT 'OPEN'")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -256,6 +263,10 @@ def replace_reviewers(conn: sqlite3.Connection, pr_id: str, reviewers: list[dict
         "INSERT INTO pr_reviewer (pr_id, kind, name, state) VALUES (?, ?, ?, ?)",
         [(pr_id, r["kind"], r["name"], r["state"]) for r in reviewers],
     )
+
+
+def set_pr_state(conn: sqlite3.Connection, pr_id: str, state: str) -> None:
+    conn.execute("UPDATE pr SET state = ? WHERE id = ?", (state, pr_id))
 
 
 def set_my_review_state(conn: sqlite3.Connection, pr_id: str, login: str, state: str) -> None:

@@ -143,6 +143,7 @@ def _build_pr_record(
         "diff": diff["patch_text"] if diff and diff["patch_text"] else None,
         "review_changed_paths": review_changed_paths,
         "archived_at": pr["archived_at"],
+        "state": pr["state"],
         "ai_review": ai_review,
     }
 
@@ -249,7 +250,8 @@ def _make_item(members: list[dict], my_login: str,
             "repo_short": m["repo_short"],
             "number": m["number"],
             "url": m["url"],
-            "closed": bool(m["archived_at"]),
+            "closed": m["state"] != "OPEN",
+            "reviewed": bool(m["archived_at"]),
             "available": m["diff_available"],
             "truncated": m["diff_truncated"],
             "diff": m["diff"],
@@ -310,7 +312,7 @@ def _make_item(members: list[dict], my_login: str,
         "members": [
             {"repo": m["repo"], "repo_short": m["repo_short"], "number": m["number"],
              "url": m["url"], "head_sha": m["head_sha"], "title": m["title"],
-             "closed": bool(m["archived_at"])}
+             "closed": m["state"] != "OPEN", "reviewed": bool(m["archived_at"])}
             for m in members
         ],
         "title": primary["title"],

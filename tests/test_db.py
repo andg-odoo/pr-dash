@@ -131,3 +131,28 @@ def test_mark_reviewed_then_sweep_archives(tmp_path):
 
     assert (archived, deleted) == (1, 0)
     assert _ids(conn) == {"odoo/odoo#1"}  # rescued from deletion
+
+
+def test_state_defaults_open_and_migrates(tmp_path):
+    conn = _conn(tmp_path)
+    _insert(conn, "odoo/odoo#1", reviewed=1)
+    row = conn.execute("SELECT state FROM pr WHERE id = 'odoo/odoo#1'").fetchone()
+    assert row["state"] == "OPEN"
+
+    db.set_pr_state(conn, "odoo/odoo#1", "MERGED")
+    row = conn.execute("SELECT state FROM pr WHERE id = 'odoo/odoo#1'").fetchone()
+    assert row["state"] == "MERGED"
+
+
+def test_migration_adds_state_to_v10_db(tmp_path):
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path, isolation_level=None)
+    old_schema = db.SCHEMA_SQL.replace(
+        "  state                TEXT NOT NULL DEFAULT 'OPEN',\n", "")
+    conn.executescript(old_schema)
+    conn.execute("PRAGMA user_version = 10")
+    conn.close()
+
+    conn = db.connect(path)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(pr)").fetchall()}
+    assert "state" in cols
