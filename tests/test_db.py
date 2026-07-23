@@ -156,3 +156,47 @@ def test_migration_adds_state_to_v10_db(tmp_path):
     conn = db.connect(path)
     cols = {r[1] for r in conn.execute("PRAGMA table_info(pr)").fetchall()}
     assert "state" in cols
+
+
+def _comment(kind, comment_id, *, thread_id=None, author="a", created_at="t",
+             body="b", path=None, state=None, url=None):
+    return {"kind": kind, "thread_id": thread_id, "comment_id": comment_id,
+            "author": author, "created_at": created_at, "body": body,
+            "path": path, "state": state, "url": url}
+
+
+def test_replace_comments_roundtrip_and_replace(tmp_path):
+    conn = _conn(tmp_path)
+    _insert(conn, "odoo/odoo#1", reviewed=0)
+    db.replace_comments(conn, "odoo/odoo#1", [
+        _comment("thread", "11", thread_id="T1", path="sale/x.py"),
+        _comment("review", "R1", state="APPROVED", body="lgtm"),
+        _comment("issue", "99", body="ping"),
+    ])
+    rows = db.comments_for(conn, "odoo/odoo#1")
+    assert {r["kind"] for r in rows} == {"thread", "review", "issue"}
+    assert db.list_comments(conn)["odoo/odoo#1"] == rows
+
+    # Replace wipes the old rows (no accumulation).
+    db.replace_comments(conn, "odoo/odoo#1", [_comment("issue", "42", body="only")])
+    rows = db.comments_for(conn, "odoo/odoo#1")
+    assert [r["comment_id"] for r in rows] == ["42"]
+
+
+def test_replace_comments_scoped_to_pr(tmp_path):
+    conn = _conn(tmp_path)
+    _insert(conn, "odoo/odoo#1", reviewed=0)
+    _insert(conn, "odoo/odoo#2", reviewed=0)
+    db.replace_comments(conn, "odoo/odoo#1", [_comment("issue", "1")])
+    db.replace_comments(conn, "odoo/odoo#2", [_comment("issue", "2")])
+    # Replacing #1 must not touch #2.
+    db.replace_comments(conn, "odoo/odoo#1", [])
+    assert db.comments_for(conn, "odoo/odoo#1") == []
+    assert [r["comment_id"] for r in db.comments_for(conn, "odoo/odoo#2")] == ["2"]
+
+
+def test_my_pending_review_column_defaults_zero(tmp_path):
+    conn = _conn(tmp_path)
+    _insert(conn, "odoo/odoo#1", reviewed=0)
+    row = db.get_cached_pr(conn, "odoo/odoo#1")
+    assert row["my_pending_review"] == 0

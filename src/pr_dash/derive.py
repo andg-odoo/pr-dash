@@ -157,6 +157,102 @@ def derive_threads(thread_nodes: list[dict], my_login: str) -> ThreadDerivation:
     return ThreadDerivation(threads=out, unresolved=unresolved, awaiting_my_reply=awaiting)
 
 
+_BOT_LOGINS = {"robodoo", "fw-bot"}
+
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\((?:[^)]*)\)")
+_MD_NOISE_RE = re.compile(r"[`*_>#~]")
+
+
+def is_bot(login: str | None) -> bool:
+    """True for automation authors (robodoo, fw-bot, GitHub App `*[bot]`), so
+    callers can filter their noise from human discussion."""
+    login = (login or "").lower()
+    return login in _BOT_LOGINS or login.endswith("[bot]")
+
+
+def comment_snippet(body: str | None, limit: int = 100) -> str:
+    """One-line plain-text preview of a comment: markdown links reduced to their
+    text, common markdown markers dropped, whitespace/newlines collapsed, then
+    truncated with an ellipsis. For the dashboard's unresolved-thread lines."""
+    if not body:
+        return ""
+    text = _MD_LINK_RE.sub(r"\1", body)
+    text = _MD_NOISE_RE.sub("", text)
+    text = " ".join(text.split())
+    if len(text) > limit:
+        text = text[:limit].rstrip() + "…"
+    return text
+
+
+def derive_comments(node: dict, my_login: str) -> tuple[list[dict], bool]:
+    """Flatten a PR node's review threads, review submissions and conversation
+    comments into pr_comment rows, and report whether the viewer has an unsent
+    (PENDING) review draft.
+
+    A PENDING review is only ever returned for the viewer's own token, which is
+    exactly the invisible-draft case we want to surface loudly.
+    """
+    out: list[dict] = []
+
+    for t in (node.get("reviewThreads") or {}).get("nodes") or []:
+        thread_id = t.get("id")
+        for c in (t.get("comments") or {}).get("nodes") or []:
+            cid = c.get("databaseId")
+            if cid is None:
+                continue
+            out.append({
+                "kind": "thread",
+                "thread_id": thread_id,
+                "comment_id": str(cid),
+                "author": (c.get("author") or {}).get("login"),
+                "created_at": c.get("createdAt"),
+                "body": c.get("body"),
+                "path": c.get("path"),
+                "state": None,
+                "url": c.get("url"),
+            })
+
+    my_pending = False
+    for r in (node.get("reviews") or {}).get("nodes") or []:
+        rid = r.get("id")
+        if rid is None:
+            continue
+        state = r.get("state")
+        author = (r.get("author") or {}).get("login")
+        pending = state == "PENDING" or r.get("submittedAt") is None
+        if pending and author == my_login:
+            my_pending = True
+        out.append({
+            "kind": "review",
+            "thread_id": None,
+            "comment_id": str(rid),
+            "author": author,
+            "created_at": r.get("submittedAt"),
+            "body": r.get("body"),
+            "path": None,
+            "state": state,
+            "url": r.get("url"),
+        })
+
+    for c in (node.get("comments") or {}).get("nodes") or []:
+        cid = c.get("databaseId")
+        if cid is None:
+            continue
+        out.append({
+            "kind": "issue",
+            "thread_id": None,
+            "comment_id": str(cid),
+            "author": (c.get("author") or {}).get("login"),
+            "created_at": c.get("createdAt"),
+            "body": c.get("body"),
+            "path": None,
+            "state": None,
+            "url": c.get("url"),
+        })
+
+    return out, my_pending
+
+
 def derive_reviewers(latest_reviews: list[dict], review_requests: list[dict]) -> list[dict]:
     # Start with latest reviews (whose authors are users)
     out: dict[tuple[str, str], dict] = {}

@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 SCHEMA_SQL = """
 CREATE TABLE pr (
@@ -37,6 +37,7 @@ CREATE TABLE pr (
   body                 TEXT,
   archived_at          TEXT,
   state                TEXT NOT NULL DEFAULT 'OPEN',
+  my_pending_review    INTEGER NOT NULL DEFAULT 0,
   fetched_at           TEXT NOT NULL
 );
 
@@ -62,6 +63,20 @@ CREATE TABLE pr_thread (
   last_reply_at     TEXT NOT NULL,
   last_reply_author TEXT NOT NULL,
   PRIMARY KEY (pr_id, thread_id)
+);
+
+CREATE TABLE pr_comment (
+  pr_id      TEXT NOT NULL REFERENCES pr(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL,
+  thread_id  TEXT,
+  comment_id TEXT NOT NULL,
+  author     TEXT,
+  created_at TEXT,
+  body       TEXT,
+  path       TEXT,
+  state      TEXT,
+  url        TEXT,
+  PRIMARY KEY (pr_id, kind, comment_id)
 );
 
 CREATE TABLE complexity (
@@ -107,6 +122,7 @@ CREATE TABLE seen (
 CREATE INDEX idx_pr_module_pr ON pr_module(pr_id);
 CREATE INDEX idx_pr_reviewer_pr ON pr_reviewer(pr_id);
 CREATE INDEX idx_pr_thread_pr ON pr_thread(pr_id);
+CREATE INDEX idx_pr_comment_pr ON pr_comment(pr_id);
 """
 
 
@@ -211,6 +227,34 @@ def _migrate(conn: sqlite3.Connection) -> None:
             # Pre-existing archived rows default to OPEN; the refresh re-checks
             # the ones that matter (archived siblings of active pairs).
             conn.execute("ALTER TABLE pr ADD COLUMN state TEXT NOT NULL DEFAULT 'OPEN'")
+    if current < 12:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(pr)").fetchall()}
+        if "my_pending_review" not in cols:
+            conn.execute(
+                "ALTER TABLE pr ADD COLUMN my_pending_review INTEGER NOT NULL DEFAULT 0"
+            )
+        tables = {
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        if "pr_comment" not in tables:
+            conn.execute(
+                "CREATE TABLE pr_comment ("
+                "  pr_id      TEXT NOT NULL REFERENCES pr(id) ON DELETE CASCADE,"
+                "  kind       TEXT NOT NULL,"
+                "  thread_id  TEXT,"
+                "  comment_id TEXT NOT NULL,"
+                "  author     TEXT,"
+                "  created_at TEXT,"
+                "  body       TEXT,"
+                "  path       TEXT,"
+                "  state      TEXT,"
+                "  url        TEXT,"
+                "  PRIMARY KEY (pr_id, kind, comment_id)"
+                ")"
+            )
+            conn.execute("CREATE INDEX idx_pr_comment_pr ON pr_comment(pr_id)")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -485,3 +529,43 @@ def list_threads(conn: sqlite3.Connection) -> dict[str, list[dict]]:
     for r in rows:
         out.setdefault(r["pr_id"], []).append(dict(r))
     return out
+
+
+_COMMENT_COLS = ["kind", "thread_id", "comment_id", "author",
+                 "created_at", "body", "path", "state", "url"]
+
+
+def replace_comments(conn: sqlite3.Connection, pr_id: str, comments: list[dict]) -> None:
+    conn.execute("DELETE FROM pr_comment WHERE pr_id = ?", (pr_id,))
+    conn.executemany(
+        f"INSERT INTO pr_comment (pr_id, {', '.join(_COMMENT_COLS)}) "
+        f"VALUES (?, {', '.join('?' for _ in _COMMENT_COLS)})",
+        [(pr_id, *(c.get(col) for col in _COMMENT_COLS)) for c in comments],
+    )
+
+
+def list_comments(conn: sqlite3.Connection) -> dict[str, list[dict]]:
+    rows = conn.execute(
+        "SELECT pr_id, kind, thread_id, comment_id, author, created_at, body, path, state, url "
+        "FROM pr_comment ORDER BY pr_id, created_at"
+    ).fetchall()
+    out: dict[str, list[dict]] = {}
+    for r in rows:
+        out.setdefault(r["pr_id"], []).append(dict(r))
+    return out
+
+
+def has_comments(conn: sqlite3.Connection, pr_id: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM pr_comment WHERE pr_id = ? LIMIT 1", (pr_id,)
+    ).fetchone()
+    return row is not None
+
+
+def comments_for(conn: sqlite3.Connection, pr_id: str) -> list[dict]:
+    rows = conn.execute(
+        "SELECT pr_id, kind, thread_id, comment_id, author, created_at, body, path, state, url "
+        "FROM pr_comment WHERE pr_id = ? ORDER BY created_at",
+        (pr_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]

@@ -366,3 +366,66 @@ def test_mcp_server_imports():
     from pr_dash import mcp_server
 
     assert mcp_server.mcp.name == "pr-dash"
+
+
+# --- my_pending_review / get_comments ----------------------------------------
+
+def test_summarize_includes_pending_review_flag():
+    item = _item("odoo/odoo#1", my_pending_review=True, flags=["PEND!"])
+    s = query.summarize(item)
+    assert s["my_pending_review"] is True
+    assert "PEND!" in s["flags"]
+
+
+def _insert_pr_row(conn, pr_id):
+    repo, number = pr_id.split("#")
+    conn.execute(
+        "INSERT INTO pr (id, repo, number, title, url, author, target_branch, "
+        "head_branch, head_sha, created_at, updated_at, review_requested_at, "
+        "previously_reviewed, additions, deletions, changed_files, fetched_at) "
+        "VALUES (?, ?, ?, '', '', 'a', 'b', 'b', 'sha', 't', 't', 't', 0, 0, 0, 0, 't')",
+        (pr_id, repo, int(number)),
+    )
+
+
+def test_get_comments_shape_and_bot_flag(tmp_path):
+    from pr_dash import db
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr_row(conn, "odoo/odoo#100")
+    db.replace_threads(conn, "odoo/odoo#100", [
+        {"thread_id": "T1", "is_resolved": 0, "i_participated": 1,
+         "last_reply_at": "t", "last_reply_author": "alice"},
+    ])
+    db.replace_comments(conn, "odoo/odoo#100", [
+        {"kind": "thread", "thread_id": "T1", "comment_id": "11", "author": "alice",
+         "created_at": "2026-05-01", "body": "why?", "path": "sale/x.py",
+         "state": None, "url": "https://c/11"},
+        {"kind": "review", "thread_id": None, "comment_id": "R1", "author": "robodoo",
+         "created_at": None, "body": "", "path": None, "state": "PENDING", "url": None},
+        {"kind": "issue", "thread_id": None, "comment_id": "99", "author": "me",
+         "created_at": "2026-05-02", "body": "ping", "path": None,
+         "state": None, "url": "https://i/99"},
+    ])
+    conn.close()
+
+    out = query.get_comments(cfg, _item("odoo/odoo#100"))
+    assert out["id"] == "odoo/odoo#100"
+    m = out["members"][0]
+
+    th = m["threads"][0]
+    assert th["is_resolved"] is False
+    assert th["path"] == "sale/x.py"
+    assert th["comments"][0]["author"] == "alice"
+    assert th["comments"][0]["bot"] is False
+    assert th["comments"][0]["body"] == "why?"
+
+    review = m["reviews"][0]
+    assert review["bot"] is True         # robodoo flagged
+    assert review["pending"] is True     # PENDING draft
+    assert review["state"] == "PENDING"
+
+    assert m["conversation"][0]["author"] == "me"
+    assert m["conversation"][0]["url"] == "https://i/99"

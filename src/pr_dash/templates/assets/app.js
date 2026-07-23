@@ -643,14 +643,18 @@
     const draftBadge = pr.is_draft
       ? `<span class="draft-badge" title="Marked as a draft - not ready for review yet">draft</span>`
       : "";
+    const pendBadge = pr.my_pending_review
+      ? `<span class="pend-badge" title="You have an unsent (PENDING) review draft on this PR - it stays invisible to the author until you submit it on GitHub">draft review not sent</span>`
+      : "";
     const archivedBadge = pr.is_archived
       ? `<span class="archived-badge" title="No longer requested for review${pr.archived_at ? " · archived " + pr.archived_at.slice(0, 10) : ""}">archived</span>`
       : "";
+    const unresolvedThreads = pr.threads.filter(t => !t.is_resolved && t.snippet);
 
     detailEl.innerHTML = `
       <div class="detail">
         <div class="detail-header">
-          <h2>${pairBadge}${draftBadge}${archivedBadge}${escapeHTML(pr.title)}</h2>
+          <h2>${pairBadge}${draftBadge}${pendBadge}${archivedBadge}${escapeHTML(pr.title)}</h2>
           <div class="crumbs">
             <span>${crumbsId}</span> ·
             <span>@${escapeHTML(pr.author)}</span> ·
@@ -773,6 +777,21 @@
           `).join("")}
           <div style="margin-top:6px;display:flex;gap:10px;">
             ${pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent);">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")}
+          </div>
+        </section>
+        ` : ""}
+
+        ${unresolvedThreads.length ? `
+        <section class="section">
+          <h3>Unresolved threads <span class="thread-count">${unresolvedThreads.length}</span></h3>
+          <div class="thread-snippets">
+            ${unresolvedThreads.map(t => `
+              <a class="thread-snippet" href="${escapeHTML(t.url || pr.url)}" target="_blank" rel="noopener">
+                ${pr.is_pair && t.member_repo_short ? `<span class="thread-where">${escapeHTML(t.member_repo_short)}</span> ` : ""}
+                <span class="who">@${escapeHTML(t.snippet_author || "?")}</span>
+                <span class="snippet-text">${escapeHTML(t.snippet)}</span>
+              </a>
+            `).join("")}
           </div>
         </section>
         ` : ""}

@@ -264,3 +264,95 @@ def test_previously_reviewed():
     assert derive.previously_reviewed(timeline, "me") is True
     assert derive.previously_reviewed(timeline, "other") is False
     assert derive.previously_reviewed([], "me") is False
+
+
+# --- comments / pending-review derivation ------------------------------------
+
+def _node_with_comments(*, threads=None, reviews=None, issue_comments=None):
+    return {
+        "reviewThreads": {"nodes": threads or []},
+        "reviews": {"nodes": reviews or []},
+        "comments": {"nodes": issue_comments or []},
+    }
+
+
+def test_is_bot():
+    assert derive.is_bot("robodoo") is True
+    assert derive.is_bot("fw-bot") is True
+    assert derive.is_bot("dependabot[bot]") is True
+    assert derive.is_bot("ROBODOO") is True
+    assert derive.is_bot("alice") is False
+    assert derive.is_bot(None) is False
+
+
+def test_comment_snippet_strips_markdown_and_truncates():
+    body = "Please **fix** the [helper](https://x/y)\nand add a test."
+    assert derive.comment_snippet(body) == "Please fix the helper and add a test."
+    assert derive.comment_snippet(None) == ""
+    long = "x" * 250
+    out = derive.comment_snippet(long, limit=100)
+    assert len(out) == 101 and out.endswith("…")  # 100 chars + ellipsis
+
+
+def test_derive_comments_flattens_all_kinds():
+    node = _node_with_comments(
+        threads=[{
+            "id": "T1", "isResolved": False,
+            "comments": {"nodes": [
+                {"author": {"login": "alice"}, "createdAt": "2026-05-01T00:00:00Z",
+                 "body": "line?", "path": "sale/x.py", "databaseId": 11,
+                 "url": "https://c/11"},
+            ]},
+        }],
+        reviews=[
+            {"id": "R1", "author": {"login": "bob"}, "state": "APPROVED",
+             "submittedAt": "2026-05-02T00:00:00Z", "body": "lgtm", "url": "https://r/1"},
+        ],
+        issue_comments=[
+            {"author": {"login": "carol"}, "createdAt": "2026-05-03T00:00:00Z",
+             "body": "ping", "databaseId": 99, "url": "https://i/99"},
+        ],
+    )
+    rows, my_pending = derive.derive_comments(node, "me")
+    assert my_pending is False
+    kinds = {r["kind"] for r in rows}
+    assert kinds == {"thread", "review", "issue"}
+    thread_row = next(r for r in rows if r["kind"] == "thread")
+    assert thread_row["thread_id"] == "T1"
+    assert thread_row["comment_id"] == "11"
+    assert thread_row["path"] == "sale/x.py"
+    review_row = next(r for r in rows if r["kind"] == "review")
+    assert review_row["comment_id"] == "R1"
+    assert review_row["state"] == "APPROVED"
+
+
+def test_derive_comments_my_pending_review():
+    # A PENDING review by the viewer -> my_pending True.
+    node = _node_with_comments(reviews=[
+        {"id": "R1", "author": {"login": "me"}, "state": "PENDING",
+         "submittedAt": None, "body": "draft note", "url": None},
+    ])
+    _, my_pending = derive.derive_comments(node, "me")
+    assert my_pending is True
+
+
+def test_derive_comments_pending_by_other_is_not_mine():
+    node = _node_with_comments(reviews=[
+        {"id": "R1", "author": {"login": "someone"}, "state": "PENDING",
+         "submittedAt": None, "body": "", "url": None},
+    ])
+    _, my_pending = derive.derive_comments(node, "me")
+    assert my_pending is False
+
+
+def test_derive_comments_skips_missing_ids():
+    node = _node_with_comments(
+        threads=[{"id": "T1", "isResolved": True, "comments": {"nodes": [
+            {"author": {"login": "a"}, "createdAt": "t", "body": "b",
+             "path": None, "databaseId": None, "url": None},
+        ]}}],
+        issue_comments=[{"author": {"login": "a"}, "createdAt": "t", "body": "b",
+                         "databaseId": None, "url": None}],
+    )
+    rows, _ = derive.derive_comments(node, "me")
+    assert rows == []

@@ -428,13 +428,16 @@ def _run_refresh(conn, cfg, *, force: bool) -> None:
             if not needs_refresh:
                 continue
 
-            pr_row, modules, reviewers, threads = _node_to_rows(node, cfg.github_login)
+            pr_row, modules, reviewers, threads, comments = _node_to_rows(
+                node, cfg.github_login,
+            )
 
             with db.transaction(conn):
                 db.upsert_pr(conn, pr_row)
                 db.replace_modules(conn, pr_id, modules)
                 db.replace_reviewers(conn, pr_id, reviewers)
                 db.replace_threads(conn, pr_id, threads)
+                db.replace_comments(conn, pr_id, comments)
 
             # Patch fetch (if head_sha not cached)
             existing_diff = db.get_diff(conn, head_sha)
@@ -659,7 +662,9 @@ def _node_id(node: dict) -> str:
     return f"{node['repository']['nameWithOwner']}#{node['number']}"
 
 
-def _node_to_rows(node: dict, my_login: str) -> tuple[dict, list[str], list[dict], list[dict]]:
+def _node_to_rows(
+    node: dict, my_login: str,
+) -> tuple[dict, list[str], list[dict], list[dict], list[dict]]:
     repo = node["repository"]["nameWithOwner"]
     paths = [f["path"] for f in (node.get("files") or {}).get("nodes", [])]
     # files() pagination beyond 100 is rare; fetch_remaining_files if needed
@@ -682,6 +687,7 @@ def _node_to_rows(node: dict, my_login: str) -> tuple[dict, list[str], list[dict
 
     thread_nodes = (node.get("reviewThreads") or {}).get("nodes") or []
     th = derive.derive_threads(thread_nodes, my_login)
+    comments, my_pending_review = derive.derive_comments(node, my_login)
 
     latest_reviews = (node.get("latestReviews") or {}).get("nodes") or []
     review_requests = (node.get("reviewRequests") or {}).get("nodes") or []
@@ -724,9 +730,10 @@ def _node_to_rows(node: dict, my_login: str) -> tuple[dict, list[str], list[dict
         "body": node.get("body"),
         "archived_at": None,
         "state": node.get("state") or "OPEN",
+        "my_pending_review": int(my_pending_review),
         "fetched_at": derive.now_utc(),
     }
-    return pr_row, modules, reviewers, th.threads
+    return pr_row, modules, reviewers, th.threads, comments
 
 
 if __name__ == "__main__":

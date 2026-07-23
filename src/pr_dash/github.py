@@ -39,12 +39,18 @@ query($q: String!, $cursor: String) {
         latestReviews(first: 30) {
           nodes { author { login } state commit { oid } }
         }
+        reviews(first: 30) {
+          nodes { id author { login } state submittedAt body url }
+        }
+        comments(first: 30) {
+          nodes { author { login } createdAt body databaseId url }
+        }
         reviewThreads(first: 30) {
           nodes {
             id
             isResolved
             comments(first: 30) {
-              nodes { author { login } createdAt }
+              nodes { author { login } createdAt body path databaseId url }
             }
           }
         }

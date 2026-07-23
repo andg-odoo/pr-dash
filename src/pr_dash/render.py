@@ -38,12 +38,20 @@ def _json_for_script(payload: object) -> str:
     )
 
 
+def _latest_thread_comment(comments: list[dict], thread_id: str) -> dict | None:
+    cs = [c for c in comments if c["kind"] == "thread" and c["thread_id"] == thread_id]
+    if not cs:
+        return None
+    return max(cs, key=lambda c: c.get("created_at") or "")
+
+
 def _build_pr_record(
     conn: sqlite3.Connection,
     pr: dict,
     modules: list[str],
     reviewers: list[dict],
     threads: list[dict],
+    comments: list[dict],
     my_login: str,
     stale_review_days: int,
 ) -> dict:
@@ -100,6 +108,19 @@ def _build_pr_record(
         flags.append("CFL")
     if is_stale:
         flags.append("OLD")
+    if pr.get("my_pending_review"):
+        flags.append("PEND!")
+
+    # One-line preview of each unresolved thread's latest comment, so the detail
+    # pane can surface discussion without baking full bodies into the payload.
+    for t in threads:
+        if t.get("is_resolved"):
+            continue
+        latest = _latest_thread_comment(comments, t["thread_id"])
+        if latest:
+            t["snippet"] = derive.comment_snippet(latest.get("body"))
+            t["snippet_author"] = latest.get("author")
+            t["url"] = latest.get("url")
 
     return {
         "id": pr["id"],
@@ -132,6 +153,7 @@ def _build_pr_record(
         "req_age_days": req_age_days,
         "previously_reviewed": bool(pr["previously_reviewed"]),
         "awaiting_my_reply": bool(pr["awaiting_my_reply"]),
+        "my_pending_review": bool(pr.get("my_pending_review")),
         "unresolved_threads": pr["unresolved_threads"],
         "flags": flags,
         "bucket": complexity["bucket"] if complexity else "M",
@@ -213,6 +235,7 @@ def _make_item(members: list[dict], my_login: str,
     # A pair counts as draft if either half is - neither is ready to review.
     is_draft = any(m["is_draft"] for m in members)
     awaiting_my_reply = any(m["awaiting_my_reply"] for m in members)
+    my_pending_review = any(m["my_pending_review"] for m in members)
     previously_reviewed = any(m["previously_reviewed"] for m in members)
     unresolved_threads = sum(m["unresolved_threads"] for m in members)
     age_days = max(m["age_days"] for m in members)
@@ -349,6 +372,7 @@ def _make_item(members: list[dict], my_login: str,
         "req_age_days": req_age_days,
         "previously_reviewed": previously_reviewed,
         "awaiting_my_reply": awaiting_my_reply,
+        "my_pending_review": my_pending_review,
         "unresolved_threads": unresolved_threads,
         "since_last_look": sorted({t for m in members for t in m.get("since_last_look", [])}),
         "flags": flags,
@@ -383,6 +407,7 @@ def build_payload(
     modules_by_pr = db.list_modules(conn)
     reviewers_by_pr = db.list_reviewers(conn)
     threads_by_pr = db.list_threads(conn)
+    comments_by_pr = db.list_comments(conn)
 
     pr_dicts = [dict(r) for r in pr_rows]
     pairs = derive.detect_pairs(pr_dicts)
@@ -412,6 +437,7 @@ def build_payload(
             modules_by_pr.get(pr["id"], []),
             reviewers_by_pr.get(pr["id"], []),
             threads_by_pr.get(pr["id"], []),
+            comments_by_pr.get(pr["id"], []),
             my_login, stale_review_days,
         )
         records[pr["id"]]["since_last_look"] = delta_map.get(pr["id"], [])
@@ -451,7 +477,8 @@ def commit_seen_baseline(
 
 
 def render(payload: list[dict], html_path: Path, *, offline: bool = False,
-           last_refresh: str | None = None) -> None:
+           last_refresh: str | None = None, hidden_map: dict | None = None,
+           hidden_sync_port: int = 7391) -> None:
     env = _env()
     template = env.get_template("index.html.j2")
     assets_dir = TEMPLATES_DIR / "assets"

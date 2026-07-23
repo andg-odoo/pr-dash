@@ -65,7 +65,9 @@ def list_prs(status: str = "pending", include_hidden: bool = False) -> dict:
     Returns {cache_fetched_at, count, prs}.
 
     Flags: RE=re-review requested, MSG=awaiting my reply, CI!=failing CI,
-    CFL=merge conflict, OLD=stale request. Buckets S/M/L/XL = rough complexity.
+    CFL=merge conflict, OLD=stale request, PEND!=you have an unsent (PENDING)
+    review draft on this PR. Buckets S/M/L/XL = rough complexity. Rows also carry
+    a my_pending_review bool; use get_comments to read the draft.
     """
     cfg = _get_cfg()
     items = query.load_items(cfg)
@@ -105,9 +107,28 @@ def get_pr(ref: str) -> dict:
 
     Flags: RE=re-review requested, MSG=awaiting my reply, CI!=failing CI,
     CFL=merge conflict, OLD=stale request. Buckets S/M/L/XL = rough complexity.
+    my_pending_review is true when you have an unsent review draft (get_comments
+    shows its body). Output stays slim - no comment bodies here.
     """
     items = query.load_items(_get_cfg())
     return query.detail(query.resolve_item(items, ref))
+
+
+@mcp.tool()
+def get_comments(ref: str) -> dict:
+    """Full comment/review/thread data for one PR (both halves of a pair).
+
+    Per member: threads (grouped, each with is_resolved, path and its ordered
+    comments incl. full bodies), reviews (submissions with author, state,
+    submitted_at, body - PENDING entries are unsent drafts flagged pending: true,
+    visible only to their own author), and conversation (top-level PR comments).
+    Bot authors (robodoo, fw-bot, *[bot]) carry bot: true so you can filter them.
+
+    ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
+    """
+    cfg = _get_cfg()
+    item = query.resolve_item(query.load_items(cfg), ref)
+    return query.get_comments(cfg, item)
 
 
 @mcp.tool()
