@@ -12,11 +12,28 @@ import click
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from pr_dash import ai, config, db, derive, github, render
+from pr_dash import ai, config, db, derive, github, hidden, render
 from pr_dash import query as prquery
 
 console = Console()
 log = logging.getLogger("pr_dash")
+
+
+def _render_from_cache(conn, cfg, *, offline=False, last_refresh=None):
+    """Build the payload from cache and write the dashboard HTML, baking in the
+    pruned server-side hidden map. Returns (payload, seen_updates); the caller
+    decides whether to advance the since-last-look baseline."""
+    payload, seen_updates = render.build_payload(
+        conn, cfg.github_login, cfg.repos, cfg.thresholds.stale_review_days,
+        command_templates=dataclasses.asdict(cfg.commands),
+    )
+    for p in payload:
+        p["my_login"] = cfg.github_login
+    hidden_map = hidden.prune(hidden.load(cfg), payload)
+    hidden.save(cfg, hidden_map)
+    render.render(payload, cfg.html_path, offline=offline, last_refresh=last_refresh,
+                  hidden_map=hidden_map, hidden_sync_port=cfg.hidden_sync_port)
+    return payload, seen_updates
 
 
 def _load_config_or_exit(config_path):
@@ -210,14 +227,9 @@ def refresh(no_open, force, offline, config_path):
             console.print("[yellow]Falling back to cached data.[/yellow]")
             offline = True
 
-    payload, seen_updates = render.build_payload(
-        conn, cfg.github_login, cfg.repos, cfg.thresholds.stale_review_days,
-        command_templates=dataclasses.asdict(cfg.commands),
+    payload, seen_updates = _render_from_cache(
+        conn, cfg, offline=offline, last_refresh=last_refresh,
     )
-    for p in payload:
-        p["my_login"] = cfg.github_login
-
-    render.render(payload, cfg.html_path, offline=offline, last_refresh=last_refresh)
     # Only now that the render succeeded do we advance the "last look" baseline,
     # so a render failure can't silently swallow the since-last-look deltas.
     render.commit_seen_baseline(conn, seen_updates, derive.now_utc())
@@ -241,14 +253,7 @@ def rerender(no_open, config_path):
     cfg = _load_config_or_exit(config_path)
     conn = db.connect(cfg.db_path)
 
-    payload, _ = render.build_payload(
-        conn, cfg.github_login, cfg.repos, cfg.thresholds.stale_review_days,
-        command_templates=dataclasses.asdict(cfg.commands),
-    )
-    for p in payload:
-        p["my_login"] = cfg.github_login
-
-    render.render(payload, cfg.html_path, offline=False)
+    payload, _ = _render_from_cache(conn, cfg, offline=False)
     console.print(f"[green]Re-rendered {len(payload)} PRs → {cfg.html_path}[/green]")
 
     if not no_open:

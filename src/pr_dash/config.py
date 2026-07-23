@@ -90,6 +90,9 @@ class Config:
     ai: AIConfig = field(default_factory=AIConfig)
     commands: Commands = field(default_factory=Commands)
     cache_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "pr-dash")
+    # Port the `pr-dash mcp` server binds on 127.0.0.1 for the dashboard's
+    # write-through hidden-state sync. First MCP instance to bind wins.
+    hidden_sync_port: int = 7391
 
     @property
     def db_path(self) -> Path:
@@ -132,6 +135,7 @@ def load(path: Path | None = None) -> Config:
 
     paths_raw = raw.get("paths") or {}
     cache_dir = Path(os.path.expanduser(paths_raw.get("cache_dir", "~/.cache/pr-dash")))
+    hidden_sync_port = int(paths_raw.get("hidden_sync_port", 7391))
 
     return Config(
         github_login=login,
@@ -141,6 +145,7 @@ def load(path: Path | None = None) -> Config:
         ai=ai,
         commands=commands,
         cache_dir=cache_dir,
+        hidden_sync_port=hidden_sync_port,
     )
 
 
@@ -256,4 +261,8 @@ cleanup = "ocleanup {{db}} y"
 
 [paths]
 cache_dir = "~/.cache/pr-dash"
+# Port the `pr-dash mcp` server binds on 127.0.0.1 so the dashboard page can
+# write hidden-PR changes back to disk. The first running MCP instance wins the
+# bind; the rest run without the listener.
+hidden_sync_port = 7391
 '''

@@ -75,6 +75,8 @@
   <script>
     window.PR_DATA = {{ prs_json|safe }};
     window.MY_LOGIN = window.PR_DATA[0]?.my_login || null;
+    window.HIDDEN_SERVER = {{ hidden_server_json|safe }};
+    window.HIDDEN_SYNC_PORT = {{ hidden_sync_port }};
   </script>
   <script>{{ diff2html_js|safe }}</script>
   <script>{{ markdown_it_js|safe }}</script>

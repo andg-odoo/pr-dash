@@ -29,6 +29,9 @@
   const STATE_KEY = "pr-dash:filters:v1";
   const SORT_KEY = "pr-dash:sort:v1";
   const HIDDEN_KEY = "pr-dash:hidden:v1";
+  const HIDDEN_QUEUE_KEY = "pr-dash:hidden-queue:v1";
+  const HIDDEN_SERVER = window.HIDDEN_SERVER || {};
+  const HIDDEN_SYNC_PORT = window.HIDDEN_SYNC_PORT || null;
 
   const FLAGS = ["RE", "MSG", "CI!", "CFL", "OLD"];
   const BUCKETS = ["S", "M", "L", "XL"];
@@ -53,7 +56,44 @@
     try { return JSON.parse(raw); } catch { return {}; }
   }
   function saveHidden(h) { localStorage.setItem(HIDDEN_KEY, JSON.stringify(h)); }
-  let hidden = loadHidden();
+
+  // Unsynced hide/unhide ops, flushed to the MCP listener when it's reachable.
+  function loadQueue() {
+    const raw = localStorage.getItem(HIDDEN_QUEUE_KEY);
+    if (!raw) return [];
+    try { const q = JSON.parse(raw); return Array.isArray(q) ? q : []; } catch { return []; }
+  }
+  function saveQueue(q) { localStorage.setItem(HIDDEN_QUEUE_KEY, JSON.stringify(q)); }
+  function enqueueOp(op) { const q = loadQueue(); q.push(op); saveQueue(q); }
+  function flushQueue() {
+    const q = loadQueue();
+    if (!q.length || !HIDDEN_SYNC_PORT) return;
+    fetch(`http://127.0.0.1:${HIDDEN_SYNC_PORT}/hidden`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ops: q }),
+    }).then(r => { if (r.ok) saveQueue([]); }).catch(() => {});
+  }
+
+  // Reconcile the three hidden sources at load. The server map is authoritative
+  // (a server-side unhide must beat a stale local entry), and queued ops are
+  // newer than the bake so they replay on top. Legacy hides made before the
+  // queue existed are local-only and never synced, so migrate each into the
+  // queue exactly once - skipping ids already in the server map or already
+  // referenced by a queued op.
+  const localHidden = loadHidden();
+  const queuedIds = new Set(loadQueue().map(op => op.pr_id));
+  for (const id of Object.keys(localHidden)) {
+    if (HIDDEN_SERVER[id] || queuedIds.has(id)) continue;
+    enqueueOp({ op: "hide", pr_id: id,
+                head_sha: localHidden[id].head_sha, hidden_at: localHidden[id].hidden_at });
+  }
+  let hidden = { ...HIDDEN_SERVER };
+  for (const op of loadQueue()) {
+    if (op.op === "hide") hidden[op.pr_id] = { head_sha: op.head_sha, hidden_at: op.hidden_at };
+    else delete hidden[op.pr_id];
+  }
+  saveHidden(hidden);
 
   function isHidden(pr) {
     const h = hidden[pr.id];
@@ -70,11 +110,16 @@
 
   function setHidden(pr, on) {
     if (on) {
-      hidden[pr.id] = { head_sha: pr.head_sha, hidden_at: new Date().toISOString() };
+      const entry = { head_sha: pr.head_sha, hidden_at: new Date().toISOString() };
+      hidden[pr.id] = entry;
+      saveHidden(hidden);
+      enqueueOp({ op: "hide", pr_id: pr.id, head_sha: pr.head_sha, hidden_at: entry.hidden_at });
     } else {
       delete hidden[pr.id];
+      saveHidden(hidden);
+      enqueueOp({ op: "unhide", pr_id: pr.id, head_sha: null, hidden_at: null });
     }
-    saveHidden(hidden);
+    flushQueue();
   }
 
   let filters = loadJSON(STATE_KEY) || {
@@ -947,6 +992,7 @@
 
   setupFilters();
   updateKpi();
+  flushQueue();
   if (kpiEl) kpiEl.addEventListener("click", renderStats);
   if (lookCountEl) lookCountEl.addEventListener("click", () => toggleChip("state", "updated"));
   renderList();
