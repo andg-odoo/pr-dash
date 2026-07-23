@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from pr_dash import ai, config, db, derive, github, render
+from pr_dash import query as prquery
 
 console = Console()
 log = logging.getLogger("pr_dash")
@@ -252,6 +253,119 @@ def rerender(no_open, config_path):
 
     if not no_open:
         _open_html(cfg.html_path)
+
+
+@cli.command()
+@click.option("--config", "config_path", type=click.Path(path_type=Path),
+              help="Override config file path")
+def mcp(config_path):
+    """Run the MCP server (stdio) for AI-agent access to the local cache.
+
+    Read-only over the cache (the `refresh` tool being the exception, same as
+    running `pr-dash refresh`). Spawned per-session by the MCP client over
+    stdio; there is no daemon. Register with e.g.
+    `claude mcp add pr-dash -- pr-dash mcp`.
+    """
+    try:
+        from pr_dash import mcp_server
+    except ImportError:
+        print(
+            "The MCP server needs the optional 'mcp' dependency: "
+            "pip install 'pr-dash[mcp]'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if config_path is not None:
+        mcp_server.set_config_path(config_path)
+    mcp_server.main()
+
+
+@cli.group()
+def query():
+    """Emit dashboard data as JSON (for agents and debugging)."""
+
+
+def _emit(obj) -> None:
+    click.echo(json.dumps(obj, indent=2))
+
+
+def _resolve_or_exit(items, ref):
+    try:
+        return prquery.resolve_item(items, ref)
+    except ValueError as e:
+        click.echo(str(e), err=True)
+        sys.exit(1)
+
+
+@query.command("list")
+@click.option("--status", type=click.Choice(["pending", "archived", "all"]),
+              default="pending")
+@click.option("--config", "config_path", type=click.Path(path_type=Path))
+def query_list(status, config_path):
+    """List PRs as compact triage rows."""
+    cfg = _load_config_or_exit(config_path)
+    items = prquery.load_items(cfg)
+    if status == "pending":
+        sel = [it for it in items if not it.get("is_archived")]
+    elif status == "archived":
+        sel = [it for it in items if it.get("is_archived")]
+    else:
+        sel = items
+    _emit({
+        "cache_fetched_at": prquery.cache_fetched_at(cfg),
+        "count": len(sel),
+        "prs": [prquery.summarize(it) for it in sel],
+    })
+
+
+@query.command("show")
+@click.argument("ref")
+@click.option("--config", "config_path", type=click.Path(path_type=Path))
+def query_show(ref, config_path):
+    """Full detail for one PR (no diff text)."""
+    cfg = _load_config_or_exit(config_path)
+    items = prquery.load_items(cfg)
+    _emit(prquery.detail(_resolve_or_exit(items, ref)))
+
+
+@query.command("diff")
+@click.argument("ref")
+@click.option("--file", "files", multiple=True, help="Restrict to these paths (repeatable).")
+@click.option("--changed-only", is_flag=True, help="Only files changed since my last review.")
+@click.option("--max-chars", type=int, default=60000)
+@click.option("--config", "config_path", type=click.Path(path_type=Path))
+def query_diff(ref, files, changed_only, max_chars, config_path):
+    """Per-member diff text for one PR."""
+    cfg = _load_config_or_exit(config_path)
+    items = prquery.load_items(cfg)
+    item = _resolve_or_exit(items, ref)
+    _emit(prquery.get_diff_text(
+        item, files=list(files) or None,
+        changed_since_review_only=changed_only, max_chars=max_chars,
+    ))
+
+
+@query.command("history")
+@click.option("--author")
+@click.option("--module")
+@click.option("--verdict")
+@click.option("--limit", type=int, default=50)
+@click.option("--config", "config_path", type=click.Path(path_type=Path))
+def query_history(author, module, verdict, limit, config_path):
+    """Archived review history as triage rows."""
+    cfg = _load_config_or_exit(config_path)
+    items = prquery.load_items(cfg)
+    _emit(prquery.review_history(items, author=author, module=module,
+                                 verdict=verdict, limit=limit))
+
+
+@query.command("stats")
+@click.option("--config", "config_path", type=click.Path(path_type=Path))
+def query_stats(config_path):
+    """Pending / archived counts."""
+    cfg = _load_config_or_exit(config_path)
+    items = prquery.load_items(cfg)
+    _emit(prquery.stats(items))
 
 
 def _open_html(html_path: Path) -> None:

@@ -36,6 +36,9 @@ Issues = "https://github.com/andg-odoo/pr-dash/issues"
 dev = [
     "pytest>=8.0",
 ]
+mcp = [
+    "mcp>=1.2",
+]
 
 [project.scripts]
 pr-dash = "pr_dash.cli:cli"

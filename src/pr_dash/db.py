@@ -445,6 +445,13 @@ def sweep(conn: sqlite3.Connection, keep_ids: set[str], now: str,
     return archived, cur_d.rowcount
 
 
+def max_fetched_at(conn: sqlite3.Connection) -> str | None:
+    """Newest `fetched_at` across all cached PRs - a proxy for cache freshness.
+    None when the cache is empty."""
+    row = conn.execute("SELECT MAX(fetched_at) AS m FROM pr").fetchone()
+    return row["m"] if row else None
+
+
 def list_prs(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM pr ORDER BY review_requested_at DESC").fetchall()
 

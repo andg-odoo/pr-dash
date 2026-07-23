@@ -174,12 +174,46 @@ pr-dash --offline        render from cache only (no network)
 pr-dash backfill         one-time import of historical reviews (KPI history)
 pr-dash backfill --since 2025-01-01   limit backfill to a recent window
 pr-dash init             write a default config
+pr-dash mcp              run the MCP server (stdio) for agent access
+pr-dash query ...        emit cache data as JSON (list/show/diff/history/stats)
 pr-dash -v ...           verbose logging
 pr-dash --config PATH    use an alternate config file
 ```
 
 Re-running is the refresh mechanism - there's no daemon. The cache lives in
 `~/.cache/pr-dash/` (`pr_dash.db` + `index.html`).
+
+## MCP server / agent access
+
+pr-dash can expose its local cache to an AI agent over the [Model Context
+Protocol](https://modelcontextprotocol.io). Install the optional extra and
+register the stdio server:
+
+```bash
+pipx install '.[mcp]'          # or: pip install 'pr-dash[mcp]'
+claude mcp add pr-dash -- pr-dash mcp          # add --scope user for all projects
+```
+
+The client spawns `pr-dash mcp` per session over stdio - there's no daemon. It's
+**read-only** over the same cache the dashboard renders (the `refresh` tool is
+the one exception, and does exactly what `pr-dash refresh` does). Each call
+rebuilds the view from the cache, so a parallel `pr-dash refresh` is picked up
+immediately. Point it at an alternate config with `pr-dash mcp --config PATH` or
+the `PR_DASH_CONFIG` env var.
+
+Tools:
+
+- `list_prs(status)` - compact triage rows; `status` is `pending` / `archived` / `all`.
+- `get_pr(ref)` - full detail for one PR (body, threads, reviewers, CI, per-file diff metadata, commands).
+- `get_diff(ref, files, changed_since_review_only, max_chars)` - diff text, whole files only, under a char budget.
+- `get_ai_review(ref)` - the cached AI first-pass sanity check, if any.
+- `review_history(author, module, verdict, limit)` - your archived reviews as triage rows.
+- `stats()` - pending-queue and archived-history counts.
+- `refresh(force)` - re-fetch from GitHub (slow; network + AI), same as `pr-dash refresh`.
+
+`ref` accepts `12345`, `odoo#12345`, `odoo/odoo#12345`, or a PR URL; an
+enterprise number resolves to its odoo+enterprise pair. The same queries are
+available as JSON from the shell for debugging: `pr-dash query list|show|diff|history|stats`.
 
 ## Notes
 
