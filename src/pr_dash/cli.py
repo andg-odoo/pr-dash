@@ -494,6 +494,11 @@ def _run_refresh(conn, cfg, *, force: bool) -> None:
                 "computed_at": derive.now_utc(),
             })
 
+        # Prime open pair-siblings I already reviewed (so no longer in the
+        # review-requested search): their threads/reviews/comments are fetched
+        # nowhere else. Adds them to kept_ids so the sweep leaves them be.
+        _prime_reviewed_siblings(conn, cfg, kept_ids, force=force)
+
         # Before sweeping, rescue delete-candidates whose cached
         # previously_reviewed=0 is stale: a PR I just approved/changes-requested
         # drops out of `review-requested:` immediately, so its last fetch
@@ -563,20 +568,19 @@ def _reconcile_reviewed(conn, kept_ids: set[str], login: str) -> bool:
 
 
 def _reconcile_sibling_states(conn, kept_ids: set[str]) -> None:
-    """Refresh the GitHub state of archived pair-siblings of active PRs.
+    """Refresh the GitHub state of archived rows still recorded OPEN.
 
-    Only mixed pairs render an archived member, so only those need a live
-    state - a handful of PRs at most, one batched request. Best-effort: on a
-    GitHub failure the cached state stays, which the UI renders as still open.
+    The sweep archives whatever fell out of the search without asking GitHub
+    why, so a closed-without-my-review PR would otherwise stay OPEN in the
+    history forever. The set self-shrinks: once a row flips to CLOSED/MERGED it
+    leaves the filter for good, so steady-state is a handful of ids in one
+    batched request. Best-effort: on a GitHub failure the cached state stays,
+    which the UI renders as still open.
     """
     prs = [dict(r) for r in db.list_prs(conn)]
-    pairs = derive.detect_pairs(prs)
-    by_id = {p["id"]: p for p in prs}
     stale = [
-        by_id[sib_id]
-        for pr_id, sib_id in pairs.items()
-        if pr_id in kept_ids and sib_id not in kept_ids
-        and by_id[sib_id]["archived_at"] and by_id[sib_id]["state"] == "OPEN"
+        p for p in prs
+        if p["id"] not in kept_ids and p["archived_at"] and p["state"] == "OPEN"
     ]
     if not stale:
         return
@@ -584,14 +588,94 @@ def _reconcile_sibling_states(conn, kept_ids: set[str]) -> None:
     try:
         states = github.fetch_pr_states(refs)
     except github.GithubError as e:
-        log.warning("pair-sibling state check failed (%s); keeping cached states", e)
+        log.warning("archived state check failed (%s); keeping cached states", e)
         return
     changed = {pr_id: s for pr_id, s in states.items() if s != "OPEN"}
     if changed:
         with db.transaction(conn):
             for pr_id, state in changed.items():
                 db.set_pr_state(conn, pr_id, state)
-        log.debug("marked %d archived pair-siblings closed", len(changed))
+        log.debug("marked %d archived PRs closed", len(changed))
+
+
+def _reviewed_open_siblings(cached: list[dict], active_ids: set[str]) -> list[dict]:
+    """Cached rows that are open (GitHub state) and the pair-sibling of a PR in
+    this run's active set, yet absent from it themselves - the halves I already
+    reviewed, which the review-requested search no longer returns. No other
+    refresh path fetches their threads/reviews/comments. Local archived_at is
+    deliberately ignored: the sweep archives a reviewed half on the very next
+    refresh, so requiring non-archived would exclude nearly every real case."""
+    pairs = derive.detect_pairs(cached)
+    out = []
+    for row in cached:
+        pid = row["id"]
+        sib = pairs.get(pid)
+        if (sib in active_ids and pid not in active_ids
+                and row.get("state") == "OPEN"):
+            out.append(row)
+    return out
+
+
+def _sibling_needs_refresh(cached_row, node: dict, has_comments: bool, *,
+                           force: bool) -> bool:
+    """Whether a primed sibling's node must be re-persisted: on force, when never
+    cached, when it has no comment rows yet (so pre-feature rows are primed once),
+    or when its head/updated_at moved."""
+    if force or cached_row is None or not has_comments:
+        return True
+    return (cached_row["head_sha"] != node["headRefOid"]
+            or cached_row["updated_at"] != node["updatedAt"])
+
+
+def _prime_reviewed_siblings(conn, cfg, kept_ids: set[str], *, force: bool) -> None:
+    cached = [dict(r) for r in db.list_prs(conn)]
+    targets = _reviewed_open_siblings(cached, kept_ids)
+    if not targets:
+        return
+    by_id = {r["id"]: r for r in cached}
+    refs = [(r["repo"], r["number"], r["id"]) for r in targets]
+    try:
+        nodes = github.fetch_pr_nodes(refs)
+    except github.GithubError as e:
+        log.warning("sibling comment priming failed (%s); keeping cached data", e)
+        return
+
+    primed = 0
+    for node in nodes:
+        pr_id = _node_id(node)
+        cached_row = by_id.get(pr_id)
+        # Kept regardless of whether we re-persist, so the sweep never archives a
+        # reviewed-open sibling out of an active pair.
+        kept_ids.add(pr_id)
+        if not _sibling_needs_refresh(
+            cached_row, node, db.has_comments(conn, pr_id), force=force,
+        ):
+            continue
+
+        pr_row, modules, reviewers, threads, comments = _node_to_rows(
+            node, cfg.github_login,
+        )
+        # This half left the request queue because I already reviewed it; its
+        # timeline (last:30) may no longer carry that review. Keep the cached
+        # previously_reviewed so the sweep never mistakes it for an un-reviewed,
+        # deletable row.
+        if cached_row:
+            pr_row["previously_reviewed"] = (
+                cached_row["previously_reviewed"] or pr_row["previously_reviewed"]
+            )
+            # An already-archived half stays archived - priming refreshes its
+            # discussion, it must not resurrect the row into the pending queue.
+            pr_row["archived_at"] = cached_row["archived_at"]
+        with db.transaction(conn):
+            db.upsert_pr(conn, pr_row)
+            db.replace_modules(conn, pr_id, modules)
+            db.replace_reviewers(conn, pr_id, reviewers)
+            db.replace_threads(conn, pr_id, threads)
+            db.replace_comments(conn, pr_id, comments)
+        primed += 1
+
+    if primed:
+        log.debug("primed %d reviewed-open pair-siblings", primed)
 
 
 def _build_review_queue(

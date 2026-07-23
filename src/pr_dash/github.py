@@ -4,99 +4,106 @@ import json
 import subprocess
 from dataclasses import dataclass
 
+# The full PR field selection, as a named GraphQL fragment so the review-request
+# search and the by-number sibling fetch (fetch_pr_nodes) share one definition
+# and can never drift out of sync.
+PR_NODE_FRAGMENT = """
+fragment PRFields on PullRequest {
+  url
+  number
+  title
+  state
+  isDraft
+  createdAt
+  updatedAt
+  mergeable
+  additions
+  deletions
+  changedFiles
+  body
+  baseRefName
+  headRefName
+  headRefOid
+  author { login }
+  repository { nameWithOwner }
+  reviewRequests(first: 30) {
+    nodes {
+      requestedReviewer {
+        __typename
+        ... on User { login }
+        ... on Team { slug }
+      }
+    }
+  }
+  latestReviews(first: 30) {
+    nodes { author { login } state commit { oid } }
+  }
+  reviews(first: 30) {
+    nodes { id author { login } state submittedAt body url }
+  }
+  comments(first: 30) {
+    nodes { author { login } createdAt body databaseId url }
+  }
+  reviewThreads(first: 30) {
+    nodes {
+      id
+      isResolved
+      comments(first: 30) {
+        nodes { author { login } createdAt body path databaseId url }
+      }
+    }
+  }
+  commits(last: 1) {
+    nodes {
+      commit {
+        statusCheckRollup {
+          state
+          contexts(first: 50) {
+            nodes {
+              __typename
+              ... on StatusContext { context state targetUrl }
+              ... on CheckRun { name conclusion detailsUrl }
+            }
+          }
+        }
+      }
+    }
+  }
+  timelineItems(last: 30, itemTypes: [REVIEW_REQUESTED_EVENT, PULL_REQUEST_REVIEW]) {
+    nodes {
+      __typename
+      ... on ReviewRequestedEvent {
+        createdAt
+        requestedReviewer {
+          __typename
+          ... on User { login }
+          ... on Team { slug }
+        }
+      }
+      ... on PullRequestReview {
+        author { login }
+        submittedAt
+      }
+    }
+  }
+  files(first: 100) {
+    pageInfo { hasNextPage endCursor }
+    nodes { path }
+  }
+}
+"""
+
 SEARCH_QUERY = """
 query($q: String!, $cursor: String) {
   search(query: $q, type: ISSUE, first: 20, after: $cursor) {
     pageInfo { hasNextPage endCursor }
     nodes {
-      ... on PullRequest {
-        url
-        number
-        title
-        state
-        isDraft
-        createdAt
-        updatedAt
-        mergeable
-        additions
-        deletions
-        changedFiles
-        body
-        baseRefName
-        headRefName
-        headRefOid
-        author { login }
-        repository { nameWithOwner }
-        reviewRequests(first: 30) {
-          nodes {
-            requestedReviewer {
-              __typename
-              ... on User { login }
-              ... on Team { slug }
-            }
-          }
-        }
-        latestReviews(first: 30) {
-          nodes { author { login } state commit { oid } }
-        }
-        reviews(first: 30) {
-          nodes { id author { login } state submittedAt body url }
-        }
-        comments(first: 30) {
-          nodes { author { login } createdAt body databaseId url }
-        }
-        reviewThreads(first: 30) {
-          nodes {
-            id
-            isResolved
-            comments(first: 30) {
-              nodes { author { login } createdAt body path databaseId url }
-            }
-          }
-        }
-        commits(last: 1) {
-          nodes {
-            commit {
-              statusCheckRollup {
-                state
-                contexts(first: 50) {
-                  nodes {
-                    __typename
-                    ... on StatusContext { context state targetUrl }
-                    ... on CheckRun { name conclusion detailsUrl }
-                  }
-                }
-              }
-            }
-          }
-        }
-        timelineItems(last: 30, itemTypes: [REVIEW_REQUESTED_EVENT, PULL_REQUEST_REVIEW]) {
-          nodes {
-            __typename
-            ... on ReviewRequestedEvent {
-              createdAt
-              requestedReviewer {
-                __typename
-                ... on User { login }
-                ... on Team { slug }
-              }
-            }
-            ... on PullRequestReview {
-              author { login }
-              submittedAt
-            }
-          }
-        }
-        files(first: 100) {
-          pageInfo { hasNextPage endCursor }
-          nodes { path }
-        }
-      }
+      ...PRFields
     }
   }
   rateLimit { remaining cost resetAt }
 }
-"""
+""" + PR_NODE_FRAGMENT
 
 REVIEWED_BY_QUERY = """
 query($q: String!, $cursor: String) {
@@ -303,6 +310,36 @@ def fetch_pr_states(
             if pr.get("state"):
                 states[pr_id] = pr["state"]
     return states
+
+
+def fetch_pr_nodes(
+    refs: list[tuple[str, int, str]], *, chunk_size: int = 10,
+) -> list[dict]:
+    """Fetch full PR nodes by (repo, number, pr_id), shaped exactly like the
+    review-request search nodes (same PRFields fragment), so they can flow
+    through the normal _node_to_rows path.
+
+    Used to prime open pair-siblings the user already reviewed: those left the
+    review-requested search, so their threads/reviews/comments would otherwise
+    never be cached. Batched via GraphQL field aliases (typically 0-3 at a time).
+    """
+    nodes: list[dict] = []
+    for start in range(0, len(refs), chunk_size):
+        chunk = refs[start:start + chunk_size]
+        parts = []
+        for i, (repo, number, _) in enumerate(chunk):
+            owner, name = repo.split("/", 1)
+            parts.append(
+                f'p{i}: repository(owner: "{owner}", name: "{name}") {{ '
+                f'pullRequest(number: {number}) {{ ...PRFields }} }}'
+            )
+        query = "query {\n" + "\n".join(parts) + "\n}\n" + PR_NODE_FRAGMENT
+        data = _graphql(query, {})
+        for i in range(len(chunk)):
+            pr = (data.get(f"p{i}") or {}).get("pullRequest")
+            if pr:
+                nodes.append(pr)
+    return nodes
 
 
 def fetch_remaining_files(repo: str, number: int, after_cursor: str) -> list[str]:
