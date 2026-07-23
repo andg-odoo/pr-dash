@@ -210,3 +210,64 @@ def test_prime_reviewed_siblings_keeps_archived_at(tmp_path, monkeypatch):
     # Priming refreshes the discussion but must not resurrect the archived half
     # into the pending queue.
     assert row["archived_at"] == "2026-07-02T00:00:00+00:00"
+
+
+# --- _reconcile_sibling_states: ping detection & clearing ---------------------
+
+def _activity_node(state="OPEN", *, ping=True):
+    reviews = [{"author": {"login": "me"}, "submittedAt": "2026-07-01T00:00:00Z",
+                "state": "APPROVED"}]
+    comments = ([{"author": {"login": "alice"}, "createdAt": "2026-07-02T00:00:00Z",
+                  "body": "done, ready for r+"}] if ping else [])
+    return {"state": state, "comments": {"nodes": comments},
+            "reviewThreads": {"nodes": []}, "reviews": {"nodes": reviews},
+            "timelineItems": {"nodes": []}}
+
+
+def test_reconcile_sets_ping_on_archived_open(tmp_path, monkeypatch):
+    from pr_dash import db
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr(conn, "odoo/odoo#1", archived_at="2026-07-01T00:00:00Z")
+    monkeypatch.setattr(github, "fetch_archived_activity",
+                        lambda refs, **kw: {"odoo/odoo#1": _activity_node()})
+
+    cli._reconcile_sibling_states(conn, cfg, set())
+    row = db.get_cached_pr(conn, "odoo/odoo#1")
+    assert row["ping_at"] == "2026-07-02T00:00:00Z"
+    assert row["ping_author"] == "alice"
+    assert "ready" in row["ping_snippet"]
+
+
+def test_reconcile_hidden_pr_never_pinged(tmp_path, monkeypatch):
+    from pr_dash import db, hidden
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr(conn, "odoo/odoo#1", archived_at="2026-07-01T00:00:00Z", head_sha="sha1")
+    hidden.save(cfg, {"odoo/odoo#1": {"head_sha": "sha1", "hidden_at": "t"}})
+    monkeypatch.setattr(github, "fetch_archived_activity",
+                        lambda refs, **kw: {"odoo/odoo#1": _activity_node()})
+
+    cli._reconcile_sibling_states(conn, cfg, set())
+    assert db.get_cached_pr(conn, "odoo/odoo#1")["ping_at"] is None
+
+
+def test_reconcile_closed_clears_state_and_ping(tmp_path, monkeypatch):
+    from pr_dash import db
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr(conn, "odoo/odoo#1", archived_at="2026-07-01T00:00:00Z")
+    db.set_ping(conn, "odoo/odoo#1", "2026-07-02T00:00:00Z", "alice", "old ping")
+    monkeypatch.setattr(github, "fetch_archived_activity",
+                        lambda refs, **kw: {"odoo/odoo#1": _activity_node(state="MERGED")})
+
+    cli._reconcile_sibling_states(conn, cfg, set())
+    row = db.get_cached_pr(conn, "odoo/odoo#1")
+    assert row["state"] == "MERGED"
+    assert row["ping_at"] is None

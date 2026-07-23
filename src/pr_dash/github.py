@@ -283,17 +283,45 @@ def fetch_reviewed_prs(
     return reviewed
 
 
-def fetch_pr_states(
-    refs: list[tuple[str, int, str]], *, chunk_size: int = 25,
-) -> dict[str, str]:
-    """Given (repo, number, pr_id) triples, return pr_id -> current PR state
-    (OPEN / CLOSED / MERGED). Batched via GraphQL field aliases.
+_ARCHIVED_ACTIVITY_FIELDS = """
+    state
+    headRefOid
+    author { login }
+    comments(last: 10) {
+      nodes { author { login } createdAt body }
+    }
+    reviewThreads(last: 20) {
+      nodes {
+        comments(last: 5) { nodes { author { login } createdAt body } }
+      }
+    }
+    reviews(last: 20) {
+      nodes { author { login } state submittedAt }
+    }
+    timelineItems(last: 20, itemTypes: [REVIEW_REQUESTED_EVENT]) {
+      nodes {
+        ... on ReviewRequestedEvent {
+          createdAt
+          requestedReviewer { ... on User { login } }
+        }
+      }
+    }
+"""
 
-    Used to re-check archived pair-siblings of still-active PRs: they left the
-    `review-requested:` search (which only returns open PRs), so their cached
-    state goes stale the moment robodoo closes them.
+
+def fetch_archived_activity(
+    refs: list[tuple[str, int, str]], *, chunk_size: int = 25,
+) -> dict[str, dict]:
+    """Given (repo, number, pr_id) triples, return pr_id -> a node with the
+    current state plus the recent comment/review/request activity needed to
+    detect an informal re-review ping (see derive.detect_review_ping).
+
+    One batched request over the whole set (GraphQL field aliases). Used to
+    re-check archived-but-still-OPEN PRs: they left the `review-requested:`
+    search, so their state goes stale the moment robodoo closes them, and any
+    "please re-review" ping from the author is invisible to all tooling.
     """
-    states: dict[str, str] = {}
+    out: dict[str, dict] = {}
     for start in range(0, len(refs), chunk_size):
         chunk = refs[start:start + chunk_size]
         parts = []
@@ -301,15 +329,30 @@ def fetch_pr_states(
             owner, name = repo.split("/", 1)
             parts.append(
                 f'p{i}: repository(owner: "{owner}", name: "{name}") {{ '
-                f'pullRequest(number: {number}) {{ state }} }}'
+                f'pullRequest(number: {number}) {{{_ARCHIVED_ACTIVITY_FIELDS}}} }}'
             )
         query = "query {\n" + "\n".join(parts) + "\n}"
         data = _graphql(query, {})
         for i, (_, _, pr_id) in enumerate(chunk):
-            pr = (data.get(f"p{i}") or {}).get("pullRequest") or {}
-            if pr.get("state"):
-                states[pr_id] = pr["state"]
-    return states
+            pr = (data.get(f"p{i}") or {}).get("pullRequest")
+            if pr:
+                out[pr_id] = pr
+    return out
+
+
+def fetch_head_sha(repo: str, number: int) -> str | None:
+    """Live head sha of one PR. Hides store the head_sha they were made at so a
+    later push auto-unhides; an archived row's cached sha can be long stale, so
+    a hide taken from the cache would expire against the live sha immediately."""
+    owner, name = repo.split("/", 1)
+    data = _graphql(
+        'query($owner: String!, $name: String!, $number: Int!) { '
+        'repository(owner: $owner, name: $name) { '
+        'pullRequest(number: $number) { headRefOid } } }',
+        {"owner": owner, "name": name, "number": number},
+    )
+    pr = (data.get("repository") or {}).get("pullRequest") or {}
+    return pr.get("headRefOid")
 
 
 def fetch_pr_nodes(

@@ -200,3 +200,34 @@ def test_my_pending_review_column_defaults_zero(tmp_path):
     _insert(conn, "odoo/odoo#1", reviewed=0)
     row = db.get_cached_pr(conn, "odoo/odoo#1")
     assert row["my_pending_review"] == 0
+
+
+def test_set_ping_roundtrip_and_clear(tmp_path):
+    conn = _conn(tmp_path)
+    _insert(conn, "odoo/odoo#1", reviewed=1)
+    db.set_ping(conn, "odoo/odoo#1", "2026-07-02T00:00:00Z", "alice", "done, ready")
+    row = db.get_cached_pr(conn, "odoo/odoo#1")
+    assert row["ping_at"] == "2026-07-02T00:00:00Z"
+    assert row["ping_author"] == "alice"
+    assert row["ping_snippet"] == "done, ready"
+
+    db.set_ping(conn, "odoo/odoo#1", None, None, None)
+    row = db.get_cached_pr(conn, "odoo/odoo#1")
+    assert row["ping_at"] is None and row["ping_author"] is None
+
+
+def test_migration_adds_ping_columns_to_v12_db(tmp_path):
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path, isolation_level=None)
+    old_schema = db.SCHEMA_SQL
+    for line in ("  ping_at              TEXT,\n",
+                 "  ping_author          TEXT,\n",
+                 "  ping_snippet         TEXT,\n"):
+        old_schema = old_schema.replace(line, "")
+    conn.executescript(old_schema)
+    conn.execute("PRAGMA user_version = 12")
+    conn.close()
+
+    conn = db.connect(path)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(pr)").fetchall()}
+    assert {"ping_at", "ping_author", "ping_snippet"} <= cols

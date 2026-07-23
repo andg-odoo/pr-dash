@@ -166,6 +166,9 @@ def _build_pr_record(
         "review_changed_paths": review_changed_paths,
         "archived_at": pr["archived_at"],
         "state": pr["state"],
+        "ping_at": pr.get("ping_at"),
+        "ping_author": pr.get("ping_author"),
+        "ping_snippet": pr.get("ping_snippet"),
         "ai_review": ai_review,
     }
 
@@ -246,6 +249,13 @@ def _make_item(members: list[dict], my_login: str,
     is_archived = all(m["archived_at"] for m in members)
     archived_ats = [m["archived_at"] for m in members if m["archived_at"]]
     archived_at = max(archived_ats) if archived_ats else None
+
+    # Informal re-review ping (only meaningful on archived-but-open PRs): take the
+    # member with the most recent ping, and flag the item so triage can see it.
+    pinged = [m for m in members if m.get("ping_at")]
+    ping_member = max(pinged, key=lambda m: m["ping_at"]) if pinged else None
+    if is_archived and ping_member and "PING" not in flags:
+        flags.append("PING")
 
     # Runbot / task: prefer primary, fall back to other
     runbot_url = primary["runbot_url"] or (members[1]["runbot_url"] if is_pair else None)
@@ -387,6 +397,9 @@ def _make_item(members: list[dict], my_login: str,
         "state": primary["state"],
         "is_archived": is_archived,
         "archived_at": archived_at,
+        "ping_at": ping_member["ping_at"] if ping_member else None,
+        "ping_author": ping_member["ping_author"] if ping_member else None,
+        "ping_snippet": ping_member["ping_snippet"] if ping_member else None,
         "ai_reviews": ai_reviews,
         "ai_review_verdict": worst_verdict,
     }

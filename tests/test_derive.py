@@ -356,3 +356,109 @@ def test_derive_comments_skips_missing_ids():
     )
     rows, _ = derive.derive_comments(node, "me")
     assert rows == []
+
+
+# --- detect_review_ping ------------------------------------------------------
+
+def _pnode(*, comments=None, threads=None, reviews=None, requests=None, author=None):
+    return {
+        "author": {"login": author} if author else None,
+        "comments": {"nodes": comments or []},
+        "reviewThreads": {"nodes": [{"comments": {"nodes": tc}} for tc in (threads or [])]},
+        "reviews": {"nodes": reviews or []},
+        "timelineItems": {"nodes": requests or []},
+    }
+
+
+def _c(login, at, body="please re-review"):
+    return {"author": {"login": login}, "createdAt": at, "body": body}
+
+
+def _rv(login, at, state="APPROVED"):
+    return {"author": {"login": login}, "submittedAt": at, "state": state}
+
+
+def _req(login, at):
+    return {"createdAt": at, "requestedReviewer": {"login": login}}
+
+
+def test_ping_set_from_conversation_comment():
+    node = _pnode(reviews=[_rv("me", "2026-07-01T00:00:00Z")],
+                  comments=[_c("alice", "2026-07-02T00:00:00Z", "done, ready for r+")])
+    p = derive.detect_review_ping(node, "me")
+    assert p["ping_author"] == "alice"
+    assert p["ping_at"] == "2026-07-02T00:00:00Z"
+    assert "ready" in p["ping_body"]
+
+
+def test_ping_set_from_thread_reply():
+    node = _pnode(reviews=[_rv("me", "2026-07-01T00:00:00Z")],
+                  threads=[[_c("alice", "2026-07-02T00:00:00Z")]])
+    assert derive.detect_review_ping(node, "me")["ping_author"] == "alice"
+
+
+def test_ping_none_without_my_activity():
+    node = _pnode(comments=[_c("alice", "2026-07-02T00:00:00Z")])
+    assert derive.detect_review_ping(node, "me") is None
+
+
+def test_ping_none_for_bot_only_traffic():
+    node = _pnode(reviews=[_rv("me", "2026-07-01T00:00:00Z")],
+                  comments=[_c("robodoo", "2026-07-02T00:00:00Z")])
+    assert derive.detect_review_ping(node, "me") is None
+
+
+def test_ping_cleared_by_formal_rerequest():
+    node = _pnode(reviews=[_rv("me", "2026-07-01T00:00:00Z")],
+                  comments=[_c("alice", "2026-07-02T00:00:00Z")],
+                  requests=[_req("me", "2026-07-03T00:00:00Z")])
+    assert derive.detect_review_ping(node, "me") is None
+
+
+def test_ping_cleared_by_my_own_later_reply():
+    # My reply after the ping lifts my-last-activity past it -> no candidate.
+    node = _pnode(reviews=[_rv("me", "2026-07-01T00:00:00Z")],
+                  comments=[_c("alice", "2026-07-02T00:00:00Z"),
+                            _c("me", "2026-07-03T00:00:00Z")])
+    assert derive.detect_review_ping(node, "me") is None
+
+
+def test_ping_cleared_by_other_reviewer_submitted_review():
+    # Author pinged, but a final reviewer submitted a review afterwards.
+    node = _pnode(reviews=[_rv("me", "2026-07-01T00:00:00Z"),
+                           _rv("bob", "2026-07-03T00:00:00Z")],
+                  comments=[_c("alice", "2026-07-02T00:00:00Z")])
+    assert derive.detect_review_ping(node, "me") is None
+
+
+def test_ping_cleared_by_other_reviewer_thread_reply():
+    # bob is an established reviewer (submitted earlier) who replies after the ping.
+    node = _pnode(reviews=[_rv("me", "2026-07-01T00:00:00Z"),
+                           _rv("bob", "2026-06-01T00:00:00Z")],
+                  comments=[_c("alice", "2026-07-02T00:00:00Z")],
+                  threads=[[_c("bob", "2026-07-03T00:00:00Z")]])
+    assert derive.detect_review_ping(node, "me") is None
+
+
+def test_ping_stands_when_other_reviewer_acted_before_ping():
+    # A reviewer's earlier activity must not clear a later ping.
+    node = _pnode(reviews=[_rv("me", "2026-07-01T00:00:00Z"),
+                           _rv("bob", "2026-06-01T00:00:00Z")],
+                  comments=[_c("alice", "2026-07-02T00:00:00Z")])
+    p = derive.detect_review_ping(node, "me")
+    assert p and p["ping_author"] == "alice"
+
+
+def test_ping_stands_despite_authors_commented_review_wrapper():
+    # Replying to an inline review comment wraps the author's reply in a
+    # COMMENTED review object. That must neither make the author an
+    # "established reviewer" (excluded from pinging) nor clear their own ping.
+    node = _pnode(
+        author="alice",
+        reviews=[_rv("me", "2026-07-01T00:00:00Z"),
+                 _rv("alice", "2026-07-02T00:00:00Z", state="COMMENTED")],
+        threads=[[_c("alice", "2026-07-02T00:00:00Z",
+                     "I already pushed your suggestions, please check")]],
+    )
+    p = derive.detect_review_ping(node, "me")
+    assert p and p["ping_author"] == "alice"

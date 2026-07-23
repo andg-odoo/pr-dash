@@ -136,3 +136,34 @@ def test_hidden_listener_second_bind_returns_none(tmp_path):
         assert second is None
     finally:
         first.shutdown()
+
+
+def test_hide_pr_records_live_sha(tmp_path, monkeypatch):
+    from pr_dash import github, hidden
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    items = [{"id": "odoo/odoo#1", "head_sha": "stale",
+              "members": [{"repo": "odoo/odoo", "number": 1}]}]
+    mcp_server = _patch_cfg_and_items(monkeypatch, cfg, items)
+    # The cached sha of an archived row can predate pushes; the hide must
+    # record the live sha or it expires against it on the next reconcile.
+    monkeypatch.setattr(github, "fetch_head_sha", lambda repo, number: "live")
+    mcp_server.hide_pr("odoo/odoo#1")
+    assert hidden.load(cfg)["odoo/odoo#1"]["head_sha"] == "live"
+
+
+def test_hide_pr_falls_back_to_cached_sha(tmp_path, monkeypatch):
+    from pr_dash import github, hidden
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    items = [{"id": "odoo/odoo#1", "head_sha": "stale",
+              "members": [{"repo": "odoo/odoo", "number": 1}]}]
+    mcp_server = _patch_cfg_and_items(monkeypatch, cfg, items)
+
+    def _boom(repo, number):
+        raise github.GithubError("offline")
+    monkeypatch.setattr(github, "fetch_head_sha", _boom)
+    mcp_server.hide_pr("odoo/odoo#1")
+    assert hidden.load(cfg)["odoo/odoo#1"]["head_sha"] == "stale"

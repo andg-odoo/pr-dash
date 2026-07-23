@@ -429,3 +429,27 @@ def test_get_comments_shape_and_bot_flag(tmp_path):
 
     assert m["conversation"][0]["author"] == "me"
     assert m["conversation"][0]["url"] == "https://i/99"
+
+
+def test_summarize_exposes_ping_and_flag():
+    # render._make_item adds the PING flag; summarize copies flags + ping fields.
+    item = _item("odoo/odoo#1", is_archived=True, flags=["PING"],
+                 ping_at="2026-07-02T00:00:00Z", ping_author="alice",
+                 ping_snippet="ready for r+")
+    s = query.summarize(item)
+    assert "PING" in s["flags"]
+    assert s["ping_at"] == "2026-07-02T00:00:00Z"
+    assert s["ping_author"] == "alice"
+    assert s["ping_snippet"] == "ready for r+"
+
+
+def test_stats_counts_pinged_archived():
+    archived_ping = _item("odoo/odoo#7", is_archived=True, state="OPEN",
+                          my_review_state="APPROVED",
+                          archived_at="2026-07-01T00:00:00+00:00",
+                          ping_at="2026-07-02T00:00:00Z")
+    archived_plain = _item("odoo/odoo#8", is_archived=True, state="MERGED",
+                           my_review_state="APPROVED",
+                           archived_at="2026-07-01T00:00:00+00:00")
+    st = query.stats([archived_ping, archived_plain, _item("odoo/odoo#9")])
+    assert st["archived"]["pinged"] == 1

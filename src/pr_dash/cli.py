@@ -524,7 +524,7 @@ def _run_refresh(conn, cfg, *, force: bool) -> None:
         # they left the request set (the search only returns open PRs, so their
         # cached state never updates). Re-check just those so the UI can tell
         # "closed on GitHub" apart from "merely reviewed by me".
-        _reconcile_sibling_states(conn, kept_ids)
+        _reconcile_sibling_states(conn, cfg, kept_ids)
 
         if cfg.ai.enabled and cfg.ai.review_enabled:
             review_candidates, sibling_shas = _build_review_queue(
@@ -572,15 +572,16 @@ def _reconcile_reviewed(conn, kept_ids: set[str], login: str) -> bool:
     return True
 
 
-def _reconcile_sibling_states(conn, kept_ids: set[str]) -> None:
-    """Refresh the GitHub state of archived rows still recorded OPEN.
+def _reconcile_sibling_states(conn, cfg, kept_ids: set[str]) -> None:
+    """Refresh archived-but-still-OPEN rows: their GitHub state and any informal
+    "please re-review" ping the author left after my last review.
 
-    The sweep archives whatever fell out of the search without asking GitHub
-    why, so a closed-without-my-review PR would otherwise stay OPEN in the
-    history forever. The set self-shrinks: once a row flips to CLOSED/MERGED it
-    leaves the filter for good, so steady-state is a handful of ids in one
-    batched request. Best-effort: on a GitHub failure the cached state stays,
-    which the UI renders as still open.
+    The sweep archives whatever fell out of the search without asking GitHub why,
+    so a closed-without-my-review PR would otherwise stay OPEN in the history
+    forever, and a re-review ping with no formal re-request would be invisible to
+    all tooling. This is exactly the archived-and-OPEN population, in one batched
+    request; the set self-shrinks as rows flip to CLOSED/MERGED. Best-effort: on
+    a GitHub failure the cached state and pings stay.
     """
     prs = [dict(r) for r in db.list_prs(conn)]
     stale = [
@@ -591,16 +592,47 @@ def _reconcile_sibling_states(conn, kept_ids: set[str]) -> None:
         return
     refs = [(p["repo"], p["number"], p["id"]) for p in stale]
     try:
-        states = github.fetch_pr_states(refs)
+        activity = github.fetch_archived_activity(refs)
     except github.GithubError as e:
-        log.warning("archived state check failed (%s); keeping cached states", e)
+        log.warning("archived activity check failed (%s); keeping cached data", e)
         return
-    changed = {pr_id: s for pr_id, s in states.items() if s != "OPEN"}
-    if changed:
-        with db.transaction(conn):
-            for pr_id, state in changed.items():
-                db.set_pr_state(conn, pr_id, state)
-        log.debug("marked %d archived PRs closed", len(changed))
+
+    # Hidden PRs never carry a ping - hiding is the dismissal for dead PRs the
+    # user won't close (a push auto-unhides, resurfacing a revived PR). Archived
+    # rows never get their cached head_sha refreshed, so the auto-unhide must
+    # compare against the live sha from this fetch, not the stale DB one.
+    def _live_sha(p: dict) -> str:
+        node = activity.get(p["id"]) or {}
+        return node.get("headRefOid") or p["head_sha"]
+
+    hidden_ids = set(hidden.prune(hidden.load(cfg), [
+        {"id": p["id"], "head_sha": _live_sha(p),
+         "members": [{"head_sha": _live_sha(p)}]}
+        for p in stale
+    ]))
+
+    closed = pinged = 0
+    with db.transaction(conn):
+        for p in stale:
+            node = activity.get(p["id"])
+            if node is None:
+                continue
+            new_state = node.get("state") or "OPEN"
+            if new_state != p["state"]:
+                db.set_pr_state(conn, p["id"], new_state)
+                if new_state != "OPEN":
+                    closed += 1
+            ping = None
+            if new_state == "OPEN" and p["id"] not in hidden_ids:
+                ping = derive.detect_review_ping(node, cfg.github_login)
+            if ping:
+                db.set_ping(conn, p["id"], ping["ping_at"], ping["ping_author"],
+                            derive.comment_snippet(ping.get("ping_body")))
+                pinged += 1
+            elif p["ping_at"]:
+                db.set_ping(conn, p["id"], None, None, None)
+    if closed or pinged:
+        log.debug("archived reconcile: %d closed, %d pinged", closed, pinged)
 
 
 def _reviewed_open_siblings(cached: list[dict], active_ids: set[str]) -> list[dict]:

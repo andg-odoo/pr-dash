@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 SCHEMA_SQL = """
 CREATE TABLE pr (
@@ -38,6 +38,9 @@ CREATE TABLE pr (
   archived_at          TEXT,
   state                TEXT NOT NULL DEFAULT 'OPEN',
   my_pending_review    INTEGER NOT NULL DEFAULT 0,
+  ping_at              TEXT,
+  ping_author          TEXT,
+  ping_snippet         TEXT,
   fetched_at           TEXT NOT NULL
 );
 
@@ -255,6 +258,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 ")"
             )
             conn.execute("CREATE INDEX idx_pr_comment_pr ON pr_comment(pr_id)")
+    if current < 13:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(pr)").fetchall()}
+        for col in ("ping_at", "ping_author", "ping_snippet"):
+            if col not in cols:
+                conn.execute(f"ALTER TABLE pr ADD COLUMN {col} TEXT")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -311,6 +319,15 @@ def replace_reviewers(conn: sqlite3.Connection, pr_id: str, reviewers: list[dict
 
 def set_pr_state(conn: sqlite3.Connection, pr_id: str, state: str) -> None:
     conn.execute("UPDATE pr SET state = ? WHERE id = ?", (state, pr_id))
+
+
+def set_ping(conn: sqlite3.Connection, pr_id: str, ping_at: str | None,
+             ping_author: str | None, ping_snippet: str | None) -> None:
+    """Record (or clear, with all-None) an informal re-review ping on a PR."""
+    conn.execute(
+        "UPDATE pr SET ping_at = ?, ping_author = ?, ping_snippet = ? WHERE id = ?",
+        (ping_at, ping_author, ping_snippet, pr_id),
+    )
 
 
 def set_my_review_state(conn: sqlite3.Connection, pr_id: str, login: str, state: str) -> None:

@@ -545,6 +545,7 @@ body {
 .pr-flag.CFL { background: var(--red); color: #0f1115; }
 .pr-flag.OLD { background: var(--yellow); color: #0f1115; }
 .pr-flag.PEND\! { background: var(--red); color: #0f1115; }
+.pr-flag.PING { background: var(--orange); color: #0f1115; }
 
 .pr-modules {
   color: var(--fg-faint);
@@ -1116,6 +1117,36 @@ body {
 .thread-snippet:hover { border-color: var(--accent); }
 .thread-snippet .who { color: var(--orange); margin-right: 4px; }
 .thread-snippet .snippet-text { color: var(--fg); }
+
+.ping-notice {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 7px 10px;
+  border-radius: 4px;
+  background: rgba(224, 144, 74, 0.12);
+  border: 1px solid var(--orange);
+  font-size: 12px;
+}
+
+.ping-notice .ping-tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  background: var(--orange);
+  color: #0f1115;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+.ping-notice .ping-who { color: var(--orange); font-weight: 600; }
+.ping-notice .ping-snippet {
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .diff-section {
   margin-top: 18px;

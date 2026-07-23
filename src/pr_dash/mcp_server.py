@@ -11,7 +11,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from pr_dash import config, derive, hidden, query
+from pr_dash import config, derive, github, hidden, query
 
 # stderr only: stdout is the MCP protocol channel, so a single stray print or
 # rich.Console write there corrupts the stream. Everything human-facing goes to
@@ -66,8 +66,10 @@ def list_prs(status: str = "pending", include_hidden: bool = False) -> dict:
 
     Flags: RE=re-review requested, MSG=awaiting my reply, CI!=failing CI,
     CFL=merge conflict, OLD=stale request, PEND!=you have an unsent (PENDING)
-    review draft on this PR. Buckets S/M/L/XL = rough complexity. Rows also carry
-    a my_pending_review bool; use get_comments to read the draft.
+    review draft, PING=an archived-but-open PR where the author informally asked
+    for a re-review after your last review (no formal re-request). Buckets
+    S/M/L/XL = rough complexity. Rows also carry my_pending_review, and pinged
+    rows carry ping_at/ping_author/ping_snippet.
     """
     cfg = _get_cfg()
     items = query.load_items(cfg)
@@ -141,10 +143,21 @@ def hide_pr(ref: str) -> dict:
     """
     cfg = _get_cfg()
     item = query.resolve_item(query.load_items(cfg), ref)
+    # An archived row's cached sha can be long stale; a hide recorded at it
+    # would auto-unhide against the live sha immediately. Best-effort live
+    # lookup, cached sha as the offline fallback.
+    head_sha = item.get("head_sha")
+    member = (item.get("members") or [{}])[0]
+    try:
+        head_sha = github.fetch_head_sha(
+            member.get("repo") or "", member.get("number") or 0,
+        ) or head_sha
+    except (github.GithubError, ValueError):
+        pass
     mapping = hidden.apply_ops(cfg, [{
         "op": "hide",
         "pr_id": item["id"],
-        "head_sha": item.get("head_sha"),
+        "head_sha": head_sha,
         "hidden_at": derive.now_utc(),
     }])
     return {"id": item["id"], "hidden": True, "hidden_count": len(mapping)}
@@ -235,7 +248,7 @@ def review_history(
 @mcp.tool()
 def stats() -> dict:
     """Counts over the pending queue (by bucket, by flag, drafts, hidden) and the
-    archived history (by review verdict, by PR state, last 30 days)."""
+    archived history (by review verdict, by PR state, last 30 days, pinged)."""
     cfg = _get_cfg()
     items = query.load_items(cfg)
     out = query.stats(items)

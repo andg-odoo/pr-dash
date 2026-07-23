@@ -680,6 +680,14 @@
 
         ${mixedNotice}
 
+        ${pr.ping_at ? `
+        <div class="ping-notice" title="Informal re-review request after your last review - no formal re-request${pr.ping_at ? " · " + escapeHTML(pr.ping_at.slice(0, 10)) : ""}">
+          <span class="ping-tag">PING</span>
+          <span class="ping-who">@${escapeHTML(pr.ping_author || "?")}</span>
+          <span class="ping-snippet">${escapeHTML(pr.ping_snippet || "asked for a re-review")}</span>
+        </div>
+        ` : ""}
+
         <section class="section">
           <h3>Status</h3>
           <dl class="kv">

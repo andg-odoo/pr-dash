@@ -253,6 +253,92 @@ def derive_comments(node: dict, my_login: str) -> tuple[list[dict], bool]:
     return out, my_pending
 
 
+def _login(node: dict | None) -> str | None:
+    return (node.get("author") or {}).get("login") if node else None
+
+
+def detect_review_ping(node: dict, my_login: str) -> dict | None:
+    """Detect an informal "please re-review" ping on an archived, still-open PR.
+
+    Returns {ping_at, ping_author, ping_body} for the triggering comment, or None.
+
+    A ping is a human (non-bot) conversation comment or review-thread reply by
+    someone other than me and other than an active reviewer, posted after my last
+    review activity (my last submitted review or my last comment). It is *not*
+    raised (cleared) when, after that ping, any of these happened: a formal
+    re-review request to me (already surfaced as RE), or another reviewer's
+    activity - a submitted review by someone else, or a reply from someone who
+    has a submitted review (the PR moved to a final reviewer doing their job). A
+    later reply of my own is subsumed: it lifts my-last-activity past the ping.
+
+    `node` is a fetch_archived_activity node: comments / reviewThreads.comments /
+    reviews / timelineItems(REVIEW_REQUESTED_EVENT).
+    """
+    comments = (node.get("comments") or {}).get("nodes") or []
+    thread_comments: list[dict] = []
+    for t in (node.get("reviewThreads") or {}).get("nodes") or []:
+        thread_comments.extend((t.get("comments") or {}).get("nodes") or [])
+    all_comments = comments + thread_comments
+    reviews = (node.get("reviews") or {}).get("nodes") or []
+    events = (node.get("timelineItems") or {}).get("nodes") or []
+
+    def created(c: dict) -> str:
+        return c.get("createdAt") or ""
+
+    # My last review activity: latest of my submitted reviews and my comments.
+    my_times = [
+        r["submittedAt"] for r in reviews
+        if _login(r) == my_login and r.get("submittedAt")
+    ]
+    my_times += [created(c) for c in all_comments if _login(c) == my_login and created(c)]
+    if not my_times:
+        return None
+    my_last = max(my_times)
+
+    # Established reviewers: anyone but me or the PR author with a submitted
+    # review. The author is never one: replying to an inline review comment
+    # wraps the reply in a COMMENTED review object, and authors are the primary
+    # ping source - their wrappers must neither exclude them nor clear a ping.
+    pr_author = _login(node)
+    other_reviewers = {
+        _login(r) for r in reviews
+        if r.get("submittedAt") and _login(r)
+        and _login(r) not in (my_login, pr_author)
+    }
+
+    candidates = [
+        c for c in all_comments
+        if created(c) > my_last
+        and _login(c) and _login(c) != my_login
+        and _login(c) not in other_reviewers
+        and not is_bot(_login(c))
+    ]
+    if not candidates:
+        return None
+    ping = max(candidates, key=created)
+    ping_at = created(ping)
+
+    # Formal re-request to me after the ping -> already visible as RE.
+    if any(
+        (ev.get("requestedReviewer") or {}).get("login") == my_login
+        and (ev.get("createdAt") or "") > ping_at
+        for ev in events
+    ):
+        return None
+    # Another reviewer submitted a review after the ping.
+    if any(
+        _login(r) not in (my_login, pr_author)
+        and r.get("submittedAt") and r["submittedAt"] > ping_at
+        for r in reviews
+    ):
+        return None
+    # An established reviewer replied after the ping.
+    if any(_login(c) in other_reviewers and created(c) > ping_at for c in all_comments):
+        return None
+
+    return {"ping_at": ping_at, "ping_author": _login(ping), "ping_body": ping.get("body")}
+
+
 def derive_reviewers(latest_reviews: list[dict], review_requests: list[dict]) -> list[dict]:
     # Start with latest reviews (whose authors are users)
     out: dict[tuple[str, str], dict] = {}
