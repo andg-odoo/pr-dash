@@ -191,6 +191,11 @@ def backfill(limit, since, config_path):
         f"{no_review} with no detectable review by you)"
     )
 
+    # Re-render from cache (no network, no browser) so the dashboard reflects the
+    # freshly backfilled verdicts instead of a stale render.
+    payload, _ = _render_from_cache(conn, cfg, offline=False)
+    console.print(f"[green]Re-rendered {len(payload)} PRs → {cfg.html_path}[/green]")
+
 
 @cli.command()
 @click.option("--config", "config_path", type=click.Path(path_type=Path),
