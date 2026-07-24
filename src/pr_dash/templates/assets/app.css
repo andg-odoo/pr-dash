@@ -1268,3 +1268,10 @@ body {
 
 .diff-section .d2h-file-list-title { color: var(--fg); }
 .diff-section .d2h-file-list-line a { color: var(--accent) !important; }
+
+/* ADDED/CHANGED/DELETED badges ship with hard 90-degree corners, which read as
+   unfinished next to every other rounded chip on the page. */
+.diff-section .d2h-tag {
+  border-radius: 5px;
+  padding: 0 5px;
+}
