@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 SCHEMA_SQL = """
 CREATE TABLE pr (
@@ -41,6 +41,8 @@ CREATE TABLE pr (
   ping_at              TEXT,
   ping_author          TEXT,
   ping_snippet         TEXT,
+  push_at              TEXT,
+  push_sha             TEXT,
   fetched_at           TEXT NOT NULL
 );
 
@@ -263,6 +265,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
         for col in ("ping_at", "ping_author", "ping_snippet"):
             if col not in cols:
                 conn.execute(f"ALTER TABLE pr ADD COLUMN {col} TEXT")
+    if current < 14:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(pr)").fetchall()}
+        for col in ("push_at", "push_sha"):
+            if col not in cols:
+                conn.execute(f"ALTER TABLE pr ADD COLUMN {col} TEXT")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -327,6 +334,20 @@ def set_ping(conn: sqlite3.Connection, pr_id: str, ping_at: str | None,
     conn.execute(
         "UPDATE pr SET ping_at = ?, ping_author = ?, ping_snippet = ? WHERE id = ?",
         (ping_at, ping_author, ping_snippet, pr_id),
+    )
+
+
+def set_push(conn: sqlite3.Connection, pr_id: str, push_at: str | None,
+             push_sha: str | None) -> None:
+    """Record (or clear, with all-None) a push landed after my last review.
+
+    Written by the archived reconcile only, so it never competes with the normal
+    refresh path: while a PR is still in the request set a new push is the thing
+    being reviewed, not an after-the-fact event.
+    """
+    conn.execute(
+        "UPDATE pr SET push_at = ?, push_sha = ? WHERE id = ?",
+        (push_at, push_sha, pr_id),
     )
 
 

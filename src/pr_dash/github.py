@@ -286,6 +286,7 @@ def fetch_reviewed_prs(
 _ARCHIVED_ACTIVITY_FIELDS = """
     state
     headRefOid
+    updatedAt
     author { login }
     comments(last: 10) {
       nodes { author { login } createdAt body }
@@ -296,7 +297,10 @@ _ARCHIVED_ACTIVITY_FIELDS = """
       }
     }
     reviews(last: 20) {
-      nodes { author { login } state submittedAt }
+      nodes { author { login } state submittedAt commit { oid } }
+    }
+    commits(last: 1) {
+      nodes { commit { oid committedDate } }
     }
     timelineItems(last: 20, itemTypes: [REVIEW_REQUESTED_EVENT]) {
       nodes {
@@ -314,12 +318,17 @@ def fetch_archived_activity(
 ) -> dict[str, dict]:
     """Given (repo, number, pr_id) triples, return pr_id -> a node with the
     current state plus the recent comment/review/request activity needed to
-    detect an informal re-review ping (see derive.detect_review_ping).
+    detect an informal re-review ping (see derive.detect_review_ping) and a push
+    landed after my review (see derive.detect_push_since_review).
 
     One batched request over the whole set (GraphQL field aliases). Used to
     re-check archived-but-still-OPEN PRs: they left the `review-requested:`
     search, so their state goes stale the moment robodoo closes them, and any
     "please re-review" ping from the author is invisible to all tooling.
+
+    `updatedAt` / `headRefOid` are the staleness signals the caller uses to
+    decide which of these rows need a full re-fetch: a push moves the head, and
+    any review or comment (mine included) moves updatedAt.
     """
     out: dict[str, dict] = {}
     for start in range(0, len(refs), chunk_size):

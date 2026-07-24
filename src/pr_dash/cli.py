@@ -445,19 +445,7 @@ def _run_refresh(conn, cfg, *, force: bool) -> None:
                 db.replace_comments(conn, pr_id, comments)
 
             # Patch fetch (if head_sha not cached)
-            existing_diff = db.get_diff(conn, head_sha)
-            if existing_diff is None or force:
-                if pr_row["changed_files"] > cfg.thresholds.diff_max_files:
-                    db.upsert_diff(conn, head_sha, None, True, derive.now_utc())
-                else:
-                    patch = github.fetch_patch(pr_row["repo"], pr_row["number"])
-                    truncated = patch is not None and (
-                        patch.count("\n") > cfg.thresholds.diff_max_lines
-                        or len(patch) > cfg.thresholds.diff_max_bytes
-                    )
-                    if truncated:
-                        patch = None
-                    db.upsert_diff(conn, head_sha, patch, truncated, derive.now_utc())
+            _store_patch(conn, cfg, pr_row, force=force)
 
             # Snapshot the per-file change signatures of the diff I reviewed, so a
             # later re-review can fold files unchanged since. Only when the commit
@@ -547,6 +535,109 @@ def _run_refresh(conn, cfg, *, force: bool) -> None:
                     )
 
 
+def _store_patch(conn, cfg, pr_row: dict, *, force: bool) -> None:
+    """Cache the combined diff for pr_row's head sha, unless already cached.
+
+    Keyed by head sha, so a PR that moved head needs this again even though its
+    old diff is still on disk - without it the new row points at a sha with no
+    patch and every diff consumer silently reports "unavailable".
+    """
+    head_sha = pr_row["head_sha"]
+    if db.get_diff(conn, head_sha) is not None and not force:
+        return
+    if pr_row["changed_files"] > cfg.thresholds.diff_max_files:
+        db.upsert_diff(conn, head_sha, None, True, derive.now_utc())
+        return
+    patch = github.fetch_patch(pr_row["repo"], pr_row["number"])
+    truncated = patch is not None and (
+        patch.count("\n") > cfg.thresholds.diff_max_lines
+        or len(patch) > cfg.thresholds.diff_max_bytes
+    )
+    if truncated:
+        patch = None
+    db.upsert_diff(conn, head_sha, patch, truncated, derive.now_utc())
+
+
+def _refresh_pr_rows(conn, cfg, targets: list[dict], *, force: bool,
+                     kept_ids: set[str] | None = None) -> int:
+    """Re-fetch full nodes for already-cached rows and re-persist them in place.
+
+    Shared by the two populations the review-requested search cannot return: open
+    pair-siblings I already reviewed, and archived-but-open rows whose head or
+    discussion moved after I reviewed. Both must keep their archived/reviewed
+    bookkeeping, so this refreshes content only - it never resurrects a row into
+    the pending queue.
+
+    Returns the number of rows re-persisted.
+    """
+    if not targets:
+        return 0
+    by_id = {r["id"]: r for r in targets}
+    refs = [(r["repo"], r["number"], r["id"]) for r in targets]
+    try:
+        nodes = github.fetch_pr_nodes(refs)
+    except github.GithubError as e:
+        log.warning("row refresh failed (%s); keeping cached data", e)
+        return 0
+
+    refreshed = 0
+    for node in nodes:
+        pr_id = _node_id(node)
+        cached_row = by_id.get(pr_id)
+        # Kept regardless of whether we re-persist, so the sweep never archives a
+        # reviewed-open sibling out of an active pair.
+        if kept_ids is not None:
+            kept_ids.add(pr_id)
+        if not _sibling_needs_refresh(
+            cached_row, node, db.has_comments(conn, pr_id), force=force,
+        ):
+            continue
+
+        pr_row, modules, reviewers, threads, comments = _node_to_rows(
+            node, cfg.github_login,
+        )
+        # These rows left the request queue because I already reviewed them; the
+        # timeline (last:30) may no longer carry that review. Keep the cached
+        # previously_reviewed so the sweep never mistakes one for an un-reviewed,
+        # deletable row, and keep archived_at so refreshing content does not
+        # resurrect the row into the pending queue.
+        if cached_row:
+            pr_row["previously_reviewed"] = (
+                cached_row["previously_reviewed"] or pr_row["previously_reviewed"]
+            )
+            pr_row["archived_at"] = cached_row["archived_at"]
+        with db.transaction(conn):
+            db.upsert_pr(conn, pr_row)
+            db.replace_modules(conn, pr_id, modules)
+            db.replace_reviewers(conn, pr_id, reviewers)
+            db.replace_threads(conn, pr_id, threads)
+            db.replace_comments(conn, pr_id, comments)
+        _store_patch(conn, cfg, pr_row, force=force)
+        # Complexity is keyed by head sha, so a moved head leaves the row with no
+        # score and a bucket silently defaulted to M. AI review is deliberately
+        # not re-run: that budget is for PRs still in my queue.
+        score = derive.heuristic_score(
+            additions=pr_row["additions"],
+            deletions=pr_row["deletions"],
+            changed_files=pr_row["changed_files"],
+            modules=modules,
+            unresolved_threads=pr_row["unresolved_threads"],
+            previously_reviewed=bool(pr_row["previously_reviewed"]),
+        )
+        db.upsert_complexity(conn, {
+            "head_sha": pr_row["head_sha"],
+            "bucket": derive.bucket_for(
+                score, cfg.buckets.M, cfg.buckets.L, cfg.buckets.XL,
+            ),
+            "score": score,
+            "method": "heuristic",
+            "notes": None,
+            "computed_at": derive.now_utc(),
+        })
+        refreshed += 1
+    return refreshed
+
+
 def _reconcile_reviewed(conn, kept_ids: set[str], login: str) -> bool:
     """Flip previously_reviewed=1 for fallen-out PRs I actually reviewed.
 
@@ -611,7 +702,8 @@ def _reconcile_sibling_states(conn, cfg, kept_ids: set[str]) -> None:
         for p in stale
     ]))
 
-    closed = pinged = 0
+    closed = pinged = pushed = 0
+    outdated: list[dict] = []
     with db.transaction(conn):
         for p in stale:
             node = activity.get(p["id"])
@@ -623,16 +715,40 @@ def _reconcile_sibling_states(conn, cfg, kept_ids: set[str]) -> None:
                 if new_state != "OPEN":
                     closed += 1
             ping = None
+            push = None
             if new_state == "OPEN" and p["id"] not in hidden_ids:
                 ping = derive.detect_review_ping(node, cfg.github_login)
+                push = derive.detect_push_since_review(node, cfg.github_login)
             if ping:
                 db.set_ping(conn, p["id"], ping["ping_at"], ping["ping_author"],
                             derive.comment_snippet(ping.get("ping_body")))
                 pinged += 1
             elif p["ping_at"]:
                 db.set_ping(conn, p["id"], None, None, None)
-    if closed or pinged:
-        log.debug("archived reconcile: %d closed, %d pinged", closed, pinged)
+            if push:
+                db.set_push(conn, p["id"], push["push_at"], push["push_sha"])
+                pushed += 1
+            elif p["push_at"]:
+                db.set_push(conn, p["id"], None, None)
+
+            # A moved head or a bumped updatedAt means everything cached for this
+            # row - diff, reviews, threads, file list, complexity - predates what
+            # is on GitHub now. Nothing else refreshes an archived row, so
+            # without this it stays a fossil of the moment I reviewed it.
+            if new_state == "OPEN" and (
+                (node.get("headRefOid") or p["head_sha"]) != p["head_sha"]
+                or (node.get("updatedAt") or p["updated_at"]) != p["updated_at"]
+            ):
+                outdated.append(p)
+    if closed or pinged or pushed:
+        log.debug("archived reconcile: %d closed, %d pinged, %d pushed",
+                  closed, pinged, pushed)
+
+    # Outside the transaction above: this re-fetches over the network and opens
+    # its own per-row transactions.
+    refreshed = _refresh_pr_rows(conn, cfg, outdated, force=False)
+    if refreshed:
+        log.debug("refreshed %d stale archived rows", refreshed)
 
 
 def _reviewed_open_siblings(cached: list[dict], active_ids: set[str]) -> list[dict]:
@@ -667,50 +783,7 @@ def _sibling_needs_refresh(cached_row, node: dict, has_comments: bool, *,
 def _prime_reviewed_siblings(conn, cfg, kept_ids: set[str], *, force: bool) -> None:
     cached = [dict(r) for r in db.list_prs(conn)]
     targets = _reviewed_open_siblings(cached, kept_ids)
-    if not targets:
-        return
-    by_id = {r["id"]: r for r in cached}
-    refs = [(r["repo"], r["number"], r["id"]) for r in targets]
-    try:
-        nodes = github.fetch_pr_nodes(refs)
-    except github.GithubError as e:
-        log.warning("sibling comment priming failed (%s); keeping cached data", e)
-        return
-
-    primed = 0
-    for node in nodes:
-        pr_id = _node_id(node)
-        cached_row = by_id.get(pr_id)
-        # Kept regardless of whether we re-persist, so the sweep never archives a
-        # reviewed-open sibling out of an active pair.
-        kept_ids.add(pr_id)
-        if not _sibling_needs_refresh(
-            cached_row, node, db.has_comments(conn, pr_id), force=force,
-        ):
-            continue
-
-        pr_row, modules, reviewers, threads, comments = _node_to_rows(
-            node, cfg.github_login,
-        )
-        # This half left the request queue because I already reviewed it; its
-        # timeline (last:30) may no longer carry that review. Keep the cached
-        # previously_reviewed so the sweep never mistakes it for an un-reviewed,
-        # deletable row.
-        if cached_row:
-            pr_row["previously_reviewed"] = (
-                cached_row["previously_reviewed"] or pr_row["previously_reviewed"]
-            )
-            # An already-archived half stays archived - priming refreshes its
-            # discussion, it must not resurrect the row into the pending queue.
-            pr_row["archived_at"] = cached_row["archived_at"]
-        with db.transaction(conn):
-            db.upsert_pr(conn, pr_row)
-            db.replace_modules(conn, pr_id, modules)
-            db.replace_reviewers(conn, pr_id, reviewers)
-            db.replace_threads(conn, pr_id, threads)
-            db.replace_comments(conn, pr_id, comments)
-        primed += 1
-
+    primed = _refresh_pr_rows(conn, cfg, targets, force=force, kept_ids=kept_ids)
     if primed:
         log.debug("primed %d reviewed-open pair-siblings", primed)
 

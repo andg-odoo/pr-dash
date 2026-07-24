@@ -42,6 +42,8 @@
     { id: "stale", label: "stale 7d+" },
     { id: "re-review", label: "re-review" },
     { id: "ci-failed", label: "CI failed" },
+    { id: "pinged", label: "pinged" },
+    { id: "pushed", label: "pushed since review" },
     { id: "drafts", label: "drafts (backlog)" },
     { id: "archived", label: "archived" },
     { id: "show-hidden", label: "show hidden" },
@@ -225,7 +227,10 @@
     if (itemHidden && !showHidden) return false;
 
     // Archived: only show when the 'archived' chip is explicitly selected.
-    const showArchived = filters.state.has("archived");
+    // 'pinged'/'pushed' only ever apply to archived rows, so they imply the
+    // archived view - otherwise picking one alone would filter down to nothing.
+    const showArchived = filters.state.has("archived")
+      || filters.state.has("pinged") || filters.state.has("pushed");
     if (pr.is_archived && !showArchived) return false;
     if (!pr.is_archived && showArchived) return false;
 
@@ -246,6 +251,8 @@
         "stale": pr.flags.includes("OLD"),
         "re-review": pr.previously_reviewed,
         "ci-failed": pr.ci_state === "FAILURE" || pr.ci_state === "ERROR",
+        "pinged": !!pr.ping_at,
+        "pushed": !!pr.push_at,
         "drafts": pr.is_draft,
         "archived": pr.is_archived,
         "show-hidden": true,
@@ -685,6 +692,14 @@
           <span class="ping-tag">PING</span>
           <span class="ping-who">@${escapeHTML(pr.ping_author || "?")}</span>
           <span class="ping-snippet">${escapeHTML(pr.ping_snippet || "asked for a re-review")}</span>
+        </div>
+        ` : ""}
+
+        ${pr.push_at ? `
+        <div class="ping-notice push-notice" title="The author pushed after your last review - no action implied, the diff below is the new head${pr.push_at ? " · " + escapeHTML(pr.push_at.slice(0, 10)) : ""}">
+          <span class="ping-tag">PUSH</span>
+          <span class="ping-who">${escapeHTML((pr.push_sha || "").slice(0, 10))}</span>
+          <span class="ping-snippet">pushed since your review</span>
         </div>
         ` : ""}
 

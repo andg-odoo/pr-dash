@@ -67,9 +67,11 @@ def list_prs(status: str = "pending", include_hidden: bool = False) -> dict:
     Flags: RE=re-review requested, MSG=awaiting my reply, CI!=failing CI,
     CFL=merge conflict, OLD=stale request, PEND!=you have an unsent (PENDING)
     review draft, PING=an archived-but-open PR where the author informally asked
-    for a re-review after your last review (no formal re-request). Buckets
-    S/M/L/XL = rough complexity. Rows also carry my_pending_review, and pinged
-    rows carry ping_at/ping_author/ping_snippet.
+    for a re-review after your last review (no formal re-request), PUSH=an
+    archived-but-open PR whose head moved after your review (no action implied -
+    it marks that the cached diff is no longer what you reviewed). Buckets
+    S/M/L/XL = rough complexity. Rows also carry my_pending_review, pinged rows
+    carry ping_at/ping_author/ping_snippet, and pushed rows push_at/push_sha.
     """
     cfg = _get_cfg()
     items = query.load_items(cfg)

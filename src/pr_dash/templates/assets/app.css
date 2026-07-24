@@ -1148,6 +1148,19 @@ body {
   white-space: nowrap;
 }
 
+/* PUSH is informational, not a call to action (the PR has moved on to someone
+   else), so it reads cooler than the orange PING it sits next to. */
+.ping-notice.push-notice {
+  background: rgba(122, 162, 247, 0.12);
+  border-color: var(--blue);
+}
+
+.ping-notice.push-notice .ping-tag { background: var(--blue); }
+.ping-notice.push-notice .ping-who {
+  color: var(--blue);
+  font-family: var(--mono, ui-monospace, monospace);
+}
+
 .diff-section {
   margin-top: 18px;
 }

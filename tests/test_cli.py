@@ -271,3 +271,131 @@ def test_reconcile_closed_clears_state_and_ping(tmp_path, monkeypatch):
     row = db.get_cached_pr(conn, "odoo/odoo#1")
     assert row["state"] == "MERGED"
     assert row["ping_at"] is None
+
+
+# --- _reconcile_sibling_states: push detection & stale-row refresh ------------
+
+def _push_activity_node(*, head="sha2", reviewed="sha1", updated="2026-07-01T00:00:00Z"):
+    """Archived-activity node where my review sits on `reviewed` and the live
+    head is `head`."""
+    return {
+        "state": "OPEN",
+        "headRefOid": head,
+        "updatedAt": updated,
+        "author": {"login": "a"},
+        "comments": {"nodes": []},
+        "reviewThreads": {"nodes": []},
+        "reviews": {"nodes": [{
+            "author": {"login": "me"}, "submittedAt": "2026-07-01T00:00:00Z",
+            "state": "APPROVED", "commit": {"oid": reviewed},
+        }]},
+        "commits": {"nodes": [{"commit": {"oid": head,
+                                          "committedDate": "2026-07-05T00:00:00Z"}}]},
+        "timelineItems": {"nodes": []},
+    }
+
+
+def test_reconcile_sets_push_on_archived_open(tmp_path, monkeypatch):
+    from pr_dash import db
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr(conn, "odoo/odoo#1", archived_at="2026-07-01T00:00:00Z", head_sha="sha1")
+    monkeypatch.setattr(github, "fetch_archived_activity",
+                        lambda refs, **kw: {"odoo/odoo#1": _push_activity_node()})
+    monkeypatch.setattr(github, "fetch_pr_nodes",
+                        lambda refs, **kw: [_fake_node("odoo/odoo", 1)])
+    monkeypatch.setattr(github, "fetch_patch", lambda repo, number: "diff --git a b")
+
+    cli._reconcile_sibling_states(conn, cfg, set())
+    row = db.get_cached_pr(conn, "odoo/odoo#1")
+    assert row["push_at"] == "2026-07-05T00:00:00Z"
+    assert row["push_sha"] == "sha2"
+
+
+def test_reconcile_refreshes_stale_archived_row_in_place(tmp_path, monkeypatch):
+    from pr_dash import db
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr(conn, "odoo/odoo#1", archived_at="2026-07-01T00:00:00Z", head_sha="sha1")
+    monkeypatch.setattr(github, "fetch_archived_activity",
+                        lambda refs, **kw: {"odoo/odoo#1": _push_activity_node()})
+    monkeypatch.setattr(github, "fetch_pr_nodes",
+                        lambda refs, **kw: [_fake_node("odoo/odoo", 1)])
+    monkeypatch.setattr(github, "fetch_patch", lambda repo, number: "diff --git a b")
+
+    cli._reconcile_sibling_states(conn, cfg, set())
+    row = db.get_cached_pr(conn, "odoo/odoo#1")
+    # The moved head pulled in the whole row, not just the push marker...
+    assert row["head_sha"] == "sha2"
+    assert db.has_comments(conn, "odoo/odoo#1") is True
+    # ...along with a diff for the new sha, which no other path would fetch.
+    assert db.get_diff(conn, "sha2")["patch_text"] == "diff --git a b"
+    # ...and it stays archived: a push by someone else is not my cue to re-review.
+    assert row["archived_at"] == "2026-07-01T00:00:00Z"
+    assert row["previously_reviewed"] == 1
+    # Complexity is keyed by sha too, so without this the row renders as a
+    # default-M bucket with a score of 0.
+    assert db.get_complexity(conn, "sha2") is not None
+
+
+def test_reconcile_refreshes_on_bumped_updated_at_alone(tmp_path, monkeypatch):
+    from pr_dash import db
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr(conn, "odoo/odoo#1", archived_at="2026-07-01T00:00:00Z", head_sha="sha1",
+               updated="2026-07-01T00:00:00Z")
+    # Same head, later updatedAt: a review or comment landed. This is the case a
+    # sha comparison alone misses - my own review is what bumps it first.
+    node = _push_activity_node(head="sha1", reviewed="sha1",
+                               updated="2026-07-09T00:00:00Z")
+    monkeypatch.setattr(github, "fetch_archived_activity", lambda refs, **kw: {"odoo/odoo#1": node})
+    monkeypatch.setattr(github, "fetch_pr_nodes",
+                        lambda refs, **kw: [_fake_node("odoo/odoo", 1, head="sha1",
+                                                       updated="2026-07-09T00:00:00Z")])
+    monkeypatch.setattr(github, "fetch_patch", lambda repo, number: "d")
+
+    cli._reconcile_sibling_states(conn, cfg, set())
+    row = db.get_cached_pr(conn, "odoo/odoo#1")
+    assert row["updated_at"] == "2026-07-09T00:00:00Z"
+    assert row["push_at"] is None  # head never moved
+
+
+def test_reconcile_leaves_fresh_archived_row_alone(tmp_path, monkeypatch):
+    from pr_dash import db
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr(conn, "odoo/odoo#1", archived_at="2026-07-01T00:00:00Z", head_sha="sha1")
+    node = _push_activity_node(head="sha1", reviewed="sha1")
+    monkeypatch.setattr(github, "fetch_archived_activity", lambda refs, **kw: {"odoo/odoo#1": node})
+
+    def _boom(*a, **kw):
+        raise AssertionError("unchanged row must not cost a node fetch")
+
+    monkeypatch.setattr(github, "fetch_pr_nodes", _boom)
+    cli._reconcile_sibling_states(conn, cfg, set())
+    assert db.get_cached_pr(conn, "odoo/odoo#1")["head_sha"] == "sha1"
+
+
+def test_reconcile_clears_push_once_i_review_the_new_head(tmp_path, monkeypatch):
+    from pr_dash import db
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr(conn, "odoo/odoo#1", archived_at="2026-07-01T00:00:00Z", head_sha="sha2")
+    db.set_push(conn, "odoo/odoo#1", "2026-07-05T00:00:00Z", "sha2")
+    node = _push_activity_node(head="sha2", reviewed="sha2")
+    monkeypatch.setattr(github, "fetch_archived_activity", lambda refs, **kw: {"odoo/odoo#1": node})
+
+    cli._reconcile_sibling_states(conn, cfg, set())
+    row = db.get_cached_pr(conn, "odoo/odoo#1")
+    assert row["push_at"] is None
+    assert row["push_sha"] is None

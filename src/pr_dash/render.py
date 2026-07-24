@@ -169,6 +169,8 @@ def _build_pr_record(
         "ping_at": pr.get("ping_at"),
         "ping_author": pr.get("ping_author"),
         "ping_snippet": pr.get("ping_snippet"),
+        "push_at": pr.get("push_at"),
+        "push_sha": pr.get("push_sha"),
         "ai_review": ai_review,
     }
 
@@ -256,6 +258,14 @@ def _make_item(members: list[dict], my_login: str,
     ping_member = max(pinged, key=lambda m: m["ping_at"]) if pinged else None
     if is_archived and ping_member and "PING" not in flags:
         flags.append("PING")
+
+    # Push landed after my review (same archived-but-open population): the PR is
+    # no longer mine to act on, so this flags without unarchiving - it says "what
+    # you reviewed is not what is there now", not "review this again".
+    pushed = [m for m in members if m.get("push_at")]
+    push_member = max(pushed, key=lambda m: m["push_at"]) if pushed else None
+    if is_archived and push_member and "PUSH" not in flags:
+        flags.append("PUSH")
 
     # Runbot / task: prefer primary, fall back to other
     runbot_url = primary["runbot_url"] or (members[1]["runbot_url"] if is_pair else None)
@@ -400,6 +410,8 @@ def _make_item(members: list[dict], my_login: str,
         "ping_at": ping_member["ping_at"] if ping_member else None,
         "ping_author": ping_member["ping_author"] if ping_member else None,
         "ping_snippet": ping_member["ping_snippet"] if ping_member else None,
+        "push_at": push_member["push_at"] if push_member else None,
+        "push_sha": push_member["push_sha"] if push_member else None,
         "ai_reviews": ai_reviews,
         "ai_review_verdict": worst_verdict,
     }

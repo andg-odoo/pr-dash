@@ -339,6 +339,44 @@ def detect_review_ping(node: dict, my_login: str) -> dict | None:
     return {"ping_at": ping_at, "ping_author": _login(ping), "ping_body": ping.get("body")}
 
 
+def detect_push_since_review(node: dict, my_login: str) -> dict | None:
+    """Detect a push landed after my last review on an archived, still-open PR.
+
+    Returns {push_at, push_sha} for the current head commit, or None.
+
+    No heuristic is involved and none is wanted: the author either pushed on top
+    of the commit I reviewed or they did not. The anchor is the commit oid my
+    latest submitted review was attached to, compared against the live head - so
+    this stays true even when the PR has since moved on to a final reviewer whose
+    questions prompted the push. That is precisely the case worth surfacing
+    without dragging the PR back into the queue: my work on it is done, but the
+    row on disk no longer describes what is on GitHub.
+
+    Deliberately anchored on the review commit rather than review_snapshot: that
+    table is only written when the reviewed sha *is* the head at fetch time and a
+    patch is cached, which never holds for a PR that left the request set the
+    moment I reviewed it.
+
+    `node` is a fetch_archived_activity node: reviews.commit / commits / headRefOid.
+    """
+    reviews = (node.get("reviews") or {}).get("nodes") or []
+    mine = [
+        r for r in reviews
+        if _login(r) == my_login and r.get("submittedAt")
+        and (r.get("commit") or {}).get("oid")
+    ]
+    if not mine:
+        return None
+    reviewed_sha = max(mine, key=lambda r: r["submittedAt"])["commit"]["oid"]
+
+    head_commits = (node.get("commits") or {}).get("nodes") or []
+    head = (head_commits[-1].get("commit") or {}) if head_commits else {}
+    head_sha = head.get("oid") or node.get("headRefOid")
+    if not head_sha or head_sha == reviewed_sha:
+        return None
+    return {"push_at": head.get("committedDate") or "", "push_sha": head_sha}
+
+
 def derive_reviewers(latest_reviews: list[dict], review_requests: list[dict]) -> list[dict]:
     # Start with latest reviews (whose authors are users)
     out: dict[tuple[str, str], dict] = {}

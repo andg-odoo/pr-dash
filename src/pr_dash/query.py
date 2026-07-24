@@ -231,6 +231,8 @@ def summarize(item: dict) -> dict:
         "ping_at": item.get("ping_at"),
         "ping_author": item.get("ping_author"),
         "ping_snippet": item.get("ping_snippet"),
+        "push_at": item.get("push_at"),
+        "push_sha": item.get("push_sha"),
     }
 
 
@@ -374,12 +376,15 @@ def stats(items: list[dict]) -> dict:
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
     last_30 = 0
     pinged = 0
+    pushed = 0
     for it in archived:
         state = it.get("my_review_state") or "PENDING"
         by_review[state] = by_review.get(state, 0) + 1
         by_state[it.get("state") or "OPEN"] = by_state.get(it.get("state") or "OPEN", 0) + 1
         if it.get("ping_at"):
             pinged += 1
+        if it.get("push_at"):
+            pushed += 1
         ts = it.get("archived_at")
         if ts:
             try:
@@ -401,5 +406,6 @@ def stats(items: list[dict]) -> dict:
             "by_state": by_state,
             "last_30_days": last_30,
             "pinged": pinged,
+            "pushed": pushed,
         },
     }

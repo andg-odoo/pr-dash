@@ -462,3 +462,69 @@ def test_ping_stands_despite_authors_commented_review_wrapper():
     )
     p = derive.detect_review_ping(node, "me")
     assert p and p["ping_author"] == "alice"
+
+
+# --- detect_push_since_review ------------------------------------------------
+
+def _shnode(*, reviews=None, head=None, head_at=None, head_ref=None):
+    node = {"reviews": {"nodes": reviews or []}, "headRefOid": head_ref}
+    if head:
+        node["commits"] = {"nodes": [{"commit": {"oid": head, "committedDate": head_at}}]}
+    return node
+
+
+def _rvc(login, at, sha, state="APPROVED"):
+    return {"author": {"login": login}, "submittedAt": at, "state": state,
+            "commit": {"oid": sha}}
+
+
+def test_push_set_when_head_moved_past_my_review():
+    node = _shnode(reviews=[_rvc("me", "2026-07-01T00:00:00Z", "aaa")],
+                   head="bbb", head_at="2026-07-02T00:00:00Z")
+    p = derive.detect_push_since_review(node, "me")
+    assert p == {"push_at": "2026-07-02T00:00:00Z", "push_sha": "bbb"}
+
+
+def test_push_none_when_head_is_the_sha_i_reviewed():
+    node = _shnode(reviews=[_rvc("me", "2026-07-01T00:00:00Z", "aaa")],
+                   head="aaa", head_at="2026-07-01T00:00:00Z")
+    assert derive.detect_push_since_review(node, "me") is None
+
+
+def test_push_anchors_on_my_latest_review_not_my_first():
+    # Reviewed at aaa, they pushed bbb, I reviewed again at bbb: nothing new.
+    node = _shnode(reviews=[_rvc("me", "2026-07-01T00:00:00Z", "aaa"),
+                            _rvc("me", "2026-07-03T00:00:00Z", "bbb")],
+                   head="bbb", head_at="2026-07-02T00:00:00Z")
+    assert derive.detect_push_since_review(node, "me") is None
+
+
+def test_push_ignores_other_peoples_reviews():
+    # A final reviewer's review sits on the new head; mine is still on the old
+    # one. The anchor must be mine, so this is a push since *my* review.
+    node = _shnode(reviews=[_rvc("me", "2026-07-01T00:00:00Z", "aaa"),
+                            _rvc("bob", "2026-07-04T00:00:00Z", "bbb")],
+                   head="bbb", head_at="2026-07-02T00:00:00Z")
+    p = derive.detect_push_since_review(node, "me")
+    assert p and p["push_sha"] == "bbb"
+
+
+def test_push_none_without_a_review_of_mine():
+    node = _shnode(reviews=[_rvc("bob", "2026-07-01T00:00:00Z", "aaa")],
+                   head="bbb", head_at="2026-07-02T00:00:00Z")
+    assert derive.detect_push_since_review(node, "me") is None
+
+
+def test_push_none_when_my_review_has_no_commit():
+    node = _shnode(
+        reviews=[{"author": {"login": "me"}, "submittedAt": "2026-07-01T00:00:00Z",
+                  "state": "APPROVED", "commit": None}],
+        head="bbb", head_at="2026-07-02T00:00:00Z",
+    )
+    assert derive.detect_push_since_review(node, "me") is None
+
+
+def test_push_falls_back_to_head_ref_oid_without_commits():
+    node = _shnode(reviews=[_rvc("me", "2026-07-01T00:00:00Z", "aaa")], head_ref="bbb")
+    p = derive.detect_push_since_review(node, "me")
+    assert p == {"push_at": "", "push_sha": "bbb"}
