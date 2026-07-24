@@ -79,8 +79,48 @@ def test_prune_drops_changed_sha_and_missing(tmp_path):
     assert out == {"odoo/odoo#2": {"head_sha": "same", "hidden_at": "t"}}
 
 
-def test_prune_uses_primary_member_sha(tmp_path):
-    # current sha is the first member's head_sha (matches app.js isHidden).
+def test_prune_uses_member_sha_for_a_solo_pr(tmp_path):
+    # A solo PR's composite is just its member sha (matches app.js isHidden).
     mapping = {"odoo/odoo#1": {"head_sha": "mem", "hidden_at": "t"}}
     item = {"id": "odoo/odoo#1", "head_sha": "top", "members": [{"head_sha": "mem"}]}
     assert hidden.prune(mapping, [item]) == mapping
+
+
+def _pair(pr_id, odoo_sha, ent_sha):
+    return {"id": pr_id, "head_sha": odoo_sha,
+            "members": [{"head_sha": odoo_sha}, {"head_sha": ent_sha}]}
+
+
+def test_item_sha_covers_every_member():
+    assert hidden.item_sha(_pair("odoo/odoo#1", "aaa", "bbb")) == "aaa+bbb"
+
+
+def test_item_sha_is_order_independent():
+    assert (hidden.item_sha(_pair("odoo/odoo#1", "bbb", "aaa"))
+            == hidden.item_sha(_pair("odoo/odoo#1", "aaa", "bbb")))
+
+
+def test_item_sha_falls_back_to_top_level_without_members():
+    assert hidden.item_sha({"id": "odoo/odoo#1", "head_sha": "top"}) == "top"
+
+
+def test_prune_expires_a_pair_when_the_enterprise_half_moves():
+    # The regression this guards: keying on the primary (odoo) member alone let
+    # an enterprise-side push - and every re-review request after it - stay
+    # hidden for as long as the odoo half sat still.
+    mapping = {"odoo/odoo#1": {"head_sha": "aaa+bbb", "hidden_at": "t"}}
+    moved = _pair("odoo/odoo#1", "aaa", "ccc")
+    assert hidden.prune(mapping, [moved]) == {}
+
+
+def test_prune_keeps_a_pair_while_both_halves_sit_still():
+    mapping = {"odoo/odoo#1": {"head_sha": "aaa+bbb", "hidden_at": "t"}}
+    same = _pair("odoo/odoo#1", "aaa", "bbb")
+    assert hidden.prune(mapping, [same]) == mapping
+
+
+def test_prune_expires_a_pairs_legacy_single_sha_entry():
+    # Hides taken under the old rule stored only the odoo sha; they no longer
+    # match, which is the intended one-time correction.
+    mapping = {"odoo/odoo#1": {"head_sha": "aaa", "hidden_at": "t"}}
+    assert hidden.prune(mapping, [_pair("odoo/odoo#1", "aaa", "bbb")]) == {}

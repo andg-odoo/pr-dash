@@ -138,7 +138,8 @@ def get_comments(ref: str) -> dict:
 @mcp.tool()
 def hide_pr(ref: str) -> dict:
     """Hide a PR from the pending queue (same as the dashboard's × button). It
-    stays hidden until its head commit changes (a push auto-unhides it).
+    stays hidden until a head commit changes - a push to either half of a pair
+    auto-unhides it.
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
     Returns {id, hidden: true, hidden_count}.
@@ -147,19 +148,21 @@ def hide_pr(ref: str) -> dict:
     item = query.resolve_item(query.load_items(cfg), ref)
     # An archived row's cached sha can be long stale; a hide recorded at it
     # would auto-unhide against the live sha immediately. Best-effort live
-    # lookup, cached sha as the offline fallback.
-    head_sha = item.get("head_sha")
-    member = (item.get("members") or [{}])[0]
-    try:
-        head_sha = github.fetch_head_sha(
-            member.get("repo") or "", member.get("number") or 0,
-        ) or head_sha
-    except (github.GithubError, ValueError):
-        pass
+    # lookup per member, cached shas as the offline fallback.
+    members = []
+    for member in item.get("members") or []:
+        live = None
+        try:
+            live = github.fetch_head_sha(
+                member.get("repo") or "", member.get("number") or 0,
+            )
+        except (github.GithubError, ValueError):
+            pass
+        members.append({**member, "head_sha": live or member.get("head_sha")})
     mapping = hidden.apply_ops(cfg, [{
         "op": "hide",
         "pr_id": item["id"],
-        "head_sha": head_sha,
+        "head_sha": hidden.item_sha({**item, "members": members}),
         "hidden_at": derive.now_utc(),
     }])
     return {"id": item["id"], "hidden": True, "hidden_count": len(mapping)}

@@ -696,9 +696,21 @@ def _reconcile_sibling_states(conn, cfg, kept_ids: set[str]) -> None:
         node = activity.get(p["id"]) or {}
         return node.get("headRefOid") or p["head_sha"]
 
+    # A hide is keyed on every member's sha (hidden.item_sha), so the pseudo
+    # items handed to prune must carry the whole pair - a one-member stand-in
+    # would never match a pair's stored value and would silently un-hide it.
+    pairs = derive.detect_pairs(prs)
+    by_id = {p["id"]: p for p in prs}
     hidden_ids = set(hidden.prune(hidden.load(cfg), [
-        {"id": p["id"], "head_sha": _live_sha(p),
-         "members": [{"head_sha": _live_sha(p)}]}
+        {
+            "id": p["id"],
+            "head_sha": _live_sha(p),
+            "members": [
+                {"head_sha": _live_sha(m)}
+                for m in (p, by_id.get(pairs.get(p["id"]) or ""))
+                if m is not None
+            ],
+        }
         for p in stale
     ]))
 

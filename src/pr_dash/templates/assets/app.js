@@ -97,11 +97,19 @@
   }
   saveHidden(hidden);
 
+  /** Head state a hide is taken against: every member's head, so a push to
+   *  either half of a pair expires it. Mirrors hidden.item_sha in Python. */
+  function itemSha(pr) {
+    const shas = (pr.members || []).map(m => m.head_sha).filter(Boolean).sort();
+    return shas.length ? shas.join("+") : pr.head_sha;
+  }
+
   function isHidden(pr) {
     const h = hidden[pr.id];
     if (!h) return false;
-    // Auto-unhide on push (head_sha change) - primary member only matters for the cache key
-    const currentSha = pr.members[0].head_sha || pr.head_sha;
+    // Auto-unhide on push: any member's head moving counts, since a pair is one
+    // row here (keep in sync with hidden.item_sha).
+    const currentSha = itemSha(pr);
     if (h.head_sha && currentSha && h.head_sha !== currentSha) {
       delete hidden[pr.id];
       saveHidden(hidden);
@@ -112,10 +120,10 @@
 
   function setHidden(pr, on) {
     if (on) {
-      const entry = { head_sha: pr.head_sha, hidden_at: new Date().toISOString() };
+      const entry = { head_sha: itemSha(pr), hidden_at: new Date().toISOString() };
       hidden[pr.id] = entry;
       saveHidden(hidden);
-      enqueueOp({ op: "hide", pr_id: pr.id, head_sha: pr.head_sha, hidden_at: entry.hidden_at });
+      enqueueOp({ op: "hide", pr_id: pr.id, head_sha: entry.head_sha, hidden_at: entry.hidden_at });
     } else {
       delete hidden[pr.id];
       saveHidden(hidden);
