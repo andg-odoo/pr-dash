@@ -409,3 +409,108 @@ def stats(items: list[dict]) -> dict:
             "pushed": pushed,
         },
     }
+
+
+# --- tracked PRs -------------------------------------------------------------
+
+def load_tracked(cfg: Config, *, include_dismissed: bool = False) -> list[dict]:
+    """Build the tracked list from the cache, read-only.
+
+    Like load_items, this deliberately skips commit_tracked_seen_baseline: an
+    agent peeking must not consume the since-last-look deltas the dashboard is
+    about to show the user.
+    """
+    conn = db.connect(cfg.db_path)
+    try:
+        items, _ = render.build_tracked_payload(conn)
+        if include_dismissed:
+            # build_tracked_payload only returns undismissed rows; fold the rest
+            # back in, flagged, rather than duplicating its shaping here.
+            live = {it["id"] for it in items}
+            for row in db.list_tracked(conn, include_dismissed=True):
+                if row["id"] in live or row["dismissed_at"] is None:
+                    continue
+                items.append({
+                    "id": row["id"], "repo": row["repo"],
+                    "repo_short": row["repo"].split("/")[-1],
+                    "number": row["number"], "url": row["url"],
+                    "title": row["title"], "author": row["author"],
+                    "state": row["state"], "is_draft": bool(row["is_draft"]),
+                    "target_branch": row["target_branch"],
+                    "ci_state": row["ci_state"], "body": row["body"],
+                    "comment_count": row["comment_count"] or 0,
+                    "review_count": row["review_count"] or 0,
+                    "thread_count": row["thread_count"] or 0,
+                    "activity_count": row["activity_count"] or 0,
+                    "unresolved_threads": row["unresolved_threads"] or 0,
+                    "comments": [], "source": row["source"],
+                    "added_at": row["added_at"], "updated_at": row["updated_at"],
+                    "merged_at": row["merged_at"], "closed_at": row["closed_at"],
+                    "age_days": 0, "idle_days": 0, "since_last_look": [],
+                    "dismissed_at": row["dismissed_at"],
+                })
+    finally:
+        conn.close()
+    return items
+
+
+def resolve_tracked(items: list[dict], ref: str | int) -> dict:
+    """Find one tracked PR by '12345', 'odoo#12345', 'odoo/odoo#12345' or URL."""
+    repo_full, repo_short, number = _parse_ref(ref)
+    matches = [
+        t for t in items
+        if t["number"] == number
+        and (repo_full is None or t["repo"] == repo_full)
+        and (repo_short is None or t["repo_short"] == repo_short)
+    ]
+    if not matches:
+        known = ", ".join(f"{t['repo_short']}#{t['number']}" for t in items[:20])
+        raise ValueError(f"No tracked PR matches {ref!r}. Tracked: {known or '(none)'}")
+    if len(matches) > 1:
+        opts = ", ".join(f"{t['repo']}#{t['number']}" for t in matches)
+        raise ValueError(f"{ref!r} is ambiguous - candidates: {opts}")
+    return matches[0]
+
+
+def summarize_tracked(t: dict) -> dict:
+    """Compact watch row: no body, no discussion."""
+    return {
+        "id": t["id"],
+        "url": t.get("url"),
+        "title": t.get("title"),
+        "author": t.get("author"),
+        "state": t.get("state"),
+        "is_draft": t.get("is_draft"),
+        "target_branch": t.get("target_branch"),
+        "ci_state": t.get("ci_state"),
+        "comment_count": t.get("comment_count"),
+        "review_count": t.get("review_count"),
+        "thread_count": t.get("thread_count"),
+        "unresolved_threads": t.get("unresolved_threads"),
+        "age_days": t.get("age_days"),
+        "idle_days": t.get("idle_days"),
+        "updated_at": t.get("updated_at"),
+        "merged_at": t.get("merged_at"),
+        "closed_at": t.get("closed_at"),
+        "source": t.get("source"),
+        "since_last_look": t.get("since_last_look"),
+        "dismissed_at": t.get("dismissed_at"),
+    }
+
+
+def tracked_detail(t: dict) -> dict:
+    """Full tracked PR: summary plus body and the merged discussion stream.
+
+    Discussion entries carry kind ('issue' | 'review' | 'thread'), and thread
+    entries carry thread_id/parent_id so a consumer can rebuild the same nesting
+    the dashboard shows - threads hang off the review that opened them.
+    """
+    out = summarize_tracked(t)
+    out["body"] = t.get("body")
+    out["discussion"] = [
+        {**_comment_view(c), "kind": c.get("kind"),
+         "thread_id": c.get("thread_id"), "parent_id": c.get("parent_id"),
+         "path": c.get("path"), "state": c.get("state")}
+        for c in (t.get("comments") or [])
+    ]
+    return out

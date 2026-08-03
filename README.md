@@ -287,11 +287,13 @@ Tools:
 - `get_ai_review(ref)` - the cached AI first-pass sanity check, if any.
 - `review_history(author, module, verdict, limit)` - your archived reviews as triage rows.
 - `stats()` - pending-queue and archived-history counts.
+- `list_tracked(state, include_dismissed)` - watched PRs (the `tracked` tab, not the review queue); `state` is `all` / `open` / `resolved`.
+- `get_tracked(ref)` - one watched PR in full, with its merged discussion stream (conversation comments, review submissions, inline threads).
 - `refresh(force)` - re-fetch from GitHub (slow; network + AI), same as `pr-dash refresh`.
 
 `ref` accepts `12345`, `odoo#12345`, `odoo/odoo#12345`, or a PR URL; an
 enterprise number resolves to its odoo+enterprise pair. The same queries are
-available as JSON from the shell for debugging: `pr-dash query list|show|diff|history|stats`.
+available as JSON from the shell for debugging: `pr-dash query list|show|diff|history|stats|tracked`.
 
 ## Notes
 

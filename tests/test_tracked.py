@@ -1,9 +1,11 @@
 import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from pr_dash import cli, db, derive, github, render
+from pr_dash import query as prquery
 
 
 def _conn(tmp_path: Path) -> sqlite3.Connection:
@@ -365,3 +367,80 @@ def test_list_manual_subscriptions_parses_and_dedupes(monkeypatch):
     assert [s["id"] for s in out] == ["odoo/odoo#264068"]
     assert out[0]["url"] == "https://github.com/odoo/odoo/pull/264068"
     assert out[0]["number"] == 264068
+
+
+# --- query surface -----------------------------------------------------------
+
+def _tracked_item(**over):
+    item = {
+        "id": "odoo/odoo#1", "repo": "odoo/odoo", "repo_short": "odoo",
+        "number": 1, "url": "u", "title": "t", "author": "a", "state": "OPEN",
+        "is_draft": False, "target_branch": "master", "ci_state": "SUCCESS",
+        "body": "desc", "comment_count": 1, "review_count": 2, "thread_count": 3,
+        "activity_count": 6, "unresolved_threads": 1, "comments": [],
+        "source": "notif", "added_at": "t", "updated_at": "t",
+        "merged_at": None, "closed_at": None, "age_days": 5, "idle_days": 1,
+        "since_last_look": [],
+    }
+    item.update(over)
+    return item
+
+
+def test_resolve_tracked_accepts_short_and_full_refs():
+    items = [_tracked_item(), _tracked_item(
+        id="odoo/enterprise#2", repo="odoo/enterprise", repo_short="enterprise",
+        number=2)]
+    assert prquery.resolve_tracked(items, "1")["id"] == "odoo/odoo#1"
+    assert prquery.resolve_tracked(items, "enterprise#2")["id"] == "odoo/enterprise#2"
+    assert prquery.resolve_tracked(
+        items, "https://github.com/odoo/odoo/pull/1")["id"] == "odoo/odoo#1"
+    with pytest.raises(ValueError):
+        prquery.resolve_tracked(items, "999")
+
+
+def test_resolve_tracked_rejects_ambiguous_number():
+    # Same number in both repos, no repo given -> must not silently pick one.
+    items = [_tracked_item(), _tracked_item(
+        id="odoo/enterprise#1", repo="odoo/enterprise", repo_short="enterprise")]
+    with pytest.raises(ValueError, match="ambiguous"):
+        prquery.resolve_tracked(items, "1")
+
+
+def test_summarize_tracked_omits_body_and_discussion():
+    row = prquery.summarize_tracked(_tracked_item(comments=[{"body": "x"}]))
+    assert "body" not in row and "discussion" not in row
+    assert row["review_count"] == 2 and row["unresolved_threads"] == 1
+
+
+def test_tracked_detail_exposes_nesting_keys():
+    item = _tracked_item(comments=[
+        {"kind": "review", "thread_id": "REV_1", "parent_id": None,
+         "author": "r", "created_at": "t", "body": "LGTM", "url": "u",
+         "path": None, "state": "APPROVED"},
+        {"kind": "thread", "thread_id": "THR_1", "parent_id": "REV_1",
+         "author": "r", "created_at": "t", "body": "why", "url": "u2",
+         "path": "a/b.py", "state": "UNRESOLVED"},
+    ])
+    out = prquery.tracked_detail(item)
+    assert out["body"] == "desc"
+    assert [d["kind"] for d in out["discussion"]] == ["review", "thread"]
+    # parent_id is what lets a consumer rebuild the dashboard's nesting.
+    assert out["discussion"][1]["parent_id"] == "REV_1"
+    assert out["discussion"][1]["path"] == "a/b.py"
+    assert out["discussion"][0]["state"] == "APPROVED"
+
+
+def test_load_tracked_include_dismissed_flags_them(tmp_path):
+    conn = _conn(tmp_path)
+    _add(conn, "odoo/odoo#1")
+    _add(conn, "odoo/odoo#2")
+    db.dismiss_tracked(conn, "odoo/odoo#2", "2026-08-02T00:00:00+00:00")
+    conn.close()
+
+    cfg = SimpleNamespace(db_path=tmp_path / "t.db")
+    assert [t["id"] for t in prquery.load_tracked(cfg)] == ["odoo/odoo#1"]
+
+    both = prquery.load_tracked(cfg, include_dismissed=True)
+    assert {t["id"] for t in both} == {"odoo/odoo#1", "odoo/odoo#2"}
+    dismissed = next(t for t in both if t["id"] == "odoo/odoo#2")
+    assert dismissed["dismissed_at"] == "2026-08-02T00:00:00+00:00"

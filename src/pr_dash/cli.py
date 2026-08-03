@@ -548,6 +548,30 @@ def query_stats(config_path):
     _emit(prquery.stats(items))
 
 
+@query.command("tracked")
+@click.argument("ref", required=False)
+@click.option("--state", type=click.Choice(["all", "open", "resolved"]), default="all")
+@click.option("--include-dismissed", is_flag=True)
+@click.option("--config", "config_path", type=click.Path(path_type=Path))
+def query_tracked(ref, state, include_dismissed, config_path):
+    """List watched PRs, or show one in full with REF."""
+    cfg = _load_config_or_exit(config_path)
+    items = prquery.load_tracked(cfg, include_dismissed=include_dismissed)
+    if ref:
+        try:
+            _emit(prquery.tracked_detail(prquery.resolve_tracked(items, ref)))
+        except ValueError as e:
+            click.echo(str(e), err=True)
+            sys.exit(1)
+        return
+    if state == "open":
+        items = [t for t in items if t["state"] not in ("MERGED", "CLOSED")]
+    elif state == "resolved":
+        items = [t for t in items if t["state"] in ("MERGED", "CLOSED")]
+    _emit({"count": len(items),
+           "tracked": [prquery.summarize_tracked(t) for t in items]})
+
+
 def _open_html(html_path: Path) -> None:
     try:
         subprocess.Popen(

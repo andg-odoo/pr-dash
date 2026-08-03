@@ -136,6 +136,62 @@ def get_comments(ref: str) -> dict:
 
 
 @mcp.tool()
+def list_tracked(state: str = "all", include_dismissed: bool = False) -> dict:
+    """List tracked PRs - ones being *watched*, not reviewed.
+
+    These are separate from the review queue: nobody asked you to review them,
+    they were subscribed to on GitHub or added with `pr-dash track`. Use this to
+    answer "what am I keeping an eye on" and "did any of it land".
+
+    state: 'all' (default) | 'open' | 'resolved' (merged or closed).
+    include_dismissed: dismissed rows are excluded by default; True adds them
+    back carrying dismissed_at.
+
+    Rows are active-first, newest activity first. since_last_look holds what
+    moved since the dashboard was last rendered: 'resolved' (merged/closed),
+    'reopened', 'pushed', 'reply', 'new'. Returns {cache_fetched_at, count,
+    tracked}.
+    """
+    cfg = _get_cfg()
+    items = query.load_tracked(cfg, include_dismissed=include_dismissed)
+    if state == "open":
+        sel = [t for t in items if t["state"] not in ("MERGED", "CLOSED")]
+    elif state == "resolved":
+        sel = [t for t in items if t["state"] in ("MERGED", "CLOSED")]
+    elif state == "all":
+        sel = items
+    else:
+        raise ValueError(
+            f"state must be 'all', 'open', or 'resolved', got {state!r}"
+        )
+    return {
+        "cache_fetched_at": query.cache_fetched_at(cfg),
+        "count": len(sel),
+        "tracked": [query.summarize_tracked(t) for t in sel],
+    }
+
+
+@mcp.tool()
+def get_tracked(ref: str) -> dict:
+    """Full detail for one tracked PR: body plus its merged discussion stream.
+
+    ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
+
+    Discussion merges conversation comments, review submissions and inline
+    review threads, oldest first. Each entry carries kind ('issue' | 'review' |
+    'thread'); review entries carry state (APPROVED / CHANGES_REQUESTED /
+    COMMENTED / DISMISSED) and thread entries carry path plus thread_id and
+    parent_id, so threads can be regrouped under the review that opened them.
+
+    Only a recent window is cached (last 10 reviews, last 15 threads), so
+    review_count / thread_count can exceed what appears here on a busy PR.
+    """
+    cfg = _get_cfg()
+    items = query.load_tracked(cfg, include_dismissed=True)
+    return query.tracked_detail(query.resolve_tracked(items, ref))
+
+
+@mcp.tool()
 def hide_pr(ref: str) -> dict:
     """Hide a PR from the pending queue (same as the dashboard's × button). It
     stays hidden until a head commit changes - a push to either half of a pair
