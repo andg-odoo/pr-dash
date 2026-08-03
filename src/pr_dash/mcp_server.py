@@ -11,7 +11,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from pr_dash import config, derive, github, hidden, query
+from pr_dash import config, db, derive, github, hidden, query
 
 # stderr only: stdout is the MCP protocol channel, so a single stray print or
 # rich.Console write there corrupts the stream. Everything human-facing goes to
@@ -318,7 +318,8 @@ def _make_handler(cfg: config.Config) -> type[BaseHTTPRequestHandler]:
             self._send_json(200, hidden.load(cfg))
 
         def do_POST(self) -> None:
-            if self.path.split("?", 1)[0] != "/hidden":
+            path = self.path.split("?", 1)[0]
+            if path not in ("/hidden", "/tracked"):
                 self._send_json(404, {"error": "not found"})
                 return
             length = int(self.headers.get("Content-Length") or 0)
@@ -329,10 +330,38 @@ def _make_handler(cfg: config.Config) -> type[BaseHTTPRequestHandler]:
             except (ValueError, AttributeError):
                 self._send_json(400, {"error": "invalid body"})
                 return
+            if path == "/tracked":
+                self._send_json(200, {"ok": True, "count": _apply_tracked_ops(cfg, ops)})
+                return
             mapping = hidden.apply_ops(cfg, ops)
             self._send_json(200, {"ok": True, "count": len(mapping)})
 
     return HiddenSyncHandler
+
+
+def _apply_tracked_ops(cfg: config.Config, ops: list) -> int:
+    """Write dashboard dismiss/restore ops through to the tracked table.
+
+    Unlike hides (a JSON file), dismissals live in SQLite, so this opens its own
+    short-lived connection - the handler runs on the listener thread and sqlite3
+    connections are not shareable across threads.
+    """
+    applied = 0
+    conn = db.connect(cfg.db_path)
+    try:
+        with db.transaction(conn):
+            for op in ops:
+                pr_id = (op or {}).get("pr_id")
+                kind = (op or {}).get("op")
+                if not pr_id or kind not in ("dismiss", "restore"):
+                    continue
+                when = (op.get("dismissed_at") or derive.now_utc()) \
+                    if kind == "dismiss" else None
+                db.dismiss_tracked(conn, pr_id, when)
+                applied += 1
+    finally:
+        conn.close()
+    return applied
 
 
 def start_hidden_listener(cfg: config.Config) -> ThreadingHTTPServer | None:

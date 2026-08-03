@@ -81,6 +81,133 @@ def since_last_look_tags(
     return tags
 
 
+def tracked_row_from_node(node: dict, fetched_at: str) -> tuple[dict, list[dict]]:
+    """Flatten a slim tracked-PR node into (state columns, comments).
+
+    Discussion is merged from all three places GitHub keeps it - conversation
+    comments, review submissions, and inline review threads - into one
+    time-ordered stream. On an Odoo PR almost nothing lives in `comments`: the
+    approvals and the actual argument are reviews and threads, so fetching only
+    conversation comments makes a busy PR look silent.
+    """
+    ci_state, _ = status_check_state(
+        ((node.get("commits") or {}).get("nodes") or [{}])[0]
+        .get("commit", {}).get("statusCheckRollup"),
+    )
+    comment_block = node.get("comments") or {}
+    review_block = node.get("reviews") or {}
+    thread_block = node.get("reviewThreads") or {}
+
+    def _entry(c, kind, when, *, path=None, state=None,
+               thread_id=None, parent_id=None):
+        return {
+            "comment_id": c.get("url") or f"{kind}:{when}:{_login(c)}",
+            "kind": kind,
+            "thread_id": thread_id,
+            "parent_id": parent_id,
+            "author": _login(c),
+            "created_at": when,
+            "body": c.get("body"),
+            "path": path,
+            "state": state,
+            "url": c.get("url"),
+        }
+
+    comments = [
+        _entry(c, "issue", c.get("createdAt"))
+        for c in (comment_block.get("nodes") or [])
+    ]
+    for r in review_block.get("nodes") or []:
+        state = r.get("state")
+        # A bare COMMENTED review with no body is just the envelope GitHub wraps
+        # around inline thread comments - the comments themselves come through
+        # reviewThreads, so keeping the envelope would double every one of them.
+        # A bodiless APPROVED / CHANGES_REQUESTED is the opposite: the verdict is
+        # the whole message, and dropping it loses the LGTM.
+        if state == "COMMENTED" and not (r.get("body") or "").strip():
+            continue
+        comments.append(_entry(r, "review", r.get("submittedAt"), state=state,
+                               thread_id=r.get("id")))
+    for t in thread_block.get("nodes") or []:
+        path = t.get("path")
+        state = "RESOLVED" if t.get("isResolved") else "UNRESOLVED"
+        thread_nodes = (t.get("comments") or {}).get("nodes") or []
+        # A thread hangs off the review that opened it - its *first* comment's
+        # review. Later replies belong to whatever review the replier happened
+        # to be submitting, so keying on those would scatter one thread across
+        # several parents.
+        parent = ((thread_nodes[0] if thread_nodes else {}).get("pullRequestReview")
+                  or {}).get("id")
+        for c in thread_nodes:
+            comments.append(_entry(c, "thread", c.get("createdAt"), path=path,
+                                   state=state, thread_id=t.get("id"),
+                                   parent_id=parent))
+    comments.sort(key=lambda c: c["created_at"] or "")
+
+    unresolved = sum(
+        1 for t in (thread_block.get("nodes") or []) if not t.get("isResolved")
+    )
+    # Movement signal. Thread *replies* don't move any totalCount, but a new
+    # review, a new thread, or a new conversation comment does - which covers
+    # every way a watched PR visibly progresses.
+    activity_count = (
+        (comment_block.get("totalCount") or 0)
+        + (review_block.get("totalCount") or 0)
+        + (thread_block.get("totalCount") or 0)
+    )
+    row = {
+        "title": node.get("title") or "",
+        "author": _login(node) or "",
+        "state": node.get("state") or "OPEN",
+        "is_draft": int(bool(node.get("isDraft"))),
+        "target_branch": node.get("baseRefName") or "",
+        "head_sha": node.get("headRefOid") or "",
+        "body": node.get("body"),
+        "ci_state": ci_state,
+        "comment_count": comment_block.get("totalCount") or 0,
+        "activity_count": activity_count,
+        "review_count": review_block.get("totalCount") or 0,
+        "thread_count": thread_block.get("totalCount") or 0,
+        "unresolved_threads": unresolved,
+        "created_at": node.get("createdAt"),
+        "updated_at": node.get("updatedAt"),
+        "closed_at": node.get("closedAt"),
+        "merged_at": node.get("mergedAt"),
+        "fetched_at": fetched_at,
+    }
+    return row, comments
+
+
+def tracked_since_last_look(
+    prev: tuple[str | None, str | None, int | None] | None,
+    state: str, head_sha: str | None, comment_count: int, *, first_run: bool,
+) -> list[str]:
+    """What moved on a tracked PR since it was last rendered.
+
+    Deliberately coarser than the review-queue equivalent: for a PR you only
+    watch, "it merged" and "someone said something" are the events worth a
+    badge - CI churn and every force-push are not what you subscribed for.
+    A state flip is reported even on the first run, since landing in the list
+    already merged is the whole point of tracking it.
+    """
+    resolved = state in ("MERGED", "CLOSED")
+    if prev is None:
+        return ["resolved"] if resolved else ([] if first_run else ["new"])
+    p_state, p_head, p_comments = prev
+    tags = []
+    if (p_state or "OPEN") != state:
+        tags.append("resolved" if resolved else "reopened")
+    elif resolved:
+        # Still merged/closed and already flagged once - keep the badge so the
+        # row stays visibly done until it is dismissed.
+        tags.append("resolved")
+    if p_head and head_sha and p_head != head_sha:
+        tags.append("pushed")
+    if p_comments is not None and comment_count > p_comments:
+        tags.append("reply")
+    return tags
+
+
 def path_to_module(repo: str, path: str) -> str | None:
     if repo == "odoo/enterprise":
         return path.split("/", 1)[0] if "/" in path else None

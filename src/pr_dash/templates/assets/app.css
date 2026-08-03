@@ -1275,3 +1275,168 @@ body {
   border-radius: 5px;
   padding: 0 5px;
 }
+
+/* ------------------------------------------------------------- tracked tab -- */
+
+/* The tab switch toggles the `hidden` attribute, whose UA `display: none` is a
+   plain element rule - any class here that sets `display` outranks it. Restate
+   it for the containers that do, or both tabs' controls render at once. */
+.sort-bar[hidden],
+.filters[hidden],
+.pr-list[hidden] { display: none; }
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 8px 0 2px;
+}
+
+.tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--fg-dim);
+  cursor: pointer;
+  font: inherit;
+  padding: 4px 8px;
+}
+
+.tab:hover { color: var(--fg); }
+
+.tab.is-active {
+  border-bottom-color: var(--accent);
+  color: var(--fg);
+}
+
+.tab-count {
+  background: var(--chip-bg);
+  border-radius: 8px;
+  color: var(--fg-faint);
+  font-size: 11px;
+  margin-left: 3px;
+  padding: 0 5px;
+}
+
+.tab.is-active .tab-count { color: var(--fg-dim); }
+
+.tr-empty,
+.tr-none {
+  color: var(--fg-faint);
+  font-size: 13px;
+  padding: 16px 12px;
+}
+
+/* Resolved rows are the payoff of tracking, so they read as done rather than
+   dimmed-out: full-strength text with an accent rail, not reduced opacity. */
+.tr-row-resolved {
+  border-left: 2px solid var(--green);
+}
+
+.tr-state {
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 1px 4px;
+}
+
+.tr-open   { background: #1d2b1f; color: var(--green); }
+.tr-merged { background: #2a1f36; color: #c08ae0; }
+.tr-closed { background: #331d1d; color: var(--red); }
+.tr-draft  { background: var(--chip-bg); color: var(--fg-faint); }
+
+.tr-branch { color: var(--fg-faint); }
+
+.tr-ci-failure,
+.tr-ci-error { color: var(--red); }
+.tr-ci-pending { color: var(--yellow); }
+
+.look-resolved { background: #2a1f36; color: #c08ae0; }
+.look-reopened { background: #331d1d; color: var(--red); }
+
+.tr-verdict,
+.tr-onpath,
+.tr-unresolved {
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 4px;
+}
+
+.tr-verdict-ok  { background: #1d2b1f; color: var(--green); }
+.tr-verdict-no  { background: #331d1d; color: var(--red); }
+.tr-verdict-dim { background: var(--chip-bg); color: var(--fg-faint); }
+.tr-onpath      { background: var(--chip-bg); color: var(--fg-dim); font-weight: 400; }
+.tr-unresolved  { background: #33290f; color: var(--yellow); }
+
+/* Inline thread replies read as secondary to top-level review activity. */
+.tr-comment-thread { border-left: 2px solid var(--border); }
+
+/* Discussion tree. Top-level entries (reviews, conversation comments) are
+   cards; the threads they opened nest inside, folded unless unresolved. */
+.tr-entry {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+}
+
+.tr-entry-orphan { background: none; border-style: dashed; }
+
+.tr-msg + .tr-msg { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; }
+
+.tr-msg header {
+  align-items: baseline;
+  color: var(--fg-faint);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+
+.tr-msg header a { color: var(--fg-faint); text-decoration: none; }
+.tr-msg header a:hover { color: var(--accent); }
+.tr-comment-author { color: var(--fg-dim); font-weight: 600; }
+
+.tr-msg-body { font-size: 13px; }
+.tr-msg-body :first-child { margin-top: 0; }
+.tr-msg-body :last-child { margin-bottom: 0; }
+/* Screenshots pasted into review comments are frequently huge. */
+.tr-msg-body img { max-width: 100%; height: auto; }
+
+.tr-threads { margin-top: 8px; }
+
+.tr-threads > summary {
+  color: var(--fg-faint);
+  cursor: pointer;
+  font-size: 11px;
+  list-style: none;
+  padding: 2px 0;
+  user-select: none;
+}
+
+.tr-threads > summary::-webkit-details-marker { display: none; }
+.tr-threads > summary::before { content: "▸ "; }
+.tr-threads[open] > summary::before { content: "▾ "; }
+.tr-threads > summary:hover { color: var(--fg-dim); }
+
+.tr-thread {
+  border-left: 2px solid var(--border);
+  margin: 6px 0 0 4px;
+  padding-left: 10px;
+}
+
+.tr-thread-open { border-left-color: var(--yellow); }
+
+.tr-thread-head {
+  align-items: baseline;
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+/* Reuse the queue's .pair-badge shape for the tracked state pill. */
+.tr-badge-merged { background: #c08ae0; }
+.tr-badge-closed { background: var(--red); }

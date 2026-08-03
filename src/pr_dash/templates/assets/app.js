@@ -2,6 +2,7 @@
   "use strict";
 
   const PRS = window.PR_DATA || [];
+  const TRACKED = window.TRACKED_DATA || [];
   const md = window.markdownit({
     html: false,        // strip raw HTML: prevents <script> in PR bodies from firing
     linkify: true,      // turn bare URLs into links
@@ -26,7 +27,18 @@
   const resetBtn = document.getElementById("reset-filters");
   const searchEl = document.getElementById("search");
 
+  const trackedListEl = document.getElementById("tracked-list");
+  const tabsEl = document.getElementById("tabs");
+  const trackedTabCountEl = document.getElementById("tracked-tab-count");
+  const queueFiltersEl = document.getElementById("queue-filters");
+  const trackedFiltersEl = document.getElementById("tracked-filters");
+  const queueSortBarEl = document.getElementById("queue-sort-bar");
+  const trackedSortBarEl = document.getElementById("tracked-sort-bar");
+
   const STATE_KEY = "pr-dash:filters:v1";
+  const TAB_KEY = "pr-dash:tab:v1";
+  const DISMISSED_KEY = "pr-dash:tracked-dismissed:v1";
+  const TRACKED_SORT_KEY = "pr-dash:tracked-sort:v1";
   const SORT_KEY = "pr-dash:sort:v1";
   const HIDDEN_KEY = "pr-dash:hidden:v1";
   const HIDDEN_QUEUE_KEY = "pr-dash:hidden-queue:v1";
@@ -50,6 +62,13 @@
   ];
 
   const LOOK_BADGES = { pushed: "↑push", reply: "reply", ci: "ci", new: "new" };
+  const TRACKED_BADGES = {
+    resolved: "done", reopened: "reopened", pushed: "↑push", reply: "reply", new: "new",
+  };
+  const TRACKED_STATES = [
+    { id: "resolved", label: "merged / closed" },
+    { id: "moved", label: "moved since last look" },
+  ];
 
   /** Hidden map: { pr_id: { head_sha, hidden_at } }. Auto-unhide if head_sha changed. */
   function loadHidden() {
@@ -132,12 +151,12 @@
     flushQueue();
   }
 
-  let filters = loadJSON(STATE_KEY) || {
-    repo: new Set(),
-    bucket: new Set(),
-    branch: new Set(),
-    state: new Set(),
-  };
+  let filters = loadJSON(STATE_KEY) || {};
+  // Backfill any group missing from a stored payload written before it existed,
+  // so an older localStorage entry can't leave a group undefined.
+  for (const g of ["repo", "bucket", "branch", "state", "tracked-state"]) {
+    if (!(g in filters)) filters[g] = [];
+  }
   // localStorage roundtrips Set as array
   for (const k of Object.keys(filters)) {
     if (!(filters[k] instanceof Set)) filters[k] = new Set(filters[k] || []);
@@ -210,7 +229,7 @@
     else filters[group].add(value);
     saveFilters();
     refreshChipStates();
-    renderList();
+    rerenderActive();
   }
 
   function refreshChipStates() {
@@ -225,6 +244,8 @@
     buildChips("bucket", BUCKETS);
     buildChips("branch", uniqueValues("target_branch"));
     buildChips("state", STATES.map(s => s.id), id => STATES.find(s => s.id === id).label);
+    buildChips("tracked-state", TRACKED_STATES.map(s => s.id),
+               id => TRACKED_STATES.find(s => s.id === id).label);
   }
 
   function passesFilters(pr) {
@@ -508,6 +529,7 @@
 
   /** Move keyboard selection through the visible list by `delta` rows. */
   function moveSelection(delta) {
+    if (activeTab === "tracked") return moveTrackedSelection(delta);
     if (!visiblePRs.length) return;
     const cur = visiblePRs.findIndex(p => p.id === selectedId);
     const next = cur === -1
@@ -517,7 +539,25 @@
     if (pr) { selectPR(pr.id); scrollRowIntoView(pr.id); }
   }
 
+  function moveTrackedSelection(delta) {
+    if (!visibleTracked.length) return;
+    const cur = visibleTracked.findIndex(t => t.id === selectedTrackedId);
+    const next = cur === -1
+      ? (delta > 0 ? 0 : visibleTracked.length - 1)
+      : Math.max(0, Math.min(visibleTracked.length - 1, cur + delta));
+    const t = visibleTracked[next];
+    if (!t) return;
+    selectTracked(t.id);
+    const row = trackedListEl.querySelector(`.pr-row[data-id="${CSS.escape(t.id)}"]`);
+    if (row) row.scrollIntoView({ block: "nearest" });
+  }
+
   function openSelectedOnGithub() {
+    if (activeTab === "tracked") {
+      const t = TRACKED.find(x => x.id === selectedTrackedId);
+      if (t) window.open(t.url, "_blank", "noopener");
+      return;
+    }
     const pr = PRS.find(p => p.id === selectedId);
     if (pr) window.open(pr.members[0].url, "_blank", "noopener");
   }
@@ -992,18 +1032,424 @@
     return m ? decodeURIComponent(m[1]) : null;
   }
 
+  // ---------------------------------------------------------------- tracked --
+  // PRs I subscribed to on GitHub myself (notification reason=manual) plus any
+  // added with `pr-dash track`. Read-only watch list: no review state, no diff,
+  // no AI - the question it answers is "did it move, did it land".
+
+  let activeTab = localStorage.getItem(TAB_KEY) === "tracked" ? "tracked" : "queue";
+  let selectedTrackedId = null;
+  let visibleTracked = [];
+
+  const trackedSortEl = document.getElementById("tracked-sort");
+  let trackedSortMode = localStorage.getItem(TRACKED_SORT_KEY) || "active";
+  if (trackedSortEl) {
+    trackedSortEl.value = trackedSortMode;
+    trackedSortEl.addEventListener("change", () => {
+      trackedSortMode = trackedSortEl.value;
+      localStorage.setItem(TRACKED_SORT_KEY, trackedSortMode);
+      renderTrackedList();
+    });
+  }
+
+  /** Dismissals are local-first, like hides: the row drops out of the list here
+   *  and the op is flushed to the `pr-dash mcp` listener when it happens to be
+   *  running, which stamps dismissed_at so the next render bakes it in. Without
+   *  the listener the dismissal still holds in this browser. */
+  function loadDismissed() {
+    const raw = localStorage.getItem(DISMISSED_KEY);
+    if (!raw) return {};
+    try { const d = JSON.parse(raw); return d && typeof d === "object" ? d : {}; }
+    catch { return {}; }
+  }
+  let dismissed = loadDismissed();
+
+  function setDismissed(id, on) {
+    if (on) dismissed[id] = new Date().toISOString();
+    else delete dismissed[id];
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify(dismissed));
+    if (!HIDDEN_SYNC_PORT) return;
+    fetch(`http://127.0.0.1:${HIDDEN_SYNC_PORT}/tracked`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ops: [{ op: on ? "dismiss" : "restore", pr_id: id, dismissed_at: dismissed[id] || null }],
+      }),
+    }).catch(() => {});
+  }
+
+  function trackedHaystack(t) {
+    if (t._haystack === undefined) {
+      t._haystack = [t.title, t.author, t.target_branch, t.repo, t.repo_short,
+                     `${t.repo_short}#${t.number}`, String(t.number)]
+        .join(" ").toLowerCase();
+    }
+    return t._haystack;
+  }
+
+  function trackedPasses(t) {
+    if (dismissed[t.id]) return false;
+    if (searchQuery && !searchQuery.split(/\s+/).every(
+      q => !q || trackedHaystack(t).includes(q))) return false;
+    const f = filters["tracked-state"];
+    const resolved = t.state === "MERGED" || t.state === "CLOSED";
+    if (f.has("resolved") && !resolved) return false;
+    if (f.has("moved") && !(t.since_last_look || []).length) return false;
+    return true;
+  }
+
+  function trackedStateTag(t) {
+    if (t.state === "MERGED") return '<span class="tr-state tr-merged">MERGED</span>';
+    if (t.state === "CLOSED") return '<span class="tr-state tr-closed">CLOSED</span>';
+    if (t.is_draft) return '<span class="tr-state tr-draft">DRAFT</span>';
+    return '<span class="tr-state tr-open">OPEN</span>';
+  }
+
+  function isResolved(t) { return t.state === "MERGED" || t.state === "CLOSED"; }
+
+  /** "2 comments · 4 reviews · 15 threads", omitting the zeroes.
+   *
+   *  The summed activity_count that drives the since-last-look delta is not a
+   *  quantity a human has a feel for - "91 discussion" says nothing about
+   *  whether that is one long argument or sixty rubber stamps. */
+  function discussionParts(t) {
+    const parts = [];
+    const push = (n, one, many) => { if (n) parts.push(`${n} ${n === 1 ? one : many}`); };
+    push(t.comment_count, "comment", "comments");
+    push(t.review_count, "review", "reviews");
+    push(t.thread_count, "thread", "threads");
+    return parts;
+  }
+
+  /** Sort the tracked list in place per the tab's own sort mode.
+   *
+   *  The queue's sort options don't transfer - there is no bucket, no review
+   *  age, no ball-in-my-court - so this tab gets its own dropdown and its own
+   *  persisted mode rather than sharing `sortMode`.
+   *
+   *  Default is active-first, deliberately: a watch list accumulates a long
+   *  tail of things that closed months ago, and resolved-first buries the live
+   *  PRs under it. `resolved` remains available for a catch-up pass. */
+  function sortTracked(list) {
+    const byActivity = (a, b) => (b.updated_at || "").localeCompare(a.updated_at || "");
+    const moved = t => ((t.since_last_look || []).length ? 1 : 0);
+    switch (trackedSortMode) {
+      case "resolved":
+        return list.sort((a, b) => (isResolved(b) - isResolved(a)) || byActivity(a, b));
+      case "moved":
+        return list.sort((a, b) => (moved(b) - moved(a)) || byActivity(a, b));
+      case "age":
+        return list.sort((a, b) => (b.age_days - a.age_days) || byActivity(a, b));
+      case "repo":
+        return list.sort((a, b) => a.repo.localeCompare(b.repo) || a.number - b.number);
+      default:
+        return list.sort((a, b) => (isResolved(a) - isResolved(b)) || byActivity(a, b));
+    }
+  }
+
+  function renderTrackedList() {
+    const visible = sortTracked(TRACKED.filter(trackedPasses));
+    visibleTracked = visible;
+    const dismissedCount = TRACKED.filter(t => dismissed[t.id]).length;
+    visibleCountEl.textContent = dismissedCount
+      ? `${visible.length} / ${TRACKED.length}  ·  ${dismissedCount} dismissed`
+      : `${visible.length} / ${TRACKED.length}`;
+    if (totalCountEl) totalCountEl.textContent = "tracked";
+    if (lookCountEl) {
+      const n = TRACKED.filter(t => !dismissed[t.id] && (t.since_last_look || []).length).length;
+      lookCountEl.textContent = n ? `${n} moved` : "";
+      lookCountEl.title = n ? "Show only tracked PRs that moved since your last visit" : "";
+    }
+    if (trackedTabCountEl) trackedTabCountEl.textContent = String(TRACKED.length - dismissedCount);
+
+    trackedListEl.innerHTML = "";
+    if (!visible.length) {
+      const li = document.createElement("li");
+      li.className = "tr-empty";
+      li.textContent = TRACKED.length
+        ? "Nothing matches. Clear the search or filters."
+        : "Nothing tracked yet. Subscribe to a PR on GitHub, or run `pr-dash track <url>`.";
+      trackedListEl.appendChild(li);
+      return;
+    }
+    visible.forEach(t => {
+      const li = document.createElement("li");
+      const resolved = t.state === "MERGED" || t.state === "CLOSED";
+      li.className = "pr-row tr-row" + (resolved ? " tr-row-resolved" : "");
+      li.dataset.id = t.id;
+      const badges = (t.since_last_look || [])
+        .map(x => `<span class="look-badge look-${x}">${TRACKED_BADGES[x] || x}</span>`)
+        .join("");
+      const ci = t.ci_state && t.ci_state !== "SUCCESS"
+        ? `<span class="tr-ci tr-ci-${escapeHTML(String(t.ci_state).toLowerCase())}">ci ${escapeHTML(t.ci_state.toLowerCase())}</span>`
+        : "";
+      const when = resolved
+        ? `${t.state === "MERGED" ? "merged" : "closed"} ${daysAgo(t.merged_at || t.closed_at)}`
+        : `idle ${t.idle_days}d`;
+      li.innerHTML = `
+        <span class="pr-id-group">
+          <span class="pr-id">${escapeHTML(t.repo_short)}#${t.number}</span>
+          ${trackedStateTag(t)}${badges}
+        </span>
+        <span class="pr-title" title="${escapeHTML(t.title)}">${escapeHTML(t.title)}</span>
+        <button class="pr-hide" type="button" title="Dismiss from tracked list"
+                data-dismiss-id="${escapeHTML(t.id)}">×</button>
+        <span class="pr-sub">
+          <span class="pr-author">@${escapeHTML(t.author)}</span>
+          <span class="tr-branch">${escapeHTML(t.target_branch)}</span>
+          ${ci}
+          <span>${discussionParts(t).join(" · ") || "no discussion"}</span>
+          ${t.unresolved_threads ? `<span class="tr-unresolved">${t.unresolved_threads} unresolved</span>` : ""}
+          <span>open ${t.age_days}d · ${when}</span>
+        </span>`;
+      li.addEventListener("click", (e) => {
+        if (e.target.classList.contains("pr-hide")) return;
+        selectTracked(t.id);
+      });
+      li.querySelector(".pr-hide").addEventListener("click", (e) => {
+        e.stopPropagation();
+        setDismissed(t.id, true);
+        renderTrackedList();
+        if (selectedTrackedId === t.id) {
+          selectedTrackedId = null;
+          renderTrackedDetail(null);
+        }
+      });
+      trackedListEl.appendChild(li);
+    });
+    if (selectedTrackedId) highlightTracked(selectedTrackedId);
+  }
+
+  /** "3d ago" from an ISO stamp; empty string when there is no stamp. */
+  function daysAgo(iso) {
+    if (!iso) return "";
+    const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    return days <= 0 ? "today" : `${days}d ago`;
+  }
+
+  function highlightTracked(id) {
+    trackedListEl.querySelectorAll(".pr-row").forEach(row => {
+      row.classList.toggle("selected", row.dataset.id === id);
+    });
+  }
+
+  function selectTracked(id) {
+    selectedTrackedId = id;
+    highlightTracked(id);
+    renderTrackedDetail(TRACKED.find(t => t.id === id) || null);
+  }
+
+  /** Group the flat discussion stream into review-rooted trees.
+   *
+   *  GitHub models an inline conversation as a thread hanging off the review
+   *  that opened it, and reading them interleaved by timestamp - which is what
+   *  a flat list does - scrambles that: a five-comment argument about one file
+   *  ends up split across half the page. Threads nest under their review and
+   *  fold away, so the top level stays the shape of the actual conversation.
+   *
+   *  Threads whose parent review fell outside the fetched window are kept as
+   *  their own top-level group rather than dropped. */
+  function groupDiscussion(entries) {
+    const threads = new Map();   // thread_id -> {path, state, comments[]}
+    const tops = [];
+    for (const c of entries) {
+      if (c.kind !== "thread") { tops.push({ kind: c.kind, entry: c, threads: [] }); continue; }
+      let t = threads.get(c.thread_id);
+      if (!t) {
+        t = { id: c.thread_id, path: c.path, state: c.state,
+              parent: c.parent_id, comments: [] };
+        threads.set(c.thread_id, t);
+      }
+      t.comments.push(c);
+    }
+    const byReview = new Map(
+      tops.filter(t => t.kind === "review").map(t => [t.entry.thread_id, t]));
+    for (const t of threads.values()) {
+      const parent = byReview.get(t.parent);
+      if (parent) parent.threads.push(t);
+      else tops.push({ kind: "orphan-threads", entry: t.comments[0], threads: [t] });
+    }
+    // Newest first, and each review's threads oldest-first inside it.
+    tops.sort((a, b) => (b.entry.created_at || "").localeCompare(a.entry.created_at || ""));
+    tops.forEach(t => t.threads.sort(
+      (a, b) => (a.comments[0].created_at || "").localeCompare(b.comments[0].created_at || "")));
+    return tops;
+  }
+
+  const TRACKED_VERDICT = {
+    APPROVED: ["approved", "tr-verdict-ok"],
+    CHANGES_REQUESTED: ["requested changes", "tr-verdict-no"],
+    DISMISSED: ["dismissed", "tr-verdict-dim"],
+    COMMENTED: ["reviewed", "tr-verdict-dim"],
+  };
+
+  function trackedCommentHTML(c, { badge = "" } = {}) {
+    const body = (c.body || "").trim();
+    return `
+      <div class="tr-msg">
+        <header>
+          <span class="tr-comment-author">@${escapeHTML(c.author || "?")}</span>
+          ${badge}
+          <span class="tr-comment-when">${daysAgo(c.created_at)}</span>
+          ${c.url ? `<a href="${escapeHTML(c.url)}" target="_blank" rel="noopener">link</a>` : ""}
+        </header>
+        ${body ? `<div class="tr-msg-body markdown-body">${md.render(body)}</div>` : ""}
+      </div>`;
+  }
+
+  function trackedThreadsHTML(threads) {
+    if (!threads.length) return "";
+    const unresolved = threads.filter(t => t.state === "UNRESOLVED").length;
+    const n = threads.length;
+    return `
+      <details class="tr-threads"${unresolved ? " open" : ""}>
+        <summary>
+          ${n} thread${n === 1 ? "" : "s"}
+          ${unresolved ? `<span class="tr-unresolved">${unresolved} unresolved</span>` : ""}
+        </summary>
+        ${threads.map(t => `
+          <div class="tr-thread${t.state === "UNRESOLVED" ? " tr-thread-open" : ""}">
+            <div class="tr-thread-head">
+              <span class="tr-onpath" title="${escapeHTML(t.path || "")}">${escapeHTML((t.path || "?").split("/").pop())}</span>
+              ${t.state === "UNRESOLVED" ? '<span class="tr-unresolved">unresolved</span>' : ""}
+            </div>
+            ${t.comments.map(c => trackedCommentHTML(c)).join("")}
+          </div>`).join("")}
+      </details>`;
+  }
+
+  function renderTrackedDetail(t) {
+    if (!t) {
+      detailEl.innerHTML = '<div class="empty">Select a tracked PR on the left.</div>';
+      return;
+    }
+    const resolved = isResolved(t);
+    const stateBadge = t.state === "MERGED"
+      ? '<span class="pair-badge tr-badge-merged">merged</span>'
+      : t.state === "CLOSED" ? '<span class="pair-badge tr-badge-closed">closed</span>'
+      : t.is_draft ? '<span class="draft-badge">draft</span>' : "";
+
+    const groups = groupDiscussion(t.comments || []);
+    const discussionHTML = groups.length
+      ? groups.map(g => {
+          if (g.kind === "orphan-threads") {
+            return `<article class="tr-entry tr-entry-orphan">${trackedThreadsHTML(g.threads)}</article>`;
+          }
+          const c = g.entry;
+          const v = c.kind === "review" ? TRACKED_VERDICT[c.state] : null;
+          const badge = v ? `<span class="tr-verdict ${v[1]}">${v[0]}</span>` : "";
+          return `
+            <article class="tr-entry">
+              ${trackedCommentHTML(c, { badge })}
+              ${trackedThreadsHTML(g.threads)}
+            </article>`;
+        }).join("")
+      : '<div class="tr-none">No discussion cached.</div>';
+
+    detailEl.innerHTML = `
+      <div class="detail">
+        <div class="detail-header">
+          <h2>${stateBadge}${escapeHTML(t.title)}</h2>
+          <div class="crumbs">
+            <span>${escapeHTML(t.repo)}#${t.number}</span> ·
+            <span>@${escapeHTML(t.author)}</span> ·
+            <span>${escapeHTML(t.target_branch)}</span>
+          </div>
+        </div>
+
+        <div class="detail-links">
+          <a href="${escapeHTML(t.url)}" target="_blank" rel="noopener">GitHub: ${escapeHTML(t.repo_short)}#${t.number} ↗</a>
+          <button class="detail-hide tr-dismiss" type="button">Dismiss</button>
+        </div>
+
+        <section class="section">
+          <h3>Status</h3>
+          <dl class="kv">
+            <dt>State</dt><dd>${escapeHTML(t.state)}${t.is_draft ? " (draft)" : ""}</dd>
+            <dt>CI</dt><dd>${escapeHTML(t.ci_state || "-")}</dd>
+            <dt>Age</dt><dd>${t.age_days}d open · ${resolved
+              ? `${t.state === "MERGED" ? "merged" : "closed"} ${daysAgo(t.merged_at || t.closed_at)}`
+              : `last activity ${daysAgo(t.updated_at)}`}</dd>
+            <dt>Discussion</dt><dd>${discussionParts(t).join(" · ") || "<em>(none)</em>"}${
+              t.unresolved_threads ? ` · <span class="tr-unresolved">${t.unresolved_threads} unresolved</span>` : ""}</dd>
+            <dt>Tracked</dt><dd>${t.source === "manual" ? "manually" : "via subscription"}</dd>
+          </dl>
+        </section>
+
+        ${t.body && t.body.trim() ? `
+        <section class="section">
+          <h3>Description</h3>
+          <div class="pr-body markdown-body">${md.render(t.body.trim())}</div>
+        </section>` : ""}
+
+        <section class="section">
+          <h3>Discussion</h3>
+          ${discussionHTML}
+        </section>
+      </div>`;
+    const btn = detailEl.querySelector(".tr-dismiss");
+    if (btn) btn.addEventListener("click", () => {
+      setDismissed(t.id, true);
+      selectedTrackedId = null;
+      renderTrackedList();
+      renderTrackedDetail(null);
+    });
+  }
+
+  function dismissSelectedTracked() {
+    if (!selectedTrackedId) return;
+    const idx = visibleTracked.findIndex(t => t.id === selectedTrackedId);
+    setDismissed(selectedTrackedId, true);
+    renderTrackedList();
+    const next = visibleTracked[Math.min(idx, visibleTracked.length - 1)];
+    if (next) selectTracked(next.id);
+    else { selectedTrackedId = null; renderTrackedDetail(null); }
+  }
+
+  /** Render whichever tab is showing. Shared controls (search, reset, the
+   *  updated-count) call this instead of renderList so they work in both. */
+  function rerenderActive() {
+    if (activeTab === "tracked") renderTrackedList();
+    else renderList();
+  }
+
+  function setTab(tab) {
+    activeTab = tab === "tracked" ? "tracked" : "queue";
+    localStorage.setItem(TAB_KEY, activeTab);
+    const tracked = activeTab === "tracked";
+    tabsEl.querySelectorAll(".tab").forEach(b => {
+      b.classList.toggle("is-active", b.dataset.tab === activeTab);
+    });
+    listEl.hidden = tracked;
+    trackedListEl.hidden = !tracked;
+    queueFiltersEl.hidden = tracked;
+    trackedFiltersEl.hidden = !tracked;
+    queueSortBarEl.hidden = tracked;
+    trackedSortBarEl.hidden = !tracked;
+    searchEl.placeholder = tracked
+      ? "Search tracked title, #, author…  ( / )"
+      : "Search title, #, author, module…  ( / )";
+    rerenderActive();
+    if (tracked) {
+      if (!selectedTrackedId && visibleTracked.length) selectTracked(visibleTracked[0].id);
+      else renderTrackedDetail(TRACKED.find(t => t.id === selectedTrackedId) || null);
+    } else {
+      renderDetail(PRS.find(p => p.id === selectedId));
+    }
+  }
+
   resetBtn.addEventListener("click", () => {
     for (const k of Object.keys(filters)) filters[k].clear();
     saveFilters();
     refreshChipStates();
     searchQuery = "";
     searchEl.value = "";
-    renderList();
+    rerenderActive();
   });
 
   searchEl.addEventListener("input", () => {
     searchQuery = searchEl.value.trim().toLowerCase();
-    renderList();
+    rerenderActive();
   });
 
   searchEl.addEventListener("keydown", (e) => {
@@ -1011,8 +1457,13 @@
       searchEl.value = "";
       searchQuery = "";
       searchEl.blur();
-      renderList();
+      rerenderActive();
     }
+  });
+
+  tabsEl.addEventListener("click", (e) => {
+    const btn = e.target.closest(".tab");
+    if (btn) setTab(btn.dataset.tab);
   });
 
   document.addEventListener("keydown", (e) => {
@@ -1030,7 +1481,9 @@
       case "Enter":
         if (/^(BUTTON|A)$/.test(tag)) break;  // let a focused control act normally
         openSelectedOnGithub(); break;
-      case "h": hideSelected(); break;
+      case "h": if (activeTab === "queue") hideSelected(); break;
+      case "x": if (activeTab === "tracked") dismissSelectedTracked(); break;
+      case "t": setTab(activeTab === "tracked" ? "queue" : "tracked"); break;
     }
   });
 
@@ -1044,7 +1497,10 @@
   updateKpi();
   flushQueue();
   if (kpiEl) kpiEl.addEventListener("click", renderStats);
-  if (lookCountEl) lookCountEl.addEventListener("click", () => toggleChip("state", "updated"));
+  if (lookCountEl) lookCountEl.addEventListener("click", () => {
+    toggleChip(activeTab === "tracked" ? "tracked-state" : "state",
+               activeTab === "tracked" ? "moved" : "updated");
+  });
   renderList();
 
   const initial = parseHash();
@@ -1052,4 +1508,9 @@
   if (initial) selectPR(initial);
   else if (firstActive) selectPR(firstActive.id);
   else if (PRS.length) selectPR(PRS[0].id);
+
+  // Restore the last tab. Deep links (#pr=) always mean the queue, so an
+  // incoming link isn't swallowed by a stored `tracked` preference.
+  if (activeTab === "tracked" && !initial) setTab("tracked");
+  else { activeTab = "queue"; setTab("queue"); }
 })();

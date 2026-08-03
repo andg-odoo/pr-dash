@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -21,8 +22,9 @@ log = logging.getLogger("pr_dash")
 
 def _render_from_cache(conn, cfg, *, offline=False, last_refresh=None):
     """Build the payload from cache and write the dashboard HTML, baking in the
-    pruned server-side hidden map. Returns (payload, seen_updates); the caller
-    decides whether to advance the since-last-look baseline."""
+    pruned server-side hidden map. Returns (payload, seen_updates,
+    tracked_seen_updates); the caller decides whether to advance either
+    since-last-look baseline."""
     payload, seen_updates = render.build_payload(
         conn, cfg.github_login, cfg.repos, cfg.thresholds.stale_review_days,
         command_templates=dataclasses.asdict(cfg.commands),
@@ -31,9 +33,11 @@ def _render_from_cache(conn, cfg, *, offline=False, last_refresh=None):
         p["my_login"] = cfg.github_login
     hidden_map = hidden.prune(hidden.load(cfg), payload)
     hidden.save(cfg, hidden_map)
+    tracked, tracked_seen = render.build_tracked_payload(conn)
     render.render(payload, cfg.html_path, offline=offline, last_refresh=last_refresh,
-                  hidden_map=hidden_map, hidden_sync_port=cfg.hidden_sync_port)
-    return payload, seen_updates
+                  hidden_map=hidden_map, hidden_sync_port=cfg.hidden_sync_port,
+                  tracked=tracked)
+    return payload, seen_updates, tracked_seen
 
 
 def _load_config_or_exit(config_path):
@@ -193,7 +197,7 @@ def backfill(limit, since, config_path):
 
     # Re-render from cache (no network, no browser) so the dashboard reflects the
     # freshly backfilled verdicts instead of a stale render.
-    payload, _ = _render_from_cache(conn, cfg, offline=False)
+    payload, _, _ = _render_from_cache(conn, cfg, offline=False)
     console.print(f"[green]Re-rendered {len(payload)} PRs → {cfg.html_path}[/green]")
 
 
@@ -231,17 +235,183 @@ def refresh(no_open, force, offline, config_path):
             console.print(f"[red]GitHub error: {e}[/red]")
             console.print("[yellow]Falling back to cached data.[/yellow]")
             offline = True
+        else:
+            _run_tracked_refresh(conn, cfg, force=force)
 
-    payload, seen_updates = _render_from_cache(
+    payload, seen_updates, tracked_seen = _render_from_cache(
         conn, cfg, offline=offline, last_refresh=last_refresh,
     )
     # Only now that the render succeeded do we advance the "last look" baseline,
     # so a render failure can't silently swallow the since-last-look deltas.
     render.commit_seen_baseline(conn, seen_updates, derive.now_utc())
+    render.commit_tracked_seen_baseline(conn, tracked_seen, derive.now_utc())
     console.print(f"[green]Rendered {len(payload)} PRs → {cfg.html_path}[/green]")
 
     if not no_open:
         _open_html(cfg.html_path)
+
+
+_PR_REF_RE = re.compile(
+    r"^(?:https?://github\.com/)?([\w.-]+/[\w.-]+)(?:/pull/|#)(\d+)/?$"
+)
+
+
+def _parse_pr_ref(ref: str) -> tuple[str, int]:
+    """Parse `owner/repo#123` or a github.com pull URL into (repo, number)."""
+    m = _PR_REF_RE.match(ref.strip())
+    if not m:
+        raise ValueError(
+            f"Cannot parse {ref!r}. Use owner/repo#123 or a github.com pull URL."
+        )
+    return m.group(1), int(m.group(2))
+
+
+@cli.command()
+@click.argument("refs", nargs=-1)
+@click.option("--config", "config_path", type=click.Path(path_type=Path))
+@click.option("--skip-invalid", is_flag=True,
+              help="Warn and continue on unparseable refs instead of exiting.")
+def track(refs, config_path, skip_invalid):
+    """Track PRs in the dashboard's `tracked` tab.
+
+    Takes `owner/repo#123` or a github.com pull URL. With no arguments (or a
+    literal `-`) it reads refs from stdin, one per line, which is how the
+    subscriptions-page import works - see `docs: tracked tab` in the README.
+
+    This is the primary way to populate the tracked tab. The notification seed
+    only finds PRs that have *generated* a notification, so a custom
+    "notify on close only" subscription stays invisible until it resolves.
+    """
+    cfg = _load_config_or_exit(config_path)
+    conn = db.connect(cfg.db_path)
+    now = derive.now_utc()
+
+    if not refs or "-" in refs:
+        piped = [ln.strip() for ln in sys.stdin.read().splitlines()]
+        refs = [*(r for r in refs if r != "-"), *(ln for ln in piped if ln)]
+    if not refs:
+        console.print("[red]No PR refs given (and nothing on stdin).[/red]")
+        sys.exit(1)
+
+    parsed = []
+    for ref in refs:
+        try:
+            parsed.append(_parse_pr_ref(ref))
+        except ValueError as e:
+            if skip_invalid:
+                console.print(f"[yellow]skipped: {e}[/yellow]")
+                continue
+            console.print(f"[red]{e}[/red]")
+            sys.exit(1)
+
+    added = 0
+    with db.transaction(conn):
+        for repo, number in parsed:
+            pr_id = f"{repo}#{number}"
+            if db.add_tracked(conn, pr_id, repo, number,
+                              f"https://github.com/{repo}/pull/{number}", "manual", now):
+                added += 1
+                console.print(f"[green]Tracking {pr_id}[/green]")
+            else:
+                console.print(f"[dim]{pr_id} already tracked[/dim]")
+
+    # Fill in title/state right away so `pr-dash rerender` shows real rows
+    # instead of blank placeholders until the next full refresh. Covers revived
+    # rows too, whose cached state is as old as the day they were dismissed.
+    if parsed:
+        try:
+            fetched = _fetch_tracked_state(conn, parsed)
+        except github.GithubError as e:
+            console.print(f"[yellow]Tracked, but could not fetch state yet: {e}[/yellow]")
+        else:
+            console.print(f"[dim]{added} new, {fetched} fetched[/dim]")
+
+
+@cli.command()
+@click.argument("refs", nargs=-1, required=True)
+@click.option("--config", "config_path", type=click.Path(path_type=Path))
+def untrack(refs, config_path):
+    """Stop tracking PRs (removes them from the cache entirely)."""
+    cfg = _load_config_or_exit(config_path)
+    conn = db.connect(cfg.db_path)
+    with db.transaction(conn):
+        for ref in refs:
+            try:
+                repo, number = _parse_pr_ref(ref)
+            except ValueError as e:
+                console.print(f"[red]{e}[/red]")
+                sys.exit(1)
+            pr_id = f"{repo}#{number}"
+            if db.remove_tracked(conn, pr_id):
+                console.print(f"[green]Untracked {pr_id}[/green]")
+            else:
+                console.print(f"[dim]{pr_id} was not tracked[/dim]")
+
+
+def _fetch_tracked_state(conn, refs: list[tuple[str, int]]) -> int:
+    """Refresh the cached GitHub state of the given tracked PRs. Returns the
+    number of rows updated."""
+    if not refs:
+        return 0
+    nodes = github.fetch_tracked_nodes(refs)
+    now = derive.now_utc()
+    with db.transaction(conn):
+        for pr_id, node in nodes.items():
+            row, comments = derive.tracked_row_from_node(node, now)
+            db.update_tracked_state(conn, pr_id, row)
+            db.replace_tracked_comments(conn, pr_id, comments)
+    return len(nodes)
+
+
+def _run_tracked_refresh(conn, cfg, *, force: bool) -> None:
+    """Seed tracked PRs from manual notification subscriptions, then refresh the
+    cached state of everything tracked.
+
+    Seeding is additive only: notifications age out of GitHub's retention, so
+    treating them as the full list would silently drop quiet PRs. Removal is an
+    explicit `untrack` (or a dismissal from the dashboard).
+    """
+    now = derive.now_utc()
+    try:
+        subs = github.list_manual_subscriptions()
+    except github.GithubError as e:
+        # A notifications failure must not sink the review-queue refresh, which
+        # is the tool's primary job.
+        log.debug("tracked seed skipped: %s", e)
+        console.print(f"[yellow]Could not read subscriptions: {e}[/yellow]")
+        subs = []
+
+    added = 0
+    with db.transaction(conn):
+        for s in subs:
+            if db.add_tracked(conn, s["id"], s["repo"], s["number"], s["url"],
+                              "notif", now):
+                added += 1
+
+    rows = db.list_tracked(conn, include_dismissed=True)
+    staleness_cutoff = datetime.now(timezone.utc) - timedelta(
+        minutes=cfg.thresholds.staleness_minutes,
+    )
+    stale = [
+        (r["repo"], r["number"]) for r in rows
+        # A dismissed row is not rendered, so spending a fetch on it is waste -
+        # but it stays in the table to keep deduping against the next seed.
+        if r["dismissed_at"] is None
+        and (force or not r["fetched_at"]
+             or derive.parse_iso(r["fetched_at"]) < staleness_cutoff)
+    ]
+    updated = 0
+    if stale:
+        try:
+            updated = _fetch_tracked_state(conn, stale)
+        except github.GithubError as e:
+            console.print(f"[yellow]Tracked PR refresh failed: {e}[/yellow]")
+
+    if added or updated:
+        console.print(
+            f"[dim]tracked: +{added} new, {updated} refreshed "
+            f"({len(rows)} total)[/dim]"
+        )
 
 
 @cli.command()
@@ -258,7 +428,7 @@ def rerender(no_open, config_path):
     cfg = _load_config_or_exit(config_path)
     conn = db.connect(cfg.db_path)
 
-    payload, _ = _render_from_cache(conn, cfg, offline=False)
+    payload, _, _ = _render_from_cache(conn, cfg, offline=False)
     console.print(f"[green]Re-rendered {len(payload)} PRs → {cfg.html_path}[/green]")
 
     if not no_open:

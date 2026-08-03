@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 from dataclasses import dataclass
+
+log = logging.getLogger("pr_dash.github")
 
 # The full PR field selection, as a named GraphQL fragment so the review-request
 # search and the by-number sibling fetch (fetch_pr_nodes) share one definition
@@ -161,12 +164,25 @@ class RateLimit:
     reset_at: str
 
 
-def _gh(args: list[str], *, input: str | None = None, timeout: int = 60) -> str:
+def _gh(args: list[str], *, input: str | None = None, timeout: int = 60,
+        allow_failure: bool = False) -> str:
+    """Run `gh` and return stdout.
+
+    `allow_failure` returns stdout on a nonzero exit as long as there *is*
+    stdout: `gh api graphql` exits 1 whenever the response carries any `errors`,
+    even a partial one where most aliases resolved fine. Callers that can use a
+    partial response need the body, not the exception.
+    """
     try:
         result = subprocess.run(
             ["gh", *args],
-            capture_output=True, text=True, timeout=timeout, check=True, input=input,
+            capture_output=True, text=True, timeout=timeout,
+            check=not allow_failure, input=input,
         )
+        if allow_failure and result.returncode != 0 and not result.stdout.strip():
+            raise subprocess.CalledProcessError(
+                result.returncode, ["gh", *args], result.stdout, result.stderr,
+            )
     except FileNotFoundError as e:
         raise GithubError("`gh` CLI not found on PATH. Install it from https://cli.github.com/") from e
     except subprocess.CalledProcessError as e:
@@ -189,6 +205,23 @@ def _graphql(query: str, variables: dict) -> dict:
     if "errors" in data:
         raise GithubError(f"GraphQL errors: {data['errors']}")
     return data["data"]
+
+
+def _graphql_partial(query: str, variables: dict) -> dict:
+    """Like _graphql, but keeps whatever resolved when some aliases errored.
+
+    Only for batched by-alias fetches over a user-curated ref list, where one
+    stale entry (repo renamed, PR number that isn't a PR) must not sink the
+    other 24 in the chunk. GraphQL still returns `data` with the failed aliases
+    nulled, so the caller's "absent means skip" handling covers it.
+    """
+    payload = json.dumps({"query": query, "variables": variables})
+    data = json.loads(
+        _gh(["api", "graphql", "--input", "-"], input=payload, allow_failure=True)
+    )
+    if data.get("errors"):
+        log.debug("partial GraphQL errors: %s", data["errors"])
+    return data.get("data") or {}
 
 
 def search_personal_review_requested(login: str) -> tuple[list[dict], RateLimit | None]:
@@ -392,6 +425,149 @@ def fetch_pr_nodes(
             if pr:
                 nodes.append(pr)
     return nodes
+
+
+# Tracked PRs are read-only watch targets, not review work: no diff, no files,
+# no review threads, no reviewer states. Just enough to answer "did it move, and
+# what was said" - which keeps the batched fetch cheap even for a long list.
+TRACKED_NODE_FRAGMENT = """
+fragment TrackedFields on PullRequest {
+  url
+  number
+  title
+  state
+  isDraft
+  body
+  createdAt
+  updatedAt
+  closedAt
+  mergedAt
+  headRefOid
+  baseRefName
+  author { login }
+  repository { nameWithOwner }
+  comments(last: 10) {
+    totalCount
+    nodes { author { login } createdAt body url }
+  }
+  reviews(last: 10) {
+    totalCount
+    nodes { id author { login } state submittedAt body url }
+  }
+  reviewThreads(last: 15) {
+    totalCount
+    nodes {
+      id
+      isResolved
+      path
+      comments(last: 5) {
+        nodes { author { login } createdAt body url pullRequestReview { id } }
+      }
+    }
+  }
+  commits(last: 1) {
+    nodes {
+      commit {
+        statusCheckRollup {
+          state
+          contexts(first: 50) {
+            nodes {
+              __typename
+              ... on StatusContext { context state targetUrl }
+              ... on CheckRun { name conclusion detailsUrl }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+
+def list_manual_subscriptions() -> list[dict]:
+    """Return the PR threads the user subscribed to *themselves*.
+
+    GitHub exposes no endpoint for the /notifications/subscriptions page, so the
+    notification list is the only handle on it - and its `reason` field is what
+    separates a deliberate Subscribe ("manual") from the auto-subscription that
+    a review request or a mention creates. `all=true` includes already-read
+    threads, without which only unread ones would ever seed.
+
+    This is inherently activity-bounded: GitHub prunes old notifications, so a
+    subscribed-but-quiet PR eventually stops appearing here. That is exactly why
+    the caller stores the result in a sticky table instead of mirroring it.
+
+    Each entry is {repo, number, url, title, updated_at}.
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
+    raw = _gh([
+        "api", "/notifications?all=true&per_page=100", "--paginate",
+        "--jq", ".[] | select(.reason == \"manual\") "
+                "| select(.subject.type == \"PullRequest\") "
+                "| {url: .subject.url, title: .subject.title, "
+                "updated_at: .updated_at, repo: .repository.full_name}",
+    ], timeout=120)
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        # subject.url is the REST pulls URL: .../repos/{owner}/{repo}/pulls/{n}
+        api_url = entry.get("url") or ""
+        _, sep, tail = api_url.partition("/repos/")
+        if not sep or "/pulls/" not in tail:
+            continue
+        repo, _, number_s = tail.partition("/pulls/")
+        try:
+            number = int(number_s)
+        except ValueError:
+            continue
+        pr_id = f"{repo}#{number}"
+        if pr_id in seen:
+            continue
+        seen.add(pr_id)
+        out.append({
+            "id": pr_id,
+            "repo": repo,
+            "number": number,
+            "url": f"https://github.com/{repo}/pull/{number}",
+            "title": entry.get("title") or "",
+            "updated_at": entry.get("updated_at"),
+        })
+    return out
+
+
+def fetch_tracked_nodes(
+    refs: list[tuple[str, int]], *, chunk_size: int = 10,
+) -> dict[str, dict]:
+    """Given (repo, number) pairs, return pr_id -> a slim PR node.
+
+    Batched via GraphQL field aliases. A ref that no longer resolves (deleted
+    repo, or a number that was never a PR) is simply absent from the result
+    rather than raising, so one bad entry can't sink the whole refresh.
+    """
+    out: dict[str, dict] = {}
+    for start in range(0, len(refs), chunk_size):
+        chunk = refs[start:start + chunk_size]
+        parts = []
+        for i, (repo, number) in enumerate(chunk):
+            owner, name = repo.split("/", 1)
+            parts.append(
+                f'p{i}: repository(owner: "{owner}", name: "{name}") {{ '
+                f'pullRequest(number: {number}) {{ ...TrackedFields }} }}'
+            )
+        query = "query {\n" + "\n".join(parts) + "\n}\n" + TRACKED_NODE_FRAGMENT
+        data = _graphql_partial(query, {})
+        for i, (repo, number) in enumerate(chunk):
+            pr = (data.get(f"p{i}") or {}).get("pullRequest")
+            if pr:
+                out[f"{repo}#{number}"] = pr
+    return out
 
 
 def fetch_remaining_files(repo: str, number: int, after_cursor: str) -> list[str]:

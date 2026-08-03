@@ -5,7 +5,70 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 18
+
+# The tracked-PR tables, kept as a named constant so the fresh-database schema
+# and the v15 migration create them from one definition and can't drift.
+#
+# Tracked PRs are deliberately *not* rows in `pr`: they are PRs nobody asked me
+# to review, so they have no review-request timestamp, no review state, and must
+# never be touched by the review-queue sweep. Separate tables keep the two
+# lifecycles from interfering.
+TRACKED_SCHEMA_SQL = """
+CREATE TABLE tracked (
+  id            TEXT PRIMARY KEY,
+  repo          TEXT NOT NULL,
+  number        INTEGER NOT NULL,
+  url           TEXT NOT NULL,
+  title         TEXT NOT NULL DEFAULT '',
+  author        TEXT NOT NULL DEFAULT '',
+  state         TEXT NOT NULL DEFAULT 'OPEN',
+  is_draft      INTEGER NOT NULL DEFAULT 0,
+  target_branch TEXT NOT NULL DEFAULT '',
+  head_sha      TEXT NOT NULL DEFAULT '',
+  body          TEXT,
+  ci_state      TEXT,
+  comment_count INTEGER NOT NULL DEFAULT 0,
+  activity_count     INTEGER NOT NULL DEFAULT 0,
+  review_count       INTEGER NOT NULL DEFAULT 0,
+  thread_count       INTEGER NOT NULL DEFAULT 0,
+  unresolved_threads INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT,
+  updated_at    TEXT,
+  closed_at     TEXT,
+  merged_at     TEXT,
+  source        TEXT NOT NULL DEFAULT 'notif',
+  added_at      TEXT NOT NULL,
+  dismissed_at  TEXT,
+  fetched_at    TEXT
+);
+
+CREATE TABLE tracked_comment (
+  pr_id      TEXT NOT NULL REFERENCES tracked(id) ON DELETE CASCADE,
+  comment_id TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  thread_id  TEXT,
+  parent_id  TEXT,
+  author     TEXT,
+  created_at TEXT,
+  body       TEXT,
+  path       TEXT,
+  state      TEXT,
+  url        TEXT,
+  PRIMARY KEY (pr_id, comment_id)
+);
+
+CREATE TABLE tracked_seen (
+  pr_id         TEXT PRIMARY KEY REFERENCES tracked(id) ON DELETE CASCADE,
+  state          TEXT,
+  head_sha       TEXT,
+  comment_count  INTEGER,
+  activity_count INTEGER,
+  seen_at        TEXT NOT NULL
+);
+
+CREATE INDEX idx_tracked_comment_pr ON tracked_comment(pr_id);
+"""
 
 SCHEMA_SQL = """
 CREATE TABLE pr (
@@ -128,7 +191,7 @@ CREATE INDEX idx_pr_module_pr ON pr_module(pr_id);
 CREATE INDEX idx_pr_reviewer_pr ON pr_reviewer(pr_id);
 CREATE INDEX idx_pr_thread_pr ON pr_thread(pr_id);
 CREATE INDEX idx_pr_comment_pr ON pr_comment(pr_id);
-"""
+""" + TRACKED_SCHEMA_SQL
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
@@ -270,6 +333,51 @@ def _migrate(conn: sqlite3.Connection) -> None:
         for col in ("push_at", "push_sha"):
             if col not in cols:
                 conn.execute(f"ALTER TABLE pr ADD COLUMN {col} TEXT")
+    if current < 15:
+        tables = {
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        if "tracked" not in tables:
+            conn.executescript(TRACKED_SCHEMA_SQL)
+    if current < 16:
+        # v15 shipped with issue-comment counts only, which made a PR whose
+        # whole discussion lives in review threads look silent.
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(tracked)").fetchall()}
+        for col in ("activity_count", "unresolved_threads"):
+            if col not in cols:
+                conn.execute(
+                    f"ALTER TABLE tracked ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0"
+                )
+        seen_cols = {
+            r[1] for r in conn.execute("PRAGMA table_info(tracked_seen)").fetchall()
+        }
+        if "activity_count" not in seen_cols:
+            conn.execute("ALTER TABLE tracked_seen ADD COLUMN activity_count INTEGER")
+        # Force a re-fetch of every tracked row so the new counts get populated
+        # rather than sitting at 0 until each PR happens to go stale.
+        conn.execute("UPDATE tracked SET fetched_at = NULL")
+    if current < 17:
+        # Thread comments now nest under the review that raised them, which
+        # needs the review id (parent_id) and the thread they belong to.
+        cols = {
+            r[1] for r in conn.execute("PRAGMA table_info(tracked_comment)").fetchall()
+        }
+        for col in ("thread_id", "parent_id"):
+            if col not in cols:
+                conn.execute(f"ALTER TABLE tracked_comment ADD COLUMN {col} TEXT")
+        conn.execute("UPDATE tracked SET fetched_at = NULL")
+    if current < 18:
+        # A single summed activity_count reads as a meaningless "91 discussion";
+        # the row shows the parts, so they have to be stored separately.
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(tracked)").fetchall()}
+        for col in ("review_count", "thread_count"):
+            if col not in cols:
+                conn.execute(
+                    f"ALTER TABLE tracked ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0"
+                )
+        conn.execute("UPDATE tracked SET fetched_at = NULL")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -598,6 +706,118 @@ def has_comments(conn: sqlite3.Connection, pr_id: str) -> bool:
         "SELECT 1 FROM pr_comment WHERE pr_id = ? LIMIT 1", (pr_id,)
     ).fetchone()
     return row is not None
+
+
+TRACKED_STATE_COLS = [
+    "title", "author", "state", "is_draft", "target_branch", "head_sha", "body",
+    "ci_state", "comment_count", "created_at", "updated_at", "closed_at",
+    "merged_at", "fetched_at", "activity_count", "unresolved_threads",
+    "review_count", "thread_count",
+]
+
+
+def add_tracked(conn: sqlite3.Connection, pr_id: str, repo: str, number: int,
+                url: str, source: str, added_at: str) -> bool:
+    """Start tracking a PR. Returns True if it was newly added.
+
+    Tracking is sticky: an already-tracked row keeps its original `added_at` and
+    `source`, so re-seeding from notifications never rewrites the provenance of
+    one you added by hand.
+
+    Only an explicit `source='manual'` add revives a dismissed row. The
+    notification seed must not: a merged PR keeps its `reason=manual` thread for
+    as long as GitHub retains it, so an un-dismissing seed would resurrect every
+    PR the moment after you cleared it.
+    """
+    existing = conn.execute(
+        "SELECT dismissed_at FROM tracked WHERE id = ?", (pr_id,),
+    ).fetchone()
+    if existing is None:
+        conn.execute(
+            "INSERT INTO tracked (id, repo, number, url, source, added_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (pr_id, repo, number, url, source, added_at),
+        )
+        return True
+    if existing["dismissed_at"] is not None and source == "manual":
+        conn.execute("UPDATE tracked SET dismissed_at = NULL WHERE id = ?", (pr_id,))
+    return False
+
+
+def remove_tracked(conn: sqlite3.Connection, pr_id: str) -> bool:
+    """Stop tracking a PR entirely (cascades its comments and seen baseline)."""
+    return conn.execute("DELETE FROM tracked WHERE id = ?", (pr_id,)).rowcount > 0
+
+
+def dismiss_tracked(conn: sqlite3.Connection, pr_id: str, when: str | None) -> None:
+    """Set (or clear, with when=None) the dismissal stamp on a tracked PR.
+
+    Dismissing keeps the row - it only drops out of the dashboard list - so a
+    PR you dismissed stays deduped against the next notification re-seed.
+    """
+    conn.execute("UPDATE tracked SET dismissed_at = ? WHERE id = ?", (when, pr_id))
+
+
+def update_tracked_state(conn: sqlite3.Connection, pr_id: str, row: dict) -> None:
+    """Write the freshly-fetched GitHub state onto a tracked row, leaving the
+    tracking metadata (source, added_at, dismissed_at) untouched."""
+    sets = ", ".join(f"{c} = :{c}" for c in TRACKED_STATE_COLS if c in row)
+    if not sets:
+        return
+    conn.execute(f"UPDATE tracked SET {sets} WHERE id = :id", {**row, "id": pr_id})
+
+
+def get_tracked(conn: sqlite3.Connection, pr_id: str) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM tracked WHERE id = ?", (pr_id,)).fetchone()
+
+
+def list_tracked(conn: sqlite3.Connection, *,
+                 include_dismissed: bool = False) -> list[sqlite3.Row]:
+    where = "" if include_dismissed else " WHERE dismissed_at IS NULL"
+    return conn.execute(
+        f"SELECT * FROM tracked{where} ORDER BY updated_at DESC, number DESC"
+    ).fetchall()
+
+
+_TRACKED_COMMENT_COLS = ["comment_id", "kind", "thread_id", "parent_id", "author",
+                         "created_at", "body", "path", "state", "url"]
+
+
+def replace_tracked_comments(conn: sqlite3.Connection, pr_id: str,
+                             comments: list[dict]) -> None:
+    conn.execute("DELETE FROM tracked_comment WHERE pr_id = ?", (pr_id,))
+    conn.executemany(
+        f"INSERT INTO tracked_comment (pr_id, {', '.join(_TRACKED_COMMENT_COLS)}) "
+        f"VALUES (?, {', '.join('?' for _ in _TRACKED_COMMENT_COLS)})",
+        [(pr_id, *(c.get(col) for col in _TRACKED_COMMENT_COLS)) for c in comments],
+    )
+
+
+def list_tracked_comments(conn: sqlite3.Connection) -> dict[str, list[dict]]:
+    rows = conn.execute(
+        f"SELECT pr_id, {', '.join(_TRACKED_COMMENT_COLS)} "
+        "FROM tracked_comment ORDER BY pr_id, created_at"
+    ).fetchall()
+    out: dict[str, list[dict]] = {}
+    for r in rows:
+        out.setdefault(r["pr_id"], []).append(dict(r))
+    return out
+
+
+def list_tracked_seen(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
+    return {r["pr_id"]: r for r in conn.execute("SELECT * FROM tracked_seen").fetchall()}
+
+
+def upsert_tracked_seen(conn: sqlite3.Connection, pr_id: str, state: str | None,
+                        head_sha: str | None, activity_count: int | None,
+                        seen_at: str) -> None:
+    _upsert(conn, "tracked_seen", {
+        "pr_id": pr_id,
+        "state": state,
+        "head_sha": head_sha,
+        "activity_count": activity_count,
+        "seen_at": seen_at,
+    }, ["pr_id"])
 
 
 def comments_for(conn: sqlite3.Connection, pr_id: str) -> list[dict]:

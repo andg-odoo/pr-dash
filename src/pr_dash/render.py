@@ -489,6 +489,89 @@ def build_payload(
     return items, seen_updates
 
 
+def build_tracked_payload(
+    conn: sqlite3.Connection,
+) -> tuple[list[dict], list[tuple[str, str | None, str | None, int | None]]]:
+    """Return (tracked items, tracked seen_updates).
+
+    Same contract as build_payload: the caller persists the baseline only after
+    a successful render, so a render failure can't swallow the deltas.
+    """
+    rows = [dict(r) for r in db.list_tracked(conn)]
+    comments_by_pr = db.list_tracked_comments(conn)
+    seen_rows = db.list_tracked_seen(conn)
+    first_run = not seen_rows
+
+    items: list[dict] = []
+    seen_updates: list[tuple[str, str | None, str | None, int | None]] = []
+    for row in rows:
+        prev = seen_rows.get(row["id"])
+        prev_tuple = (
+            (prev["state"], prev["head_sha"], prev["activity_count"]) if prev else None
+        )
+        deltas = derive.tracked_since_last_look(
+            prev_tuple, row["state"], row["head_sha"], row["activity_count"] or 0,
+            first_run=first_run,
+        )
+        seen_updates.append(
+            (row["id"], row["state"], row["head_sha"], row["activity_count"] or 0),
+        )
+        repo_short = row["repo"].split("/")[-1]
+        items.append({
+            "id": row["id"],
+            "repo": row["repo"],
+            "repo_short": repo_short,
+            "number": row["number"],
+            "url": row["url"],
+            "title": row["title"],
+            "author": row["author"],
+            "state": row["state"],
+            "is_draft": bool(row["is_draft"]),
+            "target_branch": row["target_branch"],
+            "ci_state": row["ci_state"],
+            "comment_count": row["comment_count"] or 0,
+            "activity_count": row["activity_count"] or 0,
+            "review_count": row["review_count"] or 0,
+            "thread_count": row["thread_count"] or 0,
+            "unresolved_threads": row["unresolved_threads"] or 0,
+            "body": row["body"],
+            "comments": [
+                c for c in comments_by_pr.get(row["id"], [])
+                if not derive.is_bot(c.get("author"))
+            ],
+            "source": row["source"],
+            "added_at": row["added_at"],
+            "updated_at": row["updated_at"],
+            "merged_at": row["merged_at"],
+            "closed_at": row["closed_at"],
+            "age_days": derive.days_since(row["created_at"]) if row["created_at"] else 0,
+            "idle_days": derive.days_since(row["updated_at"]) if row["updated_at"] else 0,
+            "since_last_look": deltas,
+        })
+
+    # Resolved first (that's the event you subscribed for), then most recently
+    # active. Rows never fetched yet sort last rather than crashing on None.
+    # Two stable passes: newest-active first, then resolved rows pushed to the
+    # bottom. A watch list accumulates a long tail of things that closed months
+    # ago, and putting those on top buries the live PRs - the dashboard's
+    # `merged / closed first` sort is there for a deliberate catch-up pass.
+    # This only sets the first paint; the tab re-sorts client-side on load.
+    # Rows not yet fetched have no updated_at and land last in their group.
+    items.sort(key=lambda t: t["updated_at"] or "", reverse=True)
+    items.sort(key=lambda t: 1 if t["state"] in ("MERGED", "CLOSED") else 0)
+    return items, seen_updates
+
+
+def commit_tracked_seen_baseline(
+    conn: sqlite3.Connection,
+    seen_updates: list[tuple[str, str | None, str | None, int | None]],
+    now: str,
+) -> None:
+    with db.transaction(conn):
+        for pr_id, state, head_sha, activity_count in seen_updates:
+            db.upsert_tracked_seen(conn, pr_id, state, head_sha, activity_count, now)
+
+
 def commit_seen_baseline(
     conn: sqlite3.Connection,
     seen_updates: list[tuple[str, str | None, str | None, str]],
@@ -503,13 +586,16 @@ def commit_seen_baseline(
 
 def render(payload: list[dict], html_path: Path, *, offline: bool = False,
            last_refresh: str | None = None, hidden_map: dict | None = None,
-           hidden_sync_port: int = 7391) -> None:
+           hidden_sync_port: int = 7391,
+           tracked: list[dict] | None = None) -> None:
     env = _env()
     template = env.get_template("index.html.j2")
     assets_dir = TEMPLATES_DIR / "assets"
     html = template.render(
         prs_json=_json_for_script(payload),
         pr_count=len(payload),
+        tracked_json=_json_for_script(tracked or []),
+        tracked_count=len(tracked or []),
         offline=offline,
         last_refresh=last_refresh or datetime.now(timezone.utc).isoformat(timespec="seconds"),
         hidden_server_json=_json_for_script(hidden_map or {}),

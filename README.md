@@ -19,6 +19,7 @@ loop:
 - **Review KPIs** - counts and trends from your archived review history.
 - **AI first-pass** - optional `claude` sanity-check that flags obvious issues.
 - **One-click commands** - copy-paste checkout / fresh-DB / test / cleanup for each PR.
+- **Tracked tab** - a second view for PRs you *watch* rather than review (see below).
 
 It is **not** a re-skin of GitHub - browse code on github.com. It earns its keep
 on personal filtering, ball-in-my-court signals, Odoo-specific derivations, and
@@ -174,6 +175,8 @@ pr-dash --offline        render from cache only (no network)
 pr-dash backfill         one-time import of historical reviews (KPI history)
 pr-dash backfill --since 2025-01-01   limit backfill to a recent window
 pr-dash init             write a default config
+pr-dash track REF...     watch a PR in the tracked tab (owner/repo#123 or a PR URL)
+pr-dash untrack REF...   stop watching it
 pr-dash mcp              run the MCP server (stdio) for agent access
 pr-dash query ...        emit cache data as JSON (list/show/diff/history/stats)
 pr-dash -v ...           verbose logging
@@ -182,6 +185,81 @@ pr-dash --config PATH    use an alternate config file
 
 Re-running is the refresh mechanism - there's no daemon. The cache lives in
 `~/.cache/pr-dash/` (`pr_dash.db` + `index.html`).
+
+## Tracked tab
+
+The `tracked` tab (or press `t`) is the opposite of the review queue: PRs you
+have no obligation to review but want to see land. It exists because GitHub's
+own [subscriptions page](https://github.com/notifications/subscriptions) becomes
+useless once you review a lot - the PRs you deliberately subscribed to drown in
+the ones GitHub auto-subscribed you to on a review request.
+
+### Populating it
+
+GitHub has **no API for the subscriptions page**: there is no REST endpoint for
+it, issue-level subscription state isn't in the public API, `subscribed:` is not
+a search qualifier (it silently degrades to a free-text match), and the web page
+needs a session cookie, so a token can't fetch it. Enumerating your
+subscriptions from a script is simply not possible.
+
+So the list is populated two ways, and **the import is the important one**:
+
+**1. Import from the subscriptions page (do this once).** Open
+[the page filtered to manual](https://github.com/notifications/subscriptions?reason=manual)
+and run this in the browser console - it walks every page and copies the refs to
+your clipboard:
+
+```js
+(async () => {
+  const out = new Set();
+  for (let p = 1; p <= 50; p++) {
+    const html = await (await fetch(
+      `/notifications/subscriptions?reason=manual&page=${p}`)).text();
+    const before = out.size;
+    for (const m of html.matchAll(/href="\/([^/"]+\/[^/"]+)\/pull\/(\d+)"/g))
+      out.add(`${m[1]}#${m[2]}`);
+    if (out.size === before) break;   // page added nothing new -> done
+  }
+  copy([...out].join("\n"));
+  console.log(`${out.size} PRs copied`);
+})();
+```
+
+Then paste them in:
+
+```bash
+pr-dash track -          # reads refs from stdin, one per line
+```
+
+After that pr-dash polls each PR's state directly over GraphQL, so the list no
+longer depends on GitHub's notification behaviour at all.
+
+**2. Automatic seed from notifications (supplementary).** Each refresh unions in
+PRs whose notifications carry `reason == "manual"`. This is a weak signal and
+must not be relied on:
+
+- It only sees PRs that have *generated* a notification. If your subscription is
+  set to "notify on close only" - the sensible setting for a watch list - an open
+  PR produces no notifications at all, so it stays invisible until it resolves.
+  That is the exact opposite of useful, hence the import above.
+- GitHub prunes old notifications, so quiet PRs age out of it.
+
+Because of both, tracking is **sticky, not a mirror**: once a PR is in, it stays
+until you dismiss or `untrack` it.
+
+`pr-dash track <url>` also works for PRs you want to watch without subscribing
+on GitHub at all - and since pr-dash polls state itself, that's now a reasonable
+way to use it.
+
+Merged and closed PRs are lifted to the top of the list with a `done` badge and
+stay there until dismissed (`×` on the row, or `x` on the keyboard) - catching
+the merge is the reason you subscribed. Dismissing writes through to the cache
+when the `pr-dash mcp` listener happens to be running, and otherwise holds in
+the browser, exactly like hides.
+
+Rows are deliberately thin: state, target branch, CI, comment count, age, and a
+detail pane with the description and recent discussion. No diff, no AI pass, no
+checkout commands - browse the code on github.com.
 
 ## MCP server / agent access
 
