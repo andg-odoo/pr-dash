@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -11,42 +10,42 @@ from pr_dash import derive
 
 log = logging.getLogger(__name__)
 
-# Generated / translation files carry no review signal but eat the prompt's
-# character budget. Stripped before the diff is sent to the model. Mirrors the
-# frontend NOISY_RE used to fold these files in the dashboard.
-_NOISE_RE = re.compile(
-    r"(\.(po|pot|map|lock)$)|(\.min\.(js|css)$)"
-    r"|((^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$)",
-    re.IGNORECASE,
-)
+# How much diff one prompt holds. Kept in step with the review gate - the CLI
+# passes config's review_max_diff_chars for both - so a PR is queued exactly
+# when its diff fits whole, and this default only applies to direct callers.
+DEFAULT_MAX_DIFF_CHARS = 50_000
 
 
-def _strip_noise(diff: str) -> tuple[str, list[str]]:
-    """Drop generated/translation files from a combined `.diff` so the model's
-    token budget goes to reviewable code. Returns (kept_diff, dropped_paths)."""
-    kept: list[str] = []
-    dropped: list[str] = []
-    for path, chunk in derive.iter_diff_files(diff):
-        if path and _NOISE_RE.search(path):
-            dropped.append(path)
-        else:
-            kept.append(chunk)
-    return "".join(kept), dropped
+def _omission_note(label: str, paths: list[str]) -> str:
+    shown = ", ".join(paths[:5]) + ("…" if len(paths) > 5 else "")
+    return f"[{len(paths)} {label}: {shown}]"
 
 
-def _diff_for_prompt(diff: str, cap: int) -> str:
-    """Strip noise, cap, and annotate what was omitted so the model doesn't
-    flag e.g. missing translation updates that were intentionally dropped."""
+def _diff_for_prompt(diff: str, cap: int, *, repo: str = "", number: int = 0) -> str:
+    """Compact, cap, and annotate what was omitted so the model doesn't flag
+    e.g. missing translation updates that were intentionally dropped, or read a
+    stub as the PR gutting a file."""
     if not diff:
         return "(no diff available)"
-    kept, dropped = _strip_noise(diff)
-    if not kept:
+    compacted = derive.compact_diff(diff, repo=repo, number=number)
+    if not compacted.text:
         return "(only generated/translation files changed; nothing to review)"
-    note = ""
-    if dropped:
-        shown = ", ".join(dropped[:5]) + ("…" if len(dropped) > 5 else "")
-        note = f"\n\n[{len(dropped)} generated/translation file(s) omitted: {shown}]"
-    return kept[:cap] + note
+    notes = []
+    if compacted.dropped:
+        notes.append(_omission_note("generated/translation file(s) omitted", compacted.dropped))
+    if compacted.stubbed:
+        notes.append(_omission_note(
+            "file(s) too large to include, left as a pr-dash stub", compacted.stubbed,
+        ))
+    text = compacted.text
+    if len(text) > cap:
+        # Only companion context reaches here: the queue gates the reviewed half
+        # against this same cap. Say so, rather than let the diff stop mid-hunk
+        # and read as a file the PR left broken.
+        text = text[:cap]
+        notes.append(f"[diff truncated at {cap} characters]")
+    return text + ("\n\n" + "\n".join(notes) if notes else "")
+
 
 def is_available() -> bool:
     try:
@@ -180,9 +179,11 @@ REVIEW_SCHEMA = {
 }
 
 
-def _build_prompt(req: ReviewRequest) -> str:
+def _build_prompt(req: ReviewRequest, cap: int) -> str:
     if req.sibling_diff is not None:
-        # Split the diff budget between target (35k) and sibling context (25k).
+        # The reviewed half gets the whole budget it was gated on; the companion
+        # is context, so it gets half of one - a big sibling must not crowd out
+        # the code actually under review.
         return REVIEW_PROMPT_PAIRED.format(
             title=req.title,
             repo=req.repo,
@@ -190,18 +191,21 @@ def _build_prompt(req: ReviewRequest) -> str:
             body=(req.body or "(no description)")[:3000],
             modules=", ".join(req.modules) or "(none)",
             branch=req.branch,
-            diff=_diff_for_prompt(req.diff, 35_000),
+            diff=_diff_for_prompt(req.diff, cap, repo=req.repo, number=req.number),
             sibling_repo=req.sibling_repo,
             sibling_number=req.sibling_number,
             sibling_title=req.sibling_title or "(unknown)",
-            sibling_diff=_diff_for_prompt(req.sibling_diff, 25_000) if req.sibling_diff else "(no diff)",
+            sibling_diff=_diff_for_prompt(
+                req.sibling_diff, cap // 2,
+                repo=req.sibling_repo or "", number=req.sibling_number or 0,
+            ) if req.sibling_diff else "(no diff)",
         )
     return REVIEW_PROMPT_SINGLE.format(
         title=req.title,
         body=(req.body or "(no description)")[:4000],
         modules=", ".join(req.modules) or "(none)",
         branch=req.branch,
-        diff=_diff_for_prompt(req.diff, 50_000),
+        diff=_diff_for_prompt(req.diff, cap, repo=req.repo, number=req.number),
     )
 
 
@@ -287,8 +291,8 @@ def _attempt_review(
     return _parse_review(parsed, head_sha), False
 
 
-def _review_one(req: ReviewRequest, timeout: int, model: str) -> ReviewResult | None:
-    prompt = _build_prompt(req)
+def _review_one(req: ReviewRequest, timeout: int, model: str, cap: int) -> ReviewResult | None:
+    prompt = _build_prompt(req, cap)
     for attempt in range(2):
         result, retryable = _attempt_review(prompt, timeout, req.head_sha, model)
         if result is not None or not retryable:
@@ -299,7 +303,8 @@ def _review_one(req: ReviewRequest, timeout: int, model: str) -> ReviewResult | 
 
 
 def review_batch(reqs: list[ReviewRequest], *, timeout: int = 90,
-                 model: str = "sonnet", max_workers: int = 4) -> dict[str, ReviewResult]:
+                 model: str = "sonnet", max_workers: int = 4,
+                 max_diff_chars: int = DEFAULT_MAX_DIFF_CHARS) -> dict[str, ReviewResult]:
     if not reqs:
         return {}
     if not is_available():
@@ -308,7 +313,7 @@ def review_batch(reqs: list[ReviewRequest], *, timeout: int = 90,
 
     out: dict[str, ReviewResult] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futures = {ex.submit(_review_one, r, timeout, model): r for r in reqs}
+        futures = {ex.submit(_review_one, r, timeout, model, max_diff_chars): r for r in reqs}
         for fut in as_completed(futures):
             result = fut.result()
             if result:

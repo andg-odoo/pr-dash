@@ -24,6 +24,55 @@ def test_signatures_per_file():
     assert derive.file_change_signatures("") == {}
 
 
+def _difffile(path, body):
+    return f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -0,0 +1 @@\n{body}"
+
+
+def test_compact_stubs_the_giant_and_leaves_the_rest_alone():
+    # The odoo#277589 shape: one data file drowning a few kb of reviewable code.
+    diff = (_difffile("m/models/x.py", "+code\n")
+            + _difffile("m/data/res.city.csv", "+row\n" * 5000)
+            + _difffile("m/i18n/fr.po", "+msgid\n"))
+    out = derive.compact_diff(diff, repo="odoo/odoo", number=277589, max_file_chars=1000)
+
+    assert out.stubbed == ["m/data/res.city.csv"]
+    assert out.dropped == ["m/i18n/fr.po"]
+    assert out.partial is True
+    assert _difffile("m/models/x.py", "+code\n") in out.text
+    assert "+row" not in out.text and len(out.text) < 1000
+    # The stub still splits as one file, keeps its path, and says whose doing it
+    # is - including a deep link to the file on GitHub.
+    files = {p: c for p, c in derive.iter_diff_files(out.text) if p}
+    assert set(files) == {"m/models/x.py", "m/data/res.city.csv"}
+    stub = files["m/data/res.city.csv"]
+    assert "+5000/-0 lines" in stub and "omitted by pr-dash" in stub
+    assert derive.pr_file_url("odoo/odoo", 277589, "m/data/res.city.csv") in stub
+    # Idempotent: the review path re-compacts what the cache already compacted.
+    again = derive.compact_diff(out.text, repo="odoo/odoo", number=277589, max_file_chars=1000)
+    assert again.text == out.text and again.stubbed == out.stubbed
+
+
+def test_compact_keeps_noise_as_a_stub_for_the_cache():
+    diff = _difffile("m/i18n/fr.po", "+msgid\n" * 500)
+    out = derive.compact_diff(diff, stub_noise=True, max_file_chars=100_000)
+    assert out.dropped == [] and out.stubbed == ["m/i18n/fr.po"]
+    assert "msgid" not in out.text
+    # ...and the review path drops that stub outright, still reporting it so the
+    # prompt can say the translations were omitted by us.
+    assert derive.compact_diff(out.text).text == ""
+    assert derive.compact_diff(out.text).dropped == ["m/i18n/fr.po"]
+
+
+def test_stubbed_file_signature_tracks_its_omitted_content():
+    small = derive.compact_diff(_difffile("m/data/big.csv", "+row\n" * 500), max_file_chars=100)
+    grown = derive.compact_diff(_difffile("m/data/big.csv", "+row\n" * 600), max_file_chars=100)
+    # A stub has no +/- lines of its own; without special care every stubbed
+    # file would hash alike and a re-pushed data file would render as
+    # "unchanged since your review".
+    assert (derive.file_change_signatures(small.text)["m/data/big.csv"]
+            != derive.file_change_signatures(grown.text)["m/data/big.csv"])
+
+
 def test_thread_signature_detects_new_reply():
     a = [{"thread_id": "t1", "last_reply_at": "2026-05-01"}]
     b = [{"thread_id": "t1", "last_reply_at": "2026-05-02"}]  # someone replied

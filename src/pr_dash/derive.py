@@ -15,13 +15,51 @@ TASK_RE = re.compile(r"\b(task|opw)[-\s~\[#]*(\d{4,8})\b", re.IGNORECASE)
 _DIFF_FILE_SPLIT = re.compile(r"(?m)^(?=diff --git )")
 _DIFF_FILE_PATH = re.compile(r"diff --git a/.+? b/(.+)")
 
+# Generated / translation files carry no review signal but eat the diff budget,
+# in the cache and in the AI prompt alike. Mirrors the frontend NOISY_RE used to
+# fold these files in the dashboard.
+NOISE_RE = re.compile(
+    r"(\.(po|pot|map|lock)$)|(\.min\.(js|css)$)"
+    r"|((^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$)",
+    re.IGNORECASE,
+)
+
+# Prefix of every line pr-dash writes into a diff it edited. Nothing git emits
+# starts this way, so a stub can never be mistaken for content the PR changed -
+# by a reader, by the model, or by a later compaction pass.
+STUB_TAG = "[pr-dash]"
+_STUB_LINE = re.compile(rf"(?m)^ {re.escape(STUB_TAG)} ")
+
+# Per-file cap above which a file's body is stubbed out. Tied to the AI review
+# budget rather than to taste: a file whose own diff is larger than everything
+# the prompt can hold could never have been reviewed in context anyway, while
+# the rest of the PR is losing its review to it.
+MAX_FILE_CHARS = 50_000
+
+
+@dataclass
+class CompactedDiff:
+    """A diff reduced to what is worth reading, plus what that cost.
+
+    `dropped` are files removed outright, `stubbed` are files present in `text`
+    as a pr-dash stub - both are what a caller needs to say the diff is partial
+    instead of quietly presenting it as the whole change.
+    """
+    text: str
+    dropped: list[str]
+    stubbed: list[str]
+
+    @property
+    def partial(self) -> bool:
+        return bool(self.dropped or self.stubbed)
+
 
 def iter_diff_files(diff_text: str) -> Iterator[tuple[str | None, str]]:
     """Yield (path, chunk) for each file section in a combined `.diff`.
 
     path is the b-side path from the `diff --git` header, or None for a chunk
-    with no recognizable header (e.g. a leading preamble). Shared by the AI
-    noise-stripper and the change-signature hasher so they can never disagree
+    with no recognizable header (e.g. a leading preamble). Shared by the diff
+    compactor and the change-signature hasher so they can never disagree
     about file boundaries; the frontend has its own copy in app.js."""
     if not diff_text:
         return
@@ -30,6 +68,83 @@ def iter_diff_files(diff_text: str) -> Iterator[tuple[str | None, str]]:
             continue
         m = _DIFF_FILE_PATH.match(chunk)
         yield (m.group(1).strip() if m else None), chunk
+
+
+def _changed_lines(chunk: str) -> list[str]:
+    """A file chunk's +/- content lines, without the `---`/`+++` file headers."""
+    return [
+        ln for ln in chunk.split("\n")
+        if (ln.startswith("+") and not ln.startswith("+++"))
+        or (ln.startswith("-") and not ln.startswith("---"))
+    ]
+
+
+def pr_file_url(repo: str, number: int, path: str) -> str:
+    """Deep link to one file inside a PR's Files tab. GitHub anchors each file
+    on the sha256 of its b-side path - verified against a rendered files page,
+    renames included (the new path is what hashes)."""
+    digest = hashlib.sha256(path.encode("utf-8", "replace")).hexdigest()
+    return f"https://github.com/{repo}/pull/{number}/files#diff-{digest}"
+
+
+def _stub_chunk(path: str, chunk: str, repo: str, number: int) -> str:
+    """Replace a file's body with a pr-dash annotation, keeping its `diff --git`
+    header so the file still shows up in every file list.
+
+    Shaped as an empty-range hunk with context lines rather than as bare text:
+    diff2html renders a file section with no hunk as "File without changes",
+    which would turn an omission into a false claim about the PR. Context lines
+    also keep the stub out of the +/- accounting everything else does on a diff.
+    """
+    changed = _changed_lines(chunk)
+    added = sum(1 for ln in changed if ln.startswith("+"))
+    size = len(chunk.encode("utf-8", "replace"))
+    header = chunk.split("\n", 1)[0]
+    body = (
+        f"@@ -0,0 +0,0 @@ {STUB_TAG} file contents omitted\n"
+        f" {STUB_TAG} +{added}/-{len(changed) - added} lines, {size} bytes,"
+        f" omitted by pr-dash - not by this PR\n"
+    )
+    if repo and number:
+        body += f" {STUB_TAG} view it at {pr_file_url(repo, number, path)}\n"
+    return f"{header}\n{body}"
+
+
+def compact_diff(
+    diff_text: str,
+    *,
+    repo: str = "",
+    number: int = 0,
+    max_file_chars: int = MAX_FILE_CHARS,
+    stub_noise: bool = False,
+) -> CompactedDiff:
+    """Shrink a combined `.diff` to the part worth reviewing.
+
+    Two kinds of file lose their body: generated/translation noise, which has no
+    review signal at any size, and any file whose chunk exceeds max_file_chars -
+    one data file must not cost the rest of the PR its review. Noise is dropped
+    outright, or reduced to a stub when `stub_noise` is set, which is what the
+    cached copy wants: the dashboard lists every file the PR touches.
+
+    The storage path and the review gate both come through here, so the size a
+    PR is judged on is the size the model is handed. Re-running it on an already
+    compacted diff is a no-op, which is what makes that guarantee hold.
+    """
+    kept: list[str] = []
+    dropped: list[str] = []
+    stubbed: list[str] = []
+    for path, chunk in iter_diff_files(diff_text):
+        noisy = bool(path and NOISE_RE.search(path))
+        if noisy and not stub_noise:
+            dropped.append(path)
+            continue
+        # A headerless chunk (a preamble at most) has no path to stub or link.
+        if path and (noisy or len(chunk) > max_file_chars) and not _STUB_LINE.search(chunk):
+            chunk = _stub_chunk(path, chunk, repo, number)
+        if path and _STUB_LINE.search(chunk):
+            stubbed.append(path)
+        kept.append(chunk)
+    return CompactedDiff("".join(kept), dropped, stubbed)
 
 
 def file_change_signatures(diff_text: str) -> dict[str, str]:
@@ -41,11 +156,14 @@ def file_change_signatures(diff_text: str) -> dict[str, str]:
     for path, chunk in iter_diff_files(diff_text):
         if path is None:
             continue
-        changed = [
-            ln for ln in chunk.split("\n")
-            if (ln.startswith("+") and not ln.startswith("+++"))
-            or (ln.startswith("-") and not ln.startswith("---"))
-        ]
+        changed = _changed_lines(chunk)
+        if not changed:
+            # A stub has no +/- lines, so every stubbed file would otherwise
+            # hash alike and a re-pushed data file would read as "unchanged
+            # since your review" - the one thing this signature exists to say
+            # honestly. Its annotation carries the omitted line counts and byte
+            # size, which is what moves when the file's content does.
+            changed = [ln for ln in chunk.split("\n") if _STUB_LINE.match(ln)]
         sigs[path] = hashlib.sha1(
             "\n".join(changed).encode("utf-8", "replace")
         ).hexdigest()[:16]
