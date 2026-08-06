@@ -315,11 +315,15 @@ def _make_item(members: list[dict], my_login: str,
         if not review:
             continue
         cached_sibling = review.get("sibling_head_sha") or ""
-        # Only demand sibling context when the partner is still active -
-        # _build_review_queue skips archived siblings, so a review computed
-        # while the partner was already closed is legitimately pair-blind.
+        # Demand sibling context exactly when _build_review_queue would have
+        # recorded it: when the partner's diff was cached, since that is the only
+        # case where there was a companion diff to put in the prompt. Keying on
+        # archived_at instead used to hide two reviews that were computed
+        # correctly - an active partner whose diff blew the size gates (stored
+        # pair-blind, expected a sha) and an archived-but-primed partner whose
+        # diff was cached (stored with context, expected pair-blind).
         sib = members[1 - idx] if is_pair else None
-        expected_sibling = sib["head_sha"] if sib and not sib["archived_at"] else ""
+        expected_sibling = sib["head_sha"] if sib and sib["diff"] else ""
         if cached_sibling != expected_sibling:
             continue
         ai_reviews.append({
