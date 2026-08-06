@@ -294,6 +294,20 @@ def test_detect_pairs():
     assert pairs == {"odoo/odoo#1": "odoo/enterprise#2", "odoo/enterprise#2": "odoo/odoo#1"}
 
 
+def test_detect_pairs_ignores_the_bundles_migration_pr():
+    # robodoo bundles all three repos under one branch name, so a data move makes
+    # the group three - which used to produce no pair at all. The migration is a
+    # companion, never a half, so it drops out and the halves still pair.
+    prs = [
+        {"id": "odoo/odoo#1", "author": "jdoe", "head_branch": "feature-x"},
+        {"id": "odoo/enterprise#2", "author": "jdoe", "head_branch": "feature-x"},
+        {"id": "odoo/upgrade#3", "author": "jdoe", "head_branch": "feature-x"},
+    ]
+    assert derive.detect_pairs(prs) == {
+        "odoo/odoo#1": "odoo/enterprise#2", "odoo/enterprise#2": "odoo/odoo#1",
+    }
+
+
 def test_latest_review_requested_at_picks_latest_for_me():
     timeline = [
         {"__typename": "ReviewRequestedEvent", "createdAt": "2026-05-01T00:00:00Z",

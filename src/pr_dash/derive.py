@@ -776,10 +776,33 @@ def days_since(iso_ts: str) -> int:
     return max(0, (datetime.now(timezone.utc) - parse_iso(iso_ts)).days)
 
 
+# The third repo a robodoo bundle can carry. A change that moves data between
+# modules ships its upgrade script here, on the same head branch as the addons
+# halves - so it is a *companion* to the change, never a half of it.
+# config.CompanionConfig.repo defaults to this and is what the fetch looks in.
+COMPANION_REPO = "odoo/upgrade"
+
+
+def _repo_of(pr: dict) -> str:
+    """The repo a PR belongs to, read off its `owner/repo#number` id so this also
+    works on the trimmed dicts callers assemble, not just on full cached rows."""
+    return str(pr["id"]).rpartition("#")[0]
+
+
 def detect_pairs(prs: list[dict]) -> dict[str, str]:
-    """Map pr id -> paired pr id. Pair = same (author, head_branch) across exactly 2 PRs."""
+    """Map pr id -> paired pr id. Pair = same (author, head_branch) across exactly 2 PRs.
+
+    Companion members are dropped before that count is taken. robodoo groups a
+    bundle by head branch name across all three repos, so a data move whose
+    migration lives in odoo/upgrade makes the group three - and "exactly 2" then
+    found no pair at all, silently un-pairing the odoo<->enterprise halves this
+    exists to find. The migration is attached to each half separately, by
+    cli._refresh_companions.
+    """
     groups: dict[tuple[str, str], list[dict]] = {}
     for pr in prs:
+        if _repo_of(pr) == COMPANION_REPO:
+            continue
         groups.setdefault((pr["author"], pr["head_branch"]), []).append(pr)
     pairs: dict[str, str] = {}
     for group in groups.values():
