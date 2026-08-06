@@ -735,6 +735,16 @@ def _store_patch(conn, cfg, pr_row: dict, *, force: bool) -> None:
     Keyed by head sha, so a PR that moved head needs this again even though its
     old diff is still on disk - without it the new row points at a sha with no
     patch and every diff consumer silently reports "unavailable".
+
+    Over the size thresholds the diff is compacted rather than dropped: one huge
+    data file used to cost the whole PR its cached diff and its AI first pass.
+    `truncated` then means "what is stored is not the whole diff", which is what
+    the dashboard says with it.
+
+    diff_max_files stays an all-or-nothing bail. Compaction only removes depth -
+    a PR spread over hundreds of files is wide, not deep, so there is nothing
+    for it to take out, and bailing before the fetch is what keeps a megabyte we
+    would only throw away off the wire.
     """
     head_sha = pr_row["head_sha"]
     if db.get_diff(conn, head_sha) is not None and not force:
@@ -743,12 +753,22 @@ def _store_patch(conn, cfg, pr_row: dict, *, force: bool) -> None:
         db.upsert_diff(conn, head_sha, None, True, derive.now_utc())
         return
     patch = github.fetch_patch(pr_row["repo"], pr_row["number"])
-    truncated = patch is not None and (
+    truncated = False
+    if patch is not None and (
         patch.count("\n") > cfg.thresholds.diff_max_lines
         or len(patch) > cfg.thresholds.diff_max_bytes
-    )
-    if truncated:
-        patch = None
+    ):
+        # Noise is stubbed, not dropped, so the dashboard's file list still
+        # shows every file the PR touches; the review path drops those stubs.
+        compacted = derive.compact_diff(
+            patch, repo=pr_row["repo"], number=pr_row["number"], stub_noise=True,
+        )
+        patch, truncated = compacted.text, compacted.partial
+        # Still enormous with every oversized file taken out: a diff no one -
+        # not the model, not diff2html, not the page embedding it - can use,
+        # only now measured on what compaction could not shrink.
+        if len(patch) > cfg.thresholds.diff_max_bytes:
+            patch, truncated = None, True
     db.upsert_diff(conn, head_sha, patch, truncated, derive.now_utc())
 
 

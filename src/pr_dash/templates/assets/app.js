@@ -695,7 +695,7 @@
         const d = pr.diffs.find(x => x.repo_short === m.repo_short && x.number === m.number);
         const reason = m.closed ? " is closed"
           : m.reviewed ? " was already reviewed by you"
-          : (d && (!d.available || d.truncated)) ? "'s diff was too large to review"
+          : (d && !d.available) ? "'s diff was too large to review"
           : " hasn't been reviewed yet";
         return escapeHTML(m.repo_short) + "#" + m.number + reason;
       });
@@ -920,6 +920,16 @@
       if (!container) return;
 
       container.innerHTML = "";
+
+      // A cached diff over the size thresholds keeps its files but not all of
+      // their contents - say so, rather than let the stubs read as the PR's own
+      // doing (they carry a per-file link, this one covers the whole diff).
+      if (d.truncated) {
+        const notice = document.createElement("div");
+        notice.className = "diff-partial-notice";
+        notice.innerHTML = `Partial diff: oversized or generated files were replaced by a pr-dash stub. <a href="${escapeHTML(d.url)}/files" target="_blank" rel="noopener">Full diff on GitHub ↗</a>`;
+        container.appendChild(notice);
+      }
 
       // Keep files in their original PR order: render consecutive inline files
       // as one diff2html block, and drop a collapsed stub in place for files

@@ -224,6 +224,10 @@ github_login = "{login}"
 
 [thresholds]
 staleness_minutes = 15
+# Over these, a diff is compacted before it is cached - generated files and any
+# single file bigger than a whole review prompt become a stub - so a PR drowned
+# by one data file keeps the code around it. diff_max_files still bails
+# outright: stubbing shrinks depth, and such a PR is wide rather than deep.
 diff_max_files = 100
 diff_max_lines = 5000
 diff_max_bytes = 2000000

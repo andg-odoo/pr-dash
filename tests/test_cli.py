@@ -399,3 +399,31 @@ def test_reconcile_clears_push_once_i_review_the_new_head(tmp_path, monkeypatch)
     row = db.get_cached_pr(conn, "odoo/odoo#1")
     assert row["push_at"] is None
     assert row["push_sha"] is None
+
+
+# --- diff caching & the AI review gate ---------------------------------------
+
+def _difffile(path, body):
+    return f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -0,0 +1 @@\n{body}"
+
+
+def test_store_patch_keeps_the_code_around_an_oversized_file(tmp_path, monkeypatch):
+    from pr_dash import db
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    conn = db.connect(cfg.db_path)
+    code = _difffile("m/models/x.py", "+code\n")
+    # The odoo#277589 shape: a data file blowing diff_max_lines on its own, which
+    # used to leave the whole PR with no cached diff and no AI first pass.
+    monkeypatch.setattr(github, "fetch_patch",
+                        lambda repo, number: _difffile("m/data/res.city.csv",
+                                                       "+row\n" * 12_000) + code)
+    cli._store_patch(conn, cfg, {"head_sha": "sha1", "repo": "odoo/odoo",
+                                 "number": 277589, "changed_files": 2}, force=False)
+
+    row = db.get_diff(conn, "sha1")
+    assert code in row["patch_text"]
+    assert "+row" not in row["patch_text"]
+    assert "pull/277589/files#diff-" in row["patch_text"]
+    assert row["truncated"] == 1  # partial, so the dashboard still says so

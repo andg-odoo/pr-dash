@@ -78,9 +78,9 @@ github_login = "your-login"      # auto-detected by `pr-dash init`
 
 [thresholds]
 staleness_minutes = 15           # skip re-fetching PRs fetched more recently than this
-diff_max_files = 100
+diff_max_files = 100             # more files than this: no diff cached at all
 diff_max_lines = 5000
-diff_max_bytes = 2000000         # diffs larger than this are flagged truncated, not stored
+diff_max_bytes = 2000000         # over these, the diff is compacted before caching
 stale_review_days = 7            # PRs older than this get the "OLD" flag
 
 [bucket_thresholds]              # complexity score -> S/M/L/XL cutoffs

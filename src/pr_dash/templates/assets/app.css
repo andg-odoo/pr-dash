@@ -982,6 +982,12 @@ body {
   vertical-align: middle;
 }
 
+.diff-partial-notice {
+  color: var(--fg-faint);
+  font-size: 11px;
+  padding: 4px 2px 8px;
+}
+
 .verdict-partial {
   font-size: 8px;
   font-weight: 700;
