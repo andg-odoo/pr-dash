@@ -141,3 +141,49 @@ def test_missing_structured_output_retryable(monkeypatch):
 
     assert result is None
     assert calls["n"] == 2  # retried once, then gave up
+
+
+def _flat_prompt(req):
+    """The prompt with its hard wrapping collapsed, so an assertion on a
+    sentence doesn't depend on where a line break happens to fall."""
+    return " ".join(ai._build_prompt(req, 50_000).split())
+
+
+def test_prompt_states_the_migration_either_way():
+    # Present: the model is told not to raise a missing migration, and gets the
+    # script itself - which is in no diff it would otherwise see.
+    req = _req()
+    req.companion_repo = "odoo/upgrade"
+    req.companion = ai.Companion(
+        repo="odoo/upgrade", number=10894, title="[ADD] l10n_us: move res.city",
+        state="OPEN", diff=_difffile("migrations/l10n_us/pre-migrate.py",
+                                     "+util.merge_module(cr, 'a', 'b')\n"),
+    )
+    present = _flat_prompt(req)
+    assert "do NOT flag a missing migration, one exists" in present
+    assert "odoo/upgrade#10894, OPEN" in present
+    assert "util.merge_module" in present
+
+    # Absent, but *checked*: that is what makes flagging an unmigrated data move
+    # honest rather than a guess from an addons-only diff.
+    req.companion = None
+    absent = _flat_prompt(req)
+    assert "No migration PR ships with this change in odoo/upgrade" in absent
+    assert "nothing will carry them across" in absent
+
+    # Never looked (repo unreachable, or the feature is off): say neither.
+    req.companion_repo = ""
+    silent = _flat_prompt(req)
+    assert "migration PR" not in silent and "Migration diff" not in silent
+
+
+def test_prompt_annotates_a_truncated_migration_diff():
+    req = _req()
+    req.companion_repo = "odoo/upgrade"
+    req.companion = ai.Companion(
+        repo="odoo/upgrade", number=1,
+        diff=_difffile("migrations/m/pre-migrate.py", "+sql\n" * 400),
+    )
+    # A quarter of the budget, and cut with the same note the rest of the prompt
+    # uses - a migration stopping mid-hunk must not read as one that stops there.
+    assert "[diff truncated at 25 characters]" in ai._build_prompt(req, 100)

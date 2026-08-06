@@ -89,7 +89,23 @@ def _build_pr_record(
             # Stored pair context - used to validate against current pair state
             # at item-assembly time. Stale (mismatched) reviews are dropped.
             "sibling_head_sha": review_row["sibling_head_sha"] or "",
+            # Same, for the companion migration: a review written before one
+            # appeared was told nothing carried the data across.
+            "companion_head_sha": review_row["companion_head_sha"] or "",
         }
+
+    companion_row = db.get_companion(conn, pr["id"])
+    companion = {
+        "repo": companion_row["repo"],
+        "repo_short": companion_row["repo"].split("/")[-1],
+        "number": companion_row["number"],
+        "url": companion_row["url"],
+        "title": companion_row["title"],
+        "author": companion_row["author"],
+        "state": companion_row["state"],
+        "is_draft": bool(companion_row["is_draft"]),
+        "head_sha": companion_row["head_sha"],
+    } if companion_row else None
 
     try:
         ci_failures = json.loads(pr["ci_failures"]) if pr["ci_failures"] else []
@@ -174,6 +190,7 @@ def _build_pr_record(
         "ping_snippet": pr.get("ping_snippet"),
         "push_at": pr.get("push_at"),
         "push_sha": pr.get("push_sha"),
+        "companion": companion,
         "ai_review": ai_review,
     }
 
@@ -270,6 +287,10 @@ def _make_item(members: list[dict], my_login: str,
     if is_archived and push_member and "PUSH" not in flags:
         flags.append("PUSH")
 
+    # Both halves of a bundle carry the same migration, so take whichever member
+    # has one - a pair whose odoo half was never cached still shows it.
+    companion = next((m["companion"] for m in members if m.get("companion")), None)
+
     # Runbot / task: prefer primary, fall back to other
     runbot_url = primary["runbot_url"] or (members[1]["runbot_url"] if is_pair else None)
     linked_task = primary["linked_task"] or (members[1]["linked_task"] if is_pair else None)
@@ -327,16 +348,23 @@ def _make_item(members: list[dict], my_login: str,
         # diff was cached (stored with context, expected pair-blind).
         sib = members[1 - idx] if is_pair else None
         expected_sibling = sib["head_sha"] if sib and sib["diff"] else ""
+        # The companion needs no such diff condition: it goes in the prompt on
+        # existence alone, so its presence is what the review was written under.
+        expected_companion = (m.get("companion") or {}).get("head_sha") or ""
         # A hand-written review is exempt: it says what a human read, so it does
         # not go stale when the pair state moves, and the automatic pass will not
         # replace it either. Dropping it here would hide it with nothing to
         # re-derive it.
-        if review.get("source") != "manual" and cached_sibling != expected_sibling:
+        if review.get("source") != "manual" and (
+            cached_sibling != expected_sibling
+            or (review.get("companion_head_sha") or "") != expected_companion
+        ):
             continue
         ai_reviews.append({
             "repo_short": m["repo_short"],
             "number": m["number"],
-            **{k: v for k, v in review.items() if k != "sibling_head_sha"},
+            **{k: v for k, v in review.items()
+               if k not in ("sibling_head_sha", "companion_head_sha")},
         })
     # Worst verdict for the item-level pill: major > minor > looks-good
     verdict_rank = {"major": 2, "minor": 1, "looks-good": 0}
@@ -423,6 +451,7 @@ def _make_item(members: list[dict], my_login: str,
         "ping_snippet": ping_member["ping_snippet"] if ping_member else None,
         "push_at": push_member["push_at"] if push_member else None,
         "push_sha": push_member["push_sha"] if push_member else None,
+        "companion": companion,
         "ai_reviews": ai_reviews,
         "ai_review_verdict": worst_verdict,
     }

@@ -5,7 +5,34 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
+
+# The bundle's migration PR (odoo/upgrade), keyed by the cached PR it belongs to.
+#
+# Deliberately *not* a row in `pr`: nobody is requested as a reviewer on an
+# upgrade PR, so it has no review request, no review state and no place in the
+# queue. Hanging it off `pr(id)` instead means it can never be picked up by
+# db.list_prs (the queue, the sweep and every KPI count read that table), and the
+# cascade takes it with the PR when the sweep deletes one.
+#
+# Both halves of a pair get their own row pointing at the same migration - the
+# pair is assembled at render time from independent PR records, so a per-PR row
+# is what makes the migration visible whichever half is being looked at.
+COMPANION_SCHEMA_SQL = """
+CREATE TABLE pr_companion (
+  pr_id       TEXT PRIMARY KEY REFERENCES pr(id) ON DELETE CASCADE,
+  repo        TEXT NOT NULL,
+  number      INTEGER NOT NULL,
+  url         TEXT NOT NULL,
+  title       TEXT NOT NULL DEFAULT '',
+  author      TEXT NOT NULL DEFAULT '',
+  state       TEXT NOT NULL DEFAULT 'OPEN',
+  is_draft    INTEGER NOT NULL DEFAULT 0,
+  head_branch TEXT NOT NULL,
+  head_sha    TEXT NOT NULL DEFAULT '',
+  fetched_at  TEXT NOT NULL
+);
+"""
 
 # The tracked-PR tables, kept as a named constant so the fresh-database schema
 # and the v15 migration create them from one definition and can't drift.
@@ -164,13 +191,14 @@ CREATE TABLE pr_diff (
 );
 
 CREATE TABLE ai_review (
-  head_sha         TEXT PRIMARY KEY,
-  sibling_head_sha TEXT NOT NULL DEFAULT '',
-  summary          TEXT NOT NULL,
-  concerns         TEXT NOT NULL DEFAULT '[]',
-  verdict          TEXT NOT NULL,
-  source           TEXT NOT NULL DEFAULT 'auto',
-  computed_at      TEXT NOT NULL
+  head_sha           TEXT PRIMARY KEY,
+  sibling_head_sha   TEXT NOT NULL DEFAULT '',
+  companion_head_sha TEXT NOT NULL DEFAULT '',
+  summary            TEXT NOT NULL,
+  concerns           TEXT NOT NULL DEFAULT '[]',
+  verdict            TEXT NOT NULL,
+  source             TEXT NOT NULL DEFAULT 'auto',
+  computed_at        TEXT NOT NULL
 );
 
 CREATE TABLE review_snapshot (
@@ -192,7 +220,7 @@ CREATE INDEX idx_pr_module_pr ON pr_module(pr_id);
 CREATE INDEX idx_pr_reviewer_pr ON pr_reviewer(pr_id);
 CREATE INDEX idx_pr_thread_pr ON pr_thread(pr_id);
 CREATE INDEX idx_pr_comment_pr ON pr_comment(pr_id);
-""" + TRACKED_SCHEMA_SQL
+""" + TRACKED_SCHEMA_SQL + COMPANION_SCHEMA_SQL
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
@@ -394,6 +422,25 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "ALTER TABLE ai_review ADD COLUMN source TEXT NOT NULL DEFAULT 'auto'"
             )
+    if current < 21:
+        tables = {
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        if "pr_companion" not in tables:
+            conn.executescript(COMPANION_SCHEMA_SQL)
+        # Whether a companion migration was in the prompt changes the answer -
+        # it is the difference between flagging a missing migration and not - so
+        # it joins the review's cache key. Existing rows default to '', which
+        # still matches every PR that has no companion (the overwhelming
+        # majority) and correctly misses the ones that just gained one.
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(ai_review)").fetchall()}
+        if "companion_head_sha" not in cols:
+            conn.execute(
+                "ALTER TABLE ai_review "
+                "ADD COLUMN companion_head_sha TEXT NOT NULL DEFAULT ''"
+            )
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -508,6 +555,44 @@ def replace_threads(conn: sqlite3.Connection, pr_id: str, threads: list[dict]) -
     )
 
 
+_COMPANION_COLS = ["repo", "number", "url", "title", "author", "state",
+                   "is_draft", "head_branch", "head_sha", "fetched_at"]
+
+
+def upsert_companion(conn: sqlite3.Connection, pr_id: str, row: dict) -> None:
+    """Attach (or re-attach) a PR's companion migration PR."""
+    _upsert(conn, "pr_companion",
+            {"pr_id": pr_id, **{c: row[c] for c in _COMPANION_COLS}}, ["pr_id"])
+
+
+def delete_companion(conn: sqlite3.Connection, pr_id: str) -> None:
+    conn.execute("DELETE FROM pr_companion WHERE pr_id = ?", (pr_id,))
+
+
+def set_companion_state(conn: sqlite3.Connection, repo: str, number: int,
+                        state: str) -> None:
+    """Record a companion's current state wherever it is attached. Keyed on the
+    companion itself, not on a pr_id: both halves of a pair point at the same
+    migration and must not disagree about whether it merged."""
+    conn.execute(
+        "UPDATE pr_companion SET state = ? WHERE repo = ? AND number = ?",
+        (state, repo, number),
+    )
+
+
+def get_companion(conn: sqlite3.Connection, pr_id: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM pr_companion WHERE pr_id = ?", (pr_id,),
+    ).fetchone()
+
+
+def list_companions(conn: sqlite3.Connection) -> dict[str, dict]:
+    return {
+        r["pr_id"]: dict(r)
+        for r in conn.execute("SELECT * FROM pr_companion").fetchall()
+    }
+
+
 def upsert_complexity(conn: sqlite3.Connection, row: dict) -> None:
     _upsert(conn, "complexity", row, ["head_sha"])
 
@@ -563,10 +648,12 @@ def upsert_seen(conn: sqlite3.Connection, pr_id: str, head_sha: str | None,
 
 def upsert_ai_review(conn: sqlite3.Connection, head_sha: str, sibling_head_sha: str,
                      summary: str, concerns_json: str, verdict: str,
-                     computed_at: str, source: str = "auto") -> None:
+                     computed_at: str, source: str = "auto",
+                     companion_head_sha: str = "") -> None:
     _upsert(conn, "ai_review", {
         "head_sha": head_sha,
         "sibling_head_sha": sibling_head_sha,
+        "companion_head_sha": companion_head_sha,
         "summary": summary,
         "concerns": concerns_json,
         "verdict": verdict,
@@ -589,13 +676,19 @@ def has_manual_ai_review(conn: sqlite3.Connection, head_sha: str) -> bool:
 
 
 def get_ai_review(conn: sqlite3.Connection, head_sha: str,
-                  sibling_head_sha: str = "") -> sqlite3.Row | None:
-    """Return cached review only when the sibling context matches.
-    Paired PRs reviewed before pairing don't hit cache - they re-review with context.
+                  sibling_head_sha: str = "",
+                  companion_head_sha: str = "") -> sqlite3.Row | None:
+    """Return cached review only when the surrounding context matches.
+
+    Paired PRs reviewed before pairing don't hit cache - they re-review with
+    context. A PR that gained (or lost) its companion migration misses for the
+    same reason: the prompt told the model a migration exists, and that is
+    precisely what decides whether a missing one is worth flagging.
     """
     return conn.execute(
-        "SELECT * FROM ai_review WHERE head_sha = ? AND sibling_head_sha = ?",
-        (head_sha, sibling_head_sha),
+        "SELECT * FROM ai_review WHERE head_sha = ? AND sibling_head_sha = ? "
+        "AND companion_head_sha = ?",
+        (head_sha, sibling_head_sha, companion_head_sha),
     ).fetchone()
 
 

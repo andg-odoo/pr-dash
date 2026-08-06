@@ -362,6 +362,21 @@ body {
   vertical-align: middle;
 }
 
+/* The bundle's odoo/upgrade migration PR. Present-or-absent is the whole signal,
+   so it sits next to PAIR in the same shape but reads quieter - it is context
+   for the diff, not something asking to be acted on. */
+.pr-row .companion-tag {
+  font-size: 9px;
+  font-weight: 700;
+  color: #c08ae0;
+  background: rgba(192, 138, 224, 0.14);
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.06em;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
 /* "Since last look" row badges */
 .look-badge {
   font-size: 9px;
@@ -635,6 +650,8 @@ body {
 
 .detail-links a:hover { background: var(--bg-elev2); }
 .detail-links a.unavailable { color: var(--fg-faint); pointer-events: none; }
+/* Tinted to match the row's MIG tag, so the two read as the same thing. */
+.detail-links a.companion-link { color: #c08ae0; border-color: rgba(192, 138, 224, 0.45); }
 
 .detail-links .detail-hide {
   background: var(--bg-elev);

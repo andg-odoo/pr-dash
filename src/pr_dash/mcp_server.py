@@ -54,8 +54,9 @@ def _hidden_ids(cfg: config.Config, items: list[dict]) -> set[str]:
     return set(mapping)
 
 
-def _ai_review_shas(item: dict, ref: str) -> tuple[str, str]:
-    """(head_sha, sibling_head_sha) identifying the ai_review row `ref` names.
+def _ai_review_shas(item: dict, ref: str) -> tuple[str, str, str]:
+    """(head_sha, sibling_head_sha, companion_head_sha) identifying the ai_review
+    row `ref` names.
 
     The pipeline reviews each half of a pair separately, so a fully reviewed pair
     has one row per half. `ref` therefore selects the half to write: resolve_item
@@ -70,10 +71,15 @@ def _ai_review_shas(item: dict, ref: str) -> tuple[str, str]:
     cached diff (it blew the diff size gates), is stored pair-blind ('') - which
     is exactly what the next refresh will look the row up by, so a manual review
     reads as a cache hit instead of being recomputed over.
+
+    companion_head_sha is the bundle's migration PR, shared by both halves and
+    keyed on existence rather than on a cached diff - the same rule the queue
+    uses, for the same reason.
     """
+    companion_sha = (item.get("companion") or {}).get("head_sha") or ""
     members = item.get("members") or []
     if len(members) != 2:
-        return item["head_sha"], ""
+        return item["head_sha"], "", companion_sha
     repo_full, repo_short, number = query._parse_ref(ref)
     idx = next(
         (i for i, m in enumerate(members)
@@ -84,7 +90,9 @@ def _ai_review_shas(item: dict, ref: str) -> tuple[str, str]:
     diffs = {(d.get("repo_short"), d.get("number")): d.get("diff")
              for d in item.get("diffs") or []}
     sibling_diff = diffs.get((sibling.get("repo_short"), sibling.get("number")))
-    return target["head_sha"], sibling["head_sha"] if sibling_diff else ""
+    return (target["head_sha"],
+            sibling["head_sha"] if sibling_diff else "",
+            companion_sha)
 
 
 @mcp.tool()
@@ -105,6 +113,11 @@ def list_prs(status: str = "pending", include_hidden: bool = False) -> dict:
     it marks that the cached diff is no longer what you reviewed). Buckets
     S/M/L/XL = rough complexity. Rows also carry my_pending_review, pinged rows
     carry ping_at/ping_author/ping_snippet, and pushed rows push_at/push_sha.
+
+    `companion` is the bundle's migration PR in odoo/upgrade, matched by head
+    branch - it never shows up in the diff, so a null companion is the evidence
+    that a data move has no upgrade script, and a non-null one is why a "missing
+    migration" concern would be wrong.
     """
     cfg = _get_cfg()
     items = query.load_items(cfg)
@@ -136,11 +149,16 @@ def list_prs(status: str = "pending", include_hidden: bool = False) -> dict:
 @mcp.tool()
 def get_pr(ref: str) -> dict:
     """Full detail for one PR: body, threads, reviewers, ci_failures, ai_reviews,
-    commands, task links, and per-file diff metadata (no diff text - use
-    get_diff for that).
+    commands, task links, companion migration PR, and per-file diff metadata (no
+    diff text - use get_diff for that).
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
     An enterprise number resolves to its odoo+enterprise pair.
+
+    `companion` is the bundle's migration PR in odoo/upgrade (repo, number, url,
+    title, state, head_sha), matched by head branch. Its diff is in no repo this
+    PR touches, so before flagging a data move as unmigrated, check it: null
+    means there genuinely is no upgrade script.
 
     Flags: RE=re-review requested, MSG=awaiting my reply, CI!=failing CI,
     CFL=merge conflict, OLD=stale request. Buckets S/M/L/XL = rough complexity.
@@ -356,7 +374,7 @@ def set_ai_review(ref: str, summary: str, verdict: str,
         raise ValueError(
             f"verdict must be one of {', '.join(ai._VERDICTS)}, got {verdict!r}",
         )
-    head_sha, sibling_head_sha = _ai_review_shas(item, ref)
+    head_sha, sibling_head_sha, companion_head_sha = _ai_review_shas(item, ref)
     # Normalised by the same parser the pipeline runs model output through
     # (unknown severity clamped, blank messages dropped, capped at 5), so a
     # hand-written row is indistinguishable from a generated one downstream. Its
@@ -380,7 +398,7 @@ def set_ai_review(ref: str, summary: str, verdict: str,
             db.upsert_ai_review(
                 conn, head_sha, sibling_head_sha, result.summary,
                 json.dumps(result.concerns), result.verdict, computed_at,
-                source="manual",
+                source="manual", companion_head_sha=companion_head_sha,
             )
     finally:
         conn.close()
@@ -388,6 +406,7 @@ def set_ai_review(ref: str, summary: str, verdict: str,
         "id": item["id"],
         "head_sha": head_sha,
         "sibling_head_sha": sibling_head_sha,
+        "companion_head_sha": companion_head_sha,
         "verdict": result.verdict,
         "concern_count": len(result.concerns),
         "replaced": replaced,

@@ -456,3 +456,106 @@ def test_review_queue_gates_on_the_compacted_diff(tmp_path):
                         "major", "t", source="manual")
     reqs, _ = cli._build_review_queue(conn, {"odoo/odoo#1", "odoo/odoo#2"}, 1500)
     assert reqs == []
+
+
+# --- _refresh_companions -----------------------------------------------------
+
+def _upgrade_pr(branch, *, number=900, sha="usha"):
+    return {"number": number, "title": "[IMP] base: merge modules", "state": "open",
+            "draft": False, "url": f"https://github.com/odoo/upgrade/pull/{number}",
+            "head_branch": branch, "head_sha": sha, "author": "someone-else"}
+
+
+def _companion_cfg(tmp_path):
+    from pr_dash.config import Config
+
+    return Config(github_login="me", repos={}, cache_dir=tmp_path)
+
+
+def test_refresh_companions_matches_on_branch_only(tmp_path, monkeypatch):
+    from pr_dash import db
+
+    cfg = _companion_cfg(tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr(conn, "odoo/odoo#1", author="jdoe", head_branch="feat-x")
+    _insert_pr(conn, "odoo/enterprise#2", author="jdoe", head_branch="feat-x")
+    _insert_pr(conn, "odoo/odoo#3", author="jdoe", head_branch="other")
+
+    monkeypatch.setattr(github, "list_open_prs_by_head_branch",
+                        lambda repo: {"feat-x": _upgrade_pr("feat-x")})
+    monkeypatch.setattr(cli, "_store_patch", lambda *a, **kw: None)
+
+    assert cli._refresh_companions(conn, cfg, {"odoo/odoo#1"}) == "odoo/upgrade"
+
+    # Both halves of the bundle carry the migration, and its author ("someone-else")
+    # is deliberately not part of the match - migrations are often written by
+    # someone other than the author of the half they migrate.
+    for pr_id in ("odoo/odoo#1", "odoo/enterprise#2"):
+        row = db.get_companion(conn, pr_id)
+        assert (row["repo"], row["number"], row["state"]) == ("odoo/upgrade", 900, "OPEN")
+    # A branch with no upgrade PR is genuinely without one, not unknown.
+    assert db.get_companion(conn, "odoo/odoo#3") is None
+    # And a companion is never a queue row of its own.
+    assert {r["id"] for r in db.list_prs(conn)} == {
+        "odoo/odoo#1", "odoo/enterprise#2", "odoo/odoo#3",
+    }
+
+
+def test_refresh_companions_survives_an_unreachable_repo(tmp_path, monkeypatch):
+    from pr_dash import db
+
+    cfg = _companion_cfg(tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr(conn, "odoo/odoo#1", head_branch="feat-x")
+
+    def boom(repo):
+        raise github.GithubError("HTTP 404: Not Found")
+
+    monkeypatch.setattr(github, "list_open_prs_by_head_branch", boom)
+
+    # No access to the private repo (or no network) must leave the refresh intact
+    # and, crucially, report that nothing was searched - the prompt may only call
+    # a migration absent when one was actually looked for.
+    assert cli._refresh_companions(conn, cfg, {"odoo/odoo#1"}) == ""
+    assert db.get_companion(conn, "odoo/odoo#1") is None
+
+    cfg.companion.enabled = False
+    monkeypatch.setattr(github, "list_open_prs_by_head_branch",
+                        lambda repo: {"feat-x": _upgrade_pr("feat-x")})
+    assert cli._refresh_companions(conn, cfg, {"odoo/odoo#1"}) == ""
+
+
+def test_review_queue_carries_the_companion_and_rekeys_the_cache(tmp_path):
+    from pr_dash import db
+
+    cfg = _companion_cfg(tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr(conn, "odoo/odoo#1", head_branch="feat-x", head_sha="sha1")
+    db.upsert_diff(conn, "sha1", _difffile("m/models/x.py", "+code\n"), False, "t")
+    db.upsert_diff(conn, "usha",
+                   _difffile("migrations/m/pre-migrate.py", "+util.merge_module\n"),
+                   False, "t")
+    db.upsert_companion(conn, "odoo/odoo#1", {
+        "repo": "odoo/upgrade", "number": 900, "url": "u", "title": "mig",
+        "author": "x", "state": "OPEN", "is_draft": 0, "head_branch": "feat-x",
+        "head_sha": "usha", "fetched_at": "t",
+    })
+
+    reqs, ctx = cli._build_review_queue(conn, {"odoo/odoo#1"}, 50_000,
+                                        companion_repo="odoo/upgrade")
+    assert ctx == {"sha1": ("", "usha")}
+    assert (reqs[0].companion.number, reqs[0].companion_repo) == (900, "odoo/upgrade")
+    assert "pre-migrate.py" in reqs[0].companion.diff
+
+    # A review computed before the migration was known was told nothing carried
+    # the data across, so it must not satisfy the PR that now has one.
+    db.upsert_ai_review(conn, "sha1", "", "s", "[]", "looks-good", "t")
+    reqs, _ = cli._build_review_queue(conn, {"odoo/odoo#1"}, 50_000,
+                                      companion_repo="odoo/upgrade")
+    assert [r.head_sha for r in reqs] == ["sha1"]
+
+    db.upsert_ai_review(conn, "sha1", "", "s", "[]", "looks-good", "t",
+                        companion_head_sha="usha")
+    reqs, _ = cli._build_review_queue(conn, {"odoo/odoo#1"}, 50_000,
+                                      companion_repo="odoo/upgrade")
+    assert reqs == []

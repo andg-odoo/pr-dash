@@ -233,6 +233,10 @@ def summarize(item: dict) -> dict:
         "ping_snippet": item.get("ping_snippet"),
         "push_at": item.get("push_at"),
         "push_sha": item.get("push_sha"),
+        # Carried on the compact row rather than left to get_pr: it answers
+        # "does this data move have a migration" without a second call, which is
+        # the question that keeps being answered wrongly from the diff alone.
+        "companion": item.get("companion"),
     }
 
 

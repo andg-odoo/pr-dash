@@ -461,6 +461,11 @@
                 : `<span class="pair-tag pair-tag-partial" title="${doneMemberCount} of ${pr.members.length} halves already reviewed by you - both still open on GitHub">${doneMemberCount}/${pr.members.length} REVIEWED</span>`)
             : '<span class="pair-tag">PAIR</span>')
         : "";
+      // The migration ships in a third repo, so nothing else on this row (or in
+      // the diff below it) can tell you it exists.
+      const companionTag = pr.companion
+        ? `<span class="companion-tag" title="Migration ships in ${escapeHTML(pr.companion.repo_short)}#${pr.companion.number} (${escapeHTML((pr.companion.state || "").toLowerCase())}) - ${escapeHTML(pr.companion.title || "")}">MIG</span>`
+        : "";
       const draftTag = pr.is_draft ? '<span class="draft-tag">DRAFT</span>' : "";
       const archivedTag = pr.is_archived ? '<span class="archived-tag">ARCHIVED</span>' : "";
       const reviewedCount = (pr.ai_reviews || []).length;
@@ -482,7 +487,7 @@
         .map(t => `<span class="look-badge look-${t}">${LOOK_BADGES[t] || t}</span>`)
         .join("");
       li.innerHTML = `
-        <span class="pr-id-group">${idBlock}${pairTag}${draftTag}${archivedTag}${verdictTag}${lookBadges}</span>
+        <span class="pr-id-group">${idBlock}${pairTag}${companionTag}${draftTag}${archivedTag}${verdictTag}${lookBadges}</span>
         <span class="pr-title" title="${escapeHTML(pr.title)}">${escapeHTML(pr.title)}</span>
         <span class="pr-bucket ${pr.bucket}">${pr.bucket}</span>
         <button class="pr-hide" type="button" title="${hideTitle}" data-hide-id="${escapeHTML(pr.id)}">${hideLabel}</button>
@@ -669,6 +674,9 @@
         : (m.reviewed && !pr.is_archived) ? " (reviewed)" : "";
       return `<a href="${escapeHTML(m.url)}" target="_blank" rel="noopener"${attrs}>GitHub: ${escapeHTML(m.repo_short)}#${m.number}${suffix} ↗</a>`;
     }).join("");
+    const companionLink = pr.companion
+      ? `<a href="${escapeHTML(pr.companion.url)}" target="_blank" rel="noopener" class="companion-link" title="The upgrade script for this change (${escapeHTML((pr.companion.state || "").toLowerCase())}) - it lives in a third repo, so it is in none of the diffs below${pr.companion.title ? " · " + escapeHTML(pr.companion.title) : ""}">Migration: ${escapeHTML(pr.companion.repo_short)}#${pr.companion.number} ↗</a>`
+      : "";
     const closedMembers = pr.members.filter(m => m.closed);
     const reviewedMembers = pr.is_archived ? []
       : pr.members.filter(m => !m.closed && m.reviewed);
@@ -727,6 +735,7 @@
 
         <div class="detail-links">
           ${ghLinks}
+          ${companionLink}
           ${runbotLink}
           ${taskLink}
           <div class="discord-copy">

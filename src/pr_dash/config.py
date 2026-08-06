@@ -6,6 +6,8 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from pr_dash import derive
+
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "pr-dash" / "config.toml"
 
 
@@ -43,6 +45,23 @@ class AIConfig:
     # default Opus on a triage review and reaches the same verdict; the slower
     # default model was overrunning timeout_seconds. Empty string = CLI default.
     model: str = "sonnet"
+
+
+@dataclass
+class CompanionConfig:
+    """Discovery of a bundle's migration PR in a third repo.
+
+    A change that moves data between modules ships its upgrade script in
+    odoo/upgrade, which appears in no addons diff and requests no reviewer - so
+    "this data move has no migration" gets raised against changes that have one.
+    Matching is by head branch, the key robodoo bundles on.
+
+    Deliberately not an entry in `repos`: that table is local clone paths driving
+    the checkout/cleanup commands, which have no business switching an upgrade
+    clone onto every PR's target branch.
+    """
+    enabled: bool = True
+    repo: str = derive.COMPANION_REPO
 
 
 @dataclass
@@ -93,6 +112,7 @@ class Config:
     thresholds: Thresholds = field(default_factory=Thresholds)
     buckets: BucketThresholds = field(default_factory=BucketThresholds)
     ai: AIConfig = field(default_factory=AIConfig)
+    companion: CompanionConfig = field(default_factory=CompanionConfig)
     commands: Commands = field(default_factory=Commands)
     cache_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "pr-dash")
     # Port the `pr-dash mcp` server binds on 127.0.0.1 for the dashboard's
@@ -135,6 +155,11 @@ def load(path: Path | None = None) -> Config:
     ai_raw = raw.get("ai") or {}
     ai = AIConfig(**{k: v for k, v in ai_raw.items() if k in AIConfig.__dataclass_fields__})
 
+    comp_raw = raw.get("companion") or {}
+    companion = CompanionConfig(**{
+        k: v for k, v in comp_raw.items() if k in CompanionConfig.__dataclass_fields__
+    })
+
     cmd_raw = raw.get("commands") or {}
     commands = Commands(**{k: v for k, v in cmd_raw.items() if k in Commands.__dataclass_fields__})
 
@@ -148,6 +173,7 @@ def load(path: Path | None = None) -> Config:
         thresholds=thresholds,
         buckets=buckets,
         ai=ai,
+        companion=companion,
         commands=commands,
         cache_dir=cache_dir,
         hidden_sync_port=hidden_sync_port,
@@ -259,6 +285,17 @@ model = "sonnet"
 # and it doubles as the prompt's diff budget, so a queued PR always fits whole.
 # A paired PR's companion half is included as context for half this again.
 review_max_diff_chars = 50000
+
+[companion]
+# A change that moves data between modules ships its migration script in a third
+# repo, matched to a PR by head branch - the same key robodoo bundles on and
+# runbot groups by. Nobody is ever requested as a reviewer there, so without this
+# the migration is invisible and "this data move has no migration" gets raised
+# against changes that have one, by you and by the AI first pass alike.
+# The repo is private: no access (or no network) means no companions, never a
+# failed refresh. Set enabled = false to skip the lookup entirely.
+enabled = true
+repo = "{derive.COMPANION_REPO}"
 
 [commands]
 # Shell snippets for the per-PR action buttons. Placeholders:

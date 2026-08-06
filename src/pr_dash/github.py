@@ -397,6 +397,70 @@ def fetch_head_sha(repo: str, number: int) -> str | None:
     return pr.get("headRefOid")
 
 
+def list_open_prs_by_head_branch(repo: str) -> dict[str, dict]:
+    """Map head branch name -> that branch's open PR in `repo`.
+
+    One paginated listing answers "does this bundle have a companion migration"
+    for every cached PR at once; the alternative - a search per bundle - is a
+    request each, and the queue is far bigger than the number of pages here
+    (odoo/upgrade runs ~800 open PRs, so 8 pages, ~7s).
+
+    REST rather than GraphQL on purpose: same wall time, and it keeps a listing
+    the review path doesn't depend on out of the GraphQL rate budget the rest of
+    the refresh spends. The listing is newest-first, so if two open PRs ever
+    share a head branch - a bundle robodoo could not resolve either - the newer
+    one wins.
+    """
+    out: dict[str, dict] = {}
+    raw = _gh([
+        "api", f"repos/{repo}/pulls?state=open&per_page=100", "--paginate",
+        "--jq", ".[] | {number, title, state, draft, url: .html_url, "
+                "head_branch: .head.ref, head_sha: .head.sha, "
+                "author: .user.login}",
+    ], timeout=120)
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        branch = entry.get("head_branch")
+        if branch and branch not in out:
+            out[branch] = entry
+    return out
+
+
+def fetch_pr_states(repo: str, numbers: list[int], *,
+                    chunk_size: int = 25) -> dict[int, str]:
+    """Given PR numbers in one repo, return number -> OPEN / CLOSED / MERGED.
+
+    For companions that dropped out of the open listing above. An upgrade PR has
+    its own review flow and is regularly merged ahead of the addons halves it
+    migrates, so treating "no longer open" as "no migration" would resurrect the
+    exact false positive the companion exists to kill.
+
+    Batched via GraphQL field aliases and tolerant of a partial response: a
+    number that no longer resolves is simply absent from the result.
+    """
+    owner, name = repo.split("/", 1)
+    out: dict[int, str] = {}
+    for start in range(0, len(numbers), chunk_size):
+        chunk = numbers[start:start + chunk_size]
+        parts = [
+            f'p{i}: repository(owner: "{owner}", name: "{name}") {{ '
+            f'pullRequest(number: {n}) {{ state }} }}'
+            for i, n in enumerate(chunk)
+        ]
+        data = _graphql_partial("query {\n" + "\n".join(parts) + "\n}", {})
+        for i, n in enumerate(chunk):
+            state = ((data.get(f"p{i}") or {}).get("pullRequest") or {}).get("state")
+            if state:
+                out[n] = state
+    return out
+
+
 def fetch_pr_nodes(
     refs: list[tuple[str, int, str]], *, chunk_size: int = 10,
 ) -> list[dict]:

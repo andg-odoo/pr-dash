@@ -69,6 +69,32 @@ Flag only things a reviewer should actually want to know:
 - Hardcoded values or magic strings that look configurable
 - Security smells: raw SQL with f-strings, unfiltered user input, unsafe paths
 - Logic that contradicts the PR title or description
+- Data an existing database cannot follow: a model or field moving to another
+  module, a module merged into another, a renamed ir.model.data xml_id
+"""
+
+# The migration for a data move ships in a third repo, so it is in no diff the
+# reviewer or the model is looking at - which is why "no migration" keeps being
+# raised against changes that have one. Stated either way round: an absence is
+# only worth flagging when it has actually been checked. Worded without the word
+# "companion", which the paired prompt already spends on the sibling half.
+MIGRATION_PRESENT = """
+The migration for this change ships in {repo}, a separate repo whose
+diff is not part of what you are reviewing. It is CONTEXT: do NOT flag a missing
+migration, one exists. Judge instead whether it covers this change - the modules,
+models, fields and xml_ids it moves or renames should be the ones this PR moves
+or renames.
+
+Migration PR: {title} ({repo}#{number}, {state})
+Migration diff (context, do not review):
+{diff}
+"""
+
+MIGRATION_ABSENT = """
+No migration PR ships with this change in {repo}. The whole bundle was looked up
+by branch name, so that is a checked fact rather than a gap in what you were
+given: if this PR moves data existing databases already hold, nothing will carry
+them across, and it is worth saying so.
 """
 
 REVIEW_PROMPT_SINGLE = REVIEW_PROMPT_BASE + """
@@ -79,7 +105,7 @@ Description:
 
 Modules touched: {modules}
 Target branch: {branch}
-
+{migration}
 Diff:
 {diff}
 
@@ -111,7 +137,7 @@ Description:
 Companion half (CONTEXT - do not review): {sibling_title} ({sibling_repo}#{sibling_number})
 Companion diff (context):
 {sibling_diff}
-
+{migration}
 Target diff (REVIEW THIS):
 {diff}
 
@@ -123,6 +149,21 @@ Respond with JSON ONLY, no preamble:
   "verdict": "looks-good|minor|major"}}
 
 If you have no concerns, return concerns: []. Max 5 concerns, most important first."""
+
+
+@dataclass
+class Companion:
+    """The bundle's migration PR in a third repo (odoo/upgrade).
+
+    Kept apart from the pair sibling because it is not a half of the change: it
+    is the upgrade script that carries existing databases across it, and the only
+    question about it is whether it exists and covers what moved.
+    """
+    repo: str
+    number: int
+    title: str = ""
+    state: str = "OPEN"
+    diff: str = ""
 
 
 @dataclass
@@ -140,6 +181,11 @@ class ReviewRequest:
     sibling_number: int | None = None
     sibling_title: str | None = None
     sibling_diff: str | None = None
+    companion: Companion | None = None
+    # The repo the companion lookup searched. Empty means it did not run at all
+    # (disabled, or unreachable), and the prompt then says nothing either way -
+    # "no migration exists" is only assertable when it has actually been checked.
+    companion_repo: str = ""
 
 
 @dataclass
@@ -179,7 +225,25 @@ REVIEW_SCHEMA = {
 }
 
 
+def _migration_section(req: ReviewRequest, cap: int) -> str:
+    """The migration paragraph, or nothing when the lookup never ran."""
+    if req.companion is not None:
+        c = req.companion
+        return MIGRATION_PRESENT.format(
+            repo=c.repo, number=c.number, state=c.state,
+            title=c.title or "(no title)",
+            # A migration is a handful of util.merge_module calls and some SQL;
+            # a quarter of the budget is generous for it and still leaves the
+            # code actually under review its whole share.
+            diff=_diff_for_prompt(c.diff, cap // 4, repo=c.repo, number=c.number),
+        )
+    if req.companion_repo:
+        return MIGRATION_ABSENT.format(repo=req.companion_repo)
+    return ""
+
+
 def _build_prompt(req: ReviewRequest, cap: int) -> str:
+    migration = _migration_section(req, cap)
     if req.sibling_diff is not None:
         # The reviewed half gets the whole budget it was gated on; the companion
         # is context, so it gets half of one - a big sibling must not crowd out
@@ -191,6 +255,7 @@ def _build_prompt(req: ReviewRequest, cap: int) -> str:
             body=(req.body or "(no description)")[:3000],
             modules=", ".join(req.modules) or "(none)",
             branch=req.branch,
+            migration=migration,
             diff=_diff_for_prompt(req.diff, cap, repo=req.repo, number=req.number),
             sibling_repo=req.sibling_repo,
             sibling_number=req.sibling_number,
@@ -205,6 +270,7 @@ def _build_prompt(req: ReviewRequest, cap: int) -> str:
         body=(req.body or "(no description)")[:4000],
         modules=", ".join(req.modules) or "(none)",
         branch=req.branch,
+        migration=migration,
         diff=_diff_for_prompt(req.diff, cap, repo=req.repo, number=req.number),
     )
 

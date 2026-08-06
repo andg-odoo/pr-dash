@@ -17,6 +17,7 @@ loop:
 - **Since-last-look** - flags what changed since you last opened the dashboard (new pushes, replies, CI flips).
 - **CI failures** - shows *which* check is red, with links.
 - **Review KPIs** - counts and trends from your archived review history.
+- **Companion migration** - the `odoo/upgrade` PR that ships with a data move, which appears in no addons diff (see below).
 - **AI first-pass** - optional `claude` sanity-check that flags obvious issues.
 - **One-click commands** - copy-paste checkout / fresh-DB / test / cleanup for each PR.
 - **Tracked tab** - a second view for PRs you *watch* rather than review (see below).
@@ -94,6 +95,10 @@ timeout_seconds = 120
 review_enabled = true
 model = "sonnet"                 # "" = claude CLI default; "haiku" for speed
 review_max_diff_chars = 50000    # gate + prompt budget, measured after compaction
+
+[companion]
+enabled = true                   # set false to skip the migration-PR lookup
+repo = "odoo/upgrade"            # where a bundle's migration script lives
 
 [commands]                       # the per-PR action buttons (see below)
 fresh_db = "onew {db} -i {modules}"
@@ -185,6 +190,32 @@ pr-dash --config PATH    use an alternate config file
 
 Re-running is the refresh mechanism - there's no daemon. The cache lives in
 `~/.cache/pr-dash/` (`pr_dash.db` + `index.html`).
+
+## Companion migration PRs
+
+A change that moves data between modules - a model or field changing module, a
+module merged into another, a renamed `ir.model.data` xml_id - ships its upgrade
+script as a **third PR in `odoo/upgrade`**. That PR is in no addons diff and
+requests no reviewer, so from the review queue alone it does not exist: "this
+data move has no migration" is a recurring false positive, for a human reading
+the diff and for the AI first pass alike.
+
+robodoo bundles a change by **head branch name** across all three repos, and
+runbot matches bundle members the same way, so that name is the key. Each
+refresh lists `odoo/upgrade`'s open PRs once and matches locally - the author is
+deliberately not part of it, since the migration is often written by someone
+other than the author of the half it migrates.
+
+When one is found the row gets a **MIG** tag, the detail pane a `Migration:
+upgrade#N` link, and the AI prompt the migration's own diff plus an instruction
+to judge whether it covers the change rather than to flag its absence. When none
+is found, the prompt says so explicitly - so an unmigrated data move is still
+worth raising, on a checked absence rather than a blind spot.
+
+A companion is never a review request: it has no queue row, is never swept, and
+counts toward no KPI. `odoo/upgrade` is private - no access (or no network)
+simply means no companions, never a failed refresh - and `[companion] enabled =
+false` turns the lookup off.
 
 ## Tracked tab
 
@@ -282,7 +313,7 @@ the `PR_DASH_CONFIG` env var.
 Tools:
 
 - `list_prs(status)` - compact triage rows; `status` is `pending` / `archived` / `all`.
-- `get_pr(ref)` - full detail for one PR (body, threads, reviewers, CI, per-file diff metadata, commands).
+- `get_pr(ref)` - full detail for one PR (body, threads, reviewers, CI, companion migration PR, per-file diff metadata, commands).
 - `get_diff(ref, files, changed_since_review_only, max_chars)` - diff text, whole files only, under a char budget.
 - `get_ai_review(ref)` - the cached AI first-pass sanity check, if any.
 - `review_history(author, module, verdict, limit)` - your archived reviews as triage rows.

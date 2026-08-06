@@ -708,9 +708,15 @@ def _run_refresh(conn, cfg, *, force: bool) -> None:
         # "closed on GitHub" apart from "merely reviewed by me".
         _reconcile_sibling_states(conn, cfg, kept_ids)
 
+        # Attach each bundle's migration PR. Before the review queue is built, so
+        # the AI pass is told whether one exists rather than inferring from a
+        # diff that could never contain it.
+        searched_repo = _refresh_companions(conn, cfg, kept_ids)
+
         if cfg.ai.enabled and cfg.ai.review_enabled:
-            review_candidates, sibling_shas = _build_review_queue(
+            review_candidates, review_context = _build_review_queue(
                 conn, kept_ids, cfg.ai.review_max_diff_chars,
+                companion_repo=searched_repo,
             )
             if review_candidates:
                 progress.update(
@@ -722,10 +728,12 @@ def _run_refresh(conn, cfg, *, force: bool) -> None:
                     model=cfg.ai.model, max_diff_chars=cfg.ai.review_max_diff_chars,
                 )
                 for head_sha, rev in reviews.items():
+                    sibling_sha, companion_sha = review_context.get(head_sha, ("", ""))
                     db.upsert_ai_review(
-                        conn, head_sha, sibling_shas.get(head_sha, ""),
+                        conn, head_sha, sibling_sha,
                         rev.summary, json.dumps(rev.concerns),
                         rev.verdict, derive.now_utc(),
+                        companion_head_sha=companion_sha,
                     )
 
 
@@ -1014,11 +1022,118 @@ def _prime_reviewed_siblings(conn, cfg, kept_ids: set[str], *, force: bool) -> N
         log.debug("primed %d reviewed-open pair-siblings", primed)
 
 
+def _refresh_companions(conn, cfg, kept_ids: set[str]) -> str:
+    """Attach the bundle's migration PR to every cached PR sharing its head
+    branch, and cache its diff. Returns the repo actually searched, or "" when
+    the lookup did not run - the AI prompt may only call a migration absent when
+    it has been checked for.
+
+    A change that moves data between modules ships its upgrade script in a third
+    repo, which appears in no addons diff and requests no reviewer - so "this
+    data move has no migration" keeps being raised against changes that have one.
+    robodoo groups a bundle by head branch name and runbot matches its members
+    the same way, so that name is the key.
+
+    The author deliberately is not part of it: the migration is regularly written
+    by someone other than the author of the half it migrates.
+
+    Best-effort end to end. The upgrade repo is private, so a reviewer without
+    access - or an offline moment - has to end up with no companions rather than
+    a failed refresh.
+    """
+    if not (cfg.companion.enabled and cfg.companion.repo):
+        return ""
+    repo = cfg.companion.repo
+    try:
+        by_branch = github.list_open_prs_by_head_branch(repo)
+    except github.GithubError as e:
+        log.debug("companion lookup skipped (%s): %s", repo, e)
+        return ""
+
+    now = derive.now_utc()
+    stored = db.list_companions(conn)
+    matched: dict[str, dict] = {}
+    dropped: list[str] = []
+    # By companion number, not by pr_id: both halves of a pair point at the same
+    # migration and must not disagree about what became of it.
+    vanished: set[int] = set()
+    for pr in db.list_prs(conn):
+        pr_id, branch = pr["id"], pr["head_branch"]
+        if pr["repo"] == repo:
+            continue
+        entry = by_branch.get(branch)
+        prev = stored.get(pr_id)
+        if entry:
+            matched[pr_id] = entry
+        elif prev is None:
+            continue
+        elif prev["head_branch"] != branch:
+            # The half was force-pushed onto another branch; whatever migration
+            # was attached belongs to a change this PR no longer is.
+            dropped.append(pr_id)
+        elif prev["state"] == "OPEN":
+            # The migration left the open listing while the half it migrates is
+            # still here: upgrade PRs have their own review flow and are often
+            # merged ahead of their bundle. Dropping the row would put the false
+            # positive straight back, so re-check what became of it instead.
+            vanished.add(prev["number"])
+
+    states: dict[int, str] = {}
+    if vanished:
+        try:
+            states = github.fetch_pr_states(repo, sorted(vanished))
+        except github.GithubError as e:
+            log.debug("companion state re-check skipped: %s", e)
+
+    with db.transaction(conn):
+        for pr_id in dropped:
+            db.delete_companion(conn, pr_id)
+        for pr_id, entry in matched.items():
+            db.upsert_companion(conn, pr_id, {
+                "repo": repo,
+                "number": entry["number"],
+                "url": entry["url"],
+                "title": entry.get("title") or "",
+                "author": entry.get("author") or "",
+                "state": (entry.get("state") or "open").upper(),
+                "is_draft": int(bool(entry.get("draft"))),
+                "head_branch": entry["head_branch"],
+                "head_sha": entry.get("head_sha") or "",
+                "fetched_at": now,
+            })
+        for number, state in states.items():
+            db.set_companion_state(conn, repo, number, state)
+
+    # Only the active queue's migrations need their diff fetched: it exists to be
+    # prompt context, and the AI pass only runs on PRs still in the queue. One
+    # migration serves both halves of a pair - _store_patch is keyed by head sha,
+    # so the second half is a cache hit.
+    for pr_id, entry in matched.items():
+        if pr_id not in kept_ids:
+            continue
+        _store_patch(conn, cfg, {
+            "repo": repo,
+            "number": entry["number"],
+            "head_sha": entry.get("head_sha") or "",
+            # The listing endpoint carries no file count, and a migration is a
+            # script rather than a wide change, so nothing is gated on breadth
+            # here; the line/byte guards inside _store_patch still apply.
+            "changed_files": 0,
+        }, force=False)
+
+    if matched or dropped:
+        log.debug("companions: %d attached, %d dropped, %d re-checked",
+                  len(matched), len(dropped), len(states))
+    return repo
+
+
 def _build_review_queue(
     conn,
     kept_ids: set[str],
     max_diff_chars: int,
-) -> tuple[list, dict[str, str]]:
+    *,
+    companion_repo: str = "",
+) -> tuple[list, dict[str, tuple[str, str]]]:
     """Build the AI sanity-check queue *after* all PR data is settled so pair
     detection is accurate. Gates per-PR on the actual diff size - a small-code
     breadth-XL reviews fine; a size-L with a huge diff would just truncate to
@@ -1031,8 +1146,13 @@ def _build_review_queue(
     prompt's own diff budget, so a PR is skipped only when it genuinely does not
     fit, and one that fits is never handed to the model half-cut.
 
-    Returns (requests, head_sha_to_sibling_head_sha) - the latter is used when
-    persisting the result, since ReviewRequest itself doesn't survive the AI call.
+    `companion_repo` is the repo _refresh_companions searched, passed through to
+    the prompt so it can only claim a migration is missing when one was looked
+    for.
+
+    Returns (requests, head_sha -> (sibling_head_sha, companion_head_sha)) - the
+    latter is the review's cache key, needed when persisting the result since
+    ReviewRequest itself doesn't survive the AI call.
     """
     pr_rows = {pr_id: db.get_cached_pr(conn, pr_id) for pr_id in kept_ids}
     pr_rows = {k: v for k, v in pr_rows.items() if v is not None}
@@ -1040,7 +1160,7 @@ def _build_review_queue(
     modules_by_pr = db.list_modules(conn)
 
     requests: list = []
-    sibling_shas: dict[str, str] = {}
+    review_context: dict[str, tuple[str, str]] = {}
 
     for pr_id, pr_row in pr_rows.items():
         head_sha = pr_row["head_sha"]
@@ -1074,9 +1194,27 @@ def _build_review_queue(
                     "sibling_diff": sib_diff,
                 }
 
+        # Unlike the sibling, a companion counts as context whether or not its
+        # diff could be cached: the prompt changes on its mere existence, since
+        # that is what decides whether a missing migration is worth flagging.
+        companion_row = db.get_companion(conn, pr_id)
+        companion_head_sha = companion_row["head_sha"] if companion_row else ""
+        companion = None
+        if companion_row:
+            comp_diff_row = db.get_diff(conn, companion_row["head_sha"])
+            companion = ai.Companion(
+                repo=companion_row["repo"],
+                number=companion_row["number"],
+                title=companion_row["title"],
+                state=companion_row["state"],
+                diff=(comp_diff_row["patch_text"] if comp_diff_row else None) or "",
+            )
+
         if db.has_manual_ai_review(conn, head_sha):
             continue
-        if db.get_ai_review(conn, head_sha, sibling_head_sha) is not None:
+        if db.get_ai_review(
+            conn, head_sha, sibling_head_sha, companion_head_sha,
+        ) is not None:
             continue
 
         requests.append(ai.ReviewRequest(
@@ -1088,11 +1226,13 @@ def _build_review_queue(
             diff=diff_text,
             repo=pr_row["repo"],
             number=pr_row["number"],
+            companion=companion,
+            companion_repo=companion_repo,
             **sibling_kwargs,
         ))
-        sibling_shas[head_sha] = sibling_head_sha
+        review_context[head_sha] = (sibling_head_sha, companion_head_sha)
 
-    return requests, sibling_shas
+    return requests, review_context
 
 
 def _node_id(node: dict) -> str:
