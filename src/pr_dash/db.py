@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 # The tracked-PR tables, kept as a named constant so the fresh-database schema
 # and the v15 migration create them from one definition and can't drift.
@@ -378,6 +378,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
                     f"ALTER TABLE tracked ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0"
                 )
         conn.execute("UPDATE tracked SET fetched_at = NULL")
+    if current < 19:
+        # An over-threshold diff is now compacted instead of dropped, but
+        # _store_patch skips a head sha it already has a row for - so every PR
+        # dropped under the old rule would keep its empty row and never get a
+        # cached diff or an AI first pass. Clear them to re-fetch once; the ones
+        # compaction genuinely cannot save just land back here empty.
+        conn.execute("DELETE FROM pr_diff WHERE patch_text IS NULL")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
