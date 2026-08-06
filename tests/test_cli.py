@@ -448,3 +448,11 @@ def test_review_queue_gates_on_the_compacted_diff(tmp_path):
     # prompt can tell the model what was dropped from it.
     assert [r.head_sha for r in reqs] == ["sha1"]
     assert "fr.po" in reqs[0].diff
+
+    # A hand-written review takes the PR out of the queue whatever pair context
+    # it was stored against - otherwise the next refresh reads it as a miss and
+    # overwrites a human's findings with a model pass.
+    db.upsert_ai_review(conn, "sha1", "other-sha", "Read it myself.", "[]",
+                        "major", "t", source="manual")
+    reqs, _ = cli._build_review_queue(conn, {"odoo/odoo#1", "odoo/odoo#2"}, 1500)
+    assert reqs == []

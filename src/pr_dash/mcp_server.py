@@ -380,6 +380,7 @@ def set_ai_review(ref: str, summary: str, verdict: str,
             db.upsert_ai_review(
                 conn, head_sha, sibling_head_sha, result.summary,
                 json.dumps(result.concerns), result.verdict, computed_at,
+                source="manual",
             )
     finally:
         conn.close()

@@ -1074,6 +1074,8 @@ def _build_review_queue(
                     "sibling_diff": sib_diff,
                 }
 
+        if db.has_manual_ai_review(conn, head_sha):
+            continue
         if db.get_ai_review(conn, head_sha, sibling_head_sha) is not None:
             continue
 

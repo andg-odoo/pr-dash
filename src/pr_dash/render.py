@@ -83,6 +83,9 @@ def _build_pr_record(
             "concerns": concerns,
             "verdict": review_row["verdict"],
             "computed_at": review_row["computed_at"],
+            # 'manual' for a hand-written backfill, 'auto' for a model pass.
+            # Item assembly exempts manual reviews from the staleness check.
+            "source": review_row["source"] or "auto",
             # Stored pair context - used to validate against current pair state
             # at item-assembly time. Stale (mismatched) reviews are dropped.
             "sibling_head_sha": review_row["sibling_head_sha"] or "",
@@ -324,7 +327,11 @@ def _make_item(members: list[dict], my_login: str,
         # diff was cached (stored with context, expected pair-blind).
         sib = members[1 - idx] if is_pair else None
         expected_sibling = sib["head_sha"] if sib and sib["diff"] else ""
-        if cached_sibling != expected_sibling:
+        # A hand-written review is exempt: it says what a human read, so it does
+        # not go stale when the pair state moves, and the automatic pass will not
+        # replace it either. Dropping it here would hide it with nothing to
+        # re-derive it.
+        if review.get("source") != "manual" and cached_sibling != expected_sibling:
             continue
         ai_reviews.append({
             "repo_short": m["repo_short"],

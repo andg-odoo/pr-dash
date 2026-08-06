@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 # The tracked-PR tables, kept as a named constant so the fresh-database schema
 # and the v15 migration create them from one definition and can't drift.
@@ -169,6 +169,7 @@ CREATE TABLE ai_review (
   summary          TEXT NOT NULL,
   concerns         TEXT NOT NULL DEFAULT '[]',
   verdict          TEXT NOT NULL,
+  source           TEXT NOT NULL DEFAULT 'auto',
   computed_at      TEXT NOT NULL
 );
 
@@ -385,6 +386,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # cached diff or an AI first pass. Clear them to re-fetch once; the ones
         # compaction genuinely cannot save just land back here empty.
         conn.execute("DELETE FROM pr_diff WHERE patch_text IS NULL")
+    if current < 20:
+        # Hand-written reviews have to outlive the automatic pass; everything
+        # already on disk came from the model.
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(ai_review)").fetchall()}
+        if "source" not in cols:
+            conn.execute(
+                "ALTER TABLE ai_review ADD COLUMN source TEXT NOT NULL DEFAULT 'auto'"
+            )
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -554,15 +563,29 @@ def upsert_seen(conn: sqlite3.Connection, pr_id: str, head_sha: str | None,
 
 def upsert_ai_review(conn: sqlite3.Connection, head_sha: str, sibling_head_sha: str,
                      summary: str, concerns_json: str, verdict: str,
-                     computed_at: str) -> None:
+                     computed_at: str, source: str = "auto") -> None:
     _upsert(conn, "ai_review", {
         "head_sha": head_sha,
         "sibling_head_sha": sibling_head_sha,
         "summary": summary,
         "concerns": concerns_json,
         "verdict": verdict,
+        "source": source,
         "computed_at": computed_at,
     }, ["head_sha"])
+
+
+def has_manual_ai_review(conn: sqlite3.Connection, head_sha: str) -> bool:
+    """Whether this sha carries a hand-written review, whatever pair context it
+    was written against. The automatic pass keys its cache lookup on that
+    context, so a manual review of a PR whose pair state later moved would read
+    as a miss and be silently overwritten by a model pass - the one thing a
+    manual backfill must not do."""
+    row = conn.execute(
+        "SELECT 1 FROM ai_review WHERE head_sha = ? AND source = 'manual'",
+        (head_sha,),
+    ).fetchone()
+    return row is not None
 
 
 def get_ai_review(conn: sqlite3.Connection, head_sha: str,

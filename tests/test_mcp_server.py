@@ -285,8 +285,9 @@ def test_set_ai_review_records_sibling_pair_context(tmp_path, monkeypatch):
     assert sorted(r["number"] for r in back["ai_reviews"]) == [1, 2]
     assert back["ai_review_verdict"] == "minor"
 
-    # Caching the missing diff changes the odoo half's expected pair context, so
-    # that row drops out until it is re-reviewed against the now-visible sibling.
+    # Caching the missing diff moves the odoo half's expected pair context, which
+    # would normally drop the row as stale. A hand-written review is exempt: the
+    # automatic pass will not replace it, so hiding it would lose it for good.
     conn = db.connect(cfg.db_path)
     try:
         with db.transaction(conn):
@@ -294,7 +295,7 @@ def test_set_ai_review_records_sibling_pair_context(tmp_path, monkeypatch):
     finally:
         conn.close()
     back = mcp_server.get_ai_review("odoo/odoo#1")
-    assert [r["number"] for r in back["ai_reviews"]] == [2]
+    assert sorted(r["number"] for r in back["ai_reviews"]) == [1, 2]
 
 
 def test_set_ai_review_rejects_unknown_verdict(tmp_path, monkeypatch):
