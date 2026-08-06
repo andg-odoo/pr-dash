@@ -167,3 +167,130 @@ def test_hide_pr_falls_back_to_cached_sha(tmp_path, monkeypatch):
     monkeypatch.setattr(github, "fetch_head_sha", _boom)
     mcp_server.hide_pr("odoo/odoo#1")
     assert hidden.load(cfg)["odoo/odoo#1"]["head_sha"] == "stale"
+
+
+# --- set_ai_review ----------------------------------------------------------
+
+# These go through the real cache instead of a patched load_items: the point of
+# a written row is that it comes back out of the renderer like a pipeline one,
+# and only a real db exercises the pair-context validation on the way out.
+
+def _seed_pr(conn, pr_id, head_sha, *, head_branch="feat", diff=None):
+    from pr_dash import db
+
+    repo, number = pr_id.split("#")
+    conn.execute(
+        "INSERT INTO pr (id, repo, number, title, url, author, target_branch, "
+        "head_branch, head_sha, created_at, updated_at, review_requested_at, "
+        "previously_reviewed, additions, deletions, changed_files, fetched_at) "
+        "VALUES (?, ?, ?, 'A title', '', 'alice', '18.0', ?, ?, ?, ?, ?, 0, 1, 0, "
+        "1, ?)",
+        (pr_id, repo, int(number), head_branch, head_sha, *(["2026-07-01T00:00:00+00:00"] * 4)),
+    )
+    if diff is not None:
+        db.upsert_diff(conn, head_sha, diff, False, "2026-07-01T00:00:00+00:00")
+
+
+def _seeded_cfg(tmp_path, monkeypatch, seed):
+    from pr_dash import db, mcp_server
+
+    cfg = _cfg(tmp_path)
+    conn = db.connect(cfg.db_path)
+    try:
+        with db.transaction(conn):
+            seed(conn)
+    finally:
+        conn.close()
+    monkeypatch.setattr(mcp_server, "_cfg", cfg)
+    return cfg, mcp_server
+
+
+def test_set_ai_review_writes_and_reads_back(tmp_path, monkeypatch):
+    # The backfill case: a PR with no cached diff, so the pipeline never reviewed it.
+    _, mcp_server = _seeded_cfg(
+        tmp_path, monkeypatch, lambda c: _seed_pr(c, "odoo/odoo#1", "sha1"),
+    )
+
+    out = mcp_server.set_ai_review(
+        "1", summary="Adds a tax hook.", verdict="minor",
+        concerns=[
+            {"severity": "nope", "message": "sudo() with no comment",
+             "where": "sale/models/x.py"},
+            {"severity": "high", "message": "   "},  # no message -> dropped
+        ],
+    )
+    assert out["id"] == "odoo/odoo#1"
+    assert (out["head_sha"], out["sibling_head_sha"]) == ("sha1", "")
+    assert (out["verdict"], out["concern_count"], out["replaced"]) == ("minor", 1, False)
+
+    back = mcp_server.get_ai_review("odoo/odoo#1")
+    assert back["ai_review_verdict"] == "minor"
+    assert back["ai_reviews"][0]["summary"] == "Adds a tax hook."
+    # Unknown severity is clamped rather than rejected, same as model output.
+    assert back["ai_reviews"][0]["concerns"] == [
+        {"severity": "low", "message": "sudo() with no comment",
+         "where": "sale/models/x.py"},
+    ]
+
+
+def test_set_ai_review_overwrites_in_place(tmp_path, monkeypatch):
+    from pr_dash import db
+
+    def seed(conn):
+        _seed_pr(conn, "odoo/odoo#1", "sha1")
+        db.upsert_ai_review(conn, "sha1", "", "auto", "[]", "looks-good", "t")
+
+    cfg, mcp_server = _seeded_cfg(tmp_path, monkeypatch, seed)
+
+    out = mcp_server.set_ai_review("1", summary="Actually breaks refunds.",
+                                   verdict="major")
+    assert out["replaced"] is True
+
+    conn = db.connect(cfg.db_path)
+    try:
+        rows = conn.execute("SELECT * FROM ai_review").fetchall()
+    finally:
+        conn.close()
+    assert len(rows) == 1
+    assert (rows[0]["verdict"], rows[0]["summary"]) == ("major", "Actually breaks refunds.")
+
+
+def test_set_ai_review_records_sibling_pair_context(tmp_path, monkeypatch):
+    from pr_dash import db
+
+    def seed(conn):
+        _seed_pr(conn, "odoo/odoo#1", "sha1", diff="diff --git a/a b/a\n")
+        _seed_pr(conn, "odoo/enterprise#2", "sha2")
+
+    cfg, mcp_server = _seeded_cfg(tmp_path, monkeypatch, seed)
+
+    # Sibling diff not cached -> pair-blind, exactly as _build_review_queue would
+    # have stored it, so the next refresh still reads this row as a cache hit.
+    out = mcp_server.set_ai_review("enterprise#2", summary="Half a feature.",
+                                   verdict="looks-good")
+    assert (out["head_sha"], out["sibling_head_sha"]) == ("sha1", "")
+
+    # Cache the sibling diff and rewrite: now the pair context is recorded, and
+    # the renderer accepts the row for the odoo/odoo half of the pair.
+    conn = db.connect(cfg.db_path)
+    try:
+        with db.transaction(conn):
+            db.upsert_diff(conn, "sha2", "diff --git a/b b/b\n", False, "t")
+    finally:
+        conn.close()
+
+    out = mcp_server.set_ai_review("enterprise#2", summary="Half a feature.",
+                                   verdict="looks-good")
+    assert (out["head_sha"], out["sibling_head_sha"], out["replaced"]) == (
+        "sha1", "sha2", True,
+    )
+    back = mcp_server.get_ai_review("odoo/odoo#1")
+    assert [r["number"] for r in back["ai_reviews"]] == [1]
+
+
+def test_set_ai_review_rejects_unknown_verdict(tmp_path, monkeypatch):
+    _, mcp_server = _seeded_cfg(
+        tmp_path, monkeypatch, lambda c: _seed_pr(c, "odoo/odoo#1", "sha1"),
+    )
+    with pytest.raises(ValueError, match="verdict must be one of"):
+        mcp_server.set_ai_review("1", summary="s", verdict="lgtm")

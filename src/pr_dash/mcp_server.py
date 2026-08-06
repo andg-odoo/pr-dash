@@ -11,7 +11,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from pr_dash import config, db, derive, github, hidden, query
+from pr_dash import ai, config, db, derive, github, hidden, query
 
 # stderr only: stdout is the MCP protocol channel, so a single stray print or
 # rich.Console write there corrupts the stream. Everything human-facing goes to
@@ -52,6 +52,31 @@ def _hidden_ids(cfg: config.Config, items: list[dict]) -> set[str]:
     mapping = hidden.prune(hidden.load(cfg), items)
     hidden.save(cfg, mapping)
     return set(mapping)
+
+
+def _ai_review_shas(item: dict) -> tuple[str, str]:
+    """(head_sha, sibling_head_sha) identifying the ai_review row for `item`.
+
+    The row belongs to the item's primary half (odoo/odoo when paired), and
+    sibling_head_sha is the pair context it was reviewed against - the composite
+    cache key cli._build_review_queue looks a review up by.
+
+    That queue only counts a sibling as context when the sibling's diff is
+    actually cached, since that is the only case where it had a companion diff to
+    put in the prompt. Same rule here: an unpaired PR, or a pair whose other half
+    has no cached diff (it blew the diff size gates), is stored pair-blind ('') -
+    which is exactly what the next refresh will look the row up by, so a manual
+    review reads as a cache hit instead of being recomputed over.
+    """
+    members = item.get("members") or []
+    head_sha = item["head_sha"]
+    if len(members) != 2:
+        return head_sha, ""
+    sibling = members[1]  # members[0] is the primary the head_sha comes from
+    diffs = {(d.get("repo_short"), d.get("number")): d.get("diff")
+             for d in item.get("diffs") or []}
+    sibling_diff = diffs.get((sibling.get("repo_short"), sibling.get("number")))
+    return head_sha, sibling["head_sha"] if sibling_diff else ""
 
 
 @mcp.tool()
@@ -287,6 +312,76 @@ def get_ai_review(ref: str) -> dict:
             "computed on the last refresh)."
         )
     return out
+
+
+@mcp.tool()
+def set_ai_review(ref: str, summary: str, verdict: str,
+                  concerns: list[dict] | None = None) -> dict:
+    """Store a first-pass triage review for one PR, in the same slot the
+    automatic pass writes to.
+
+    This is a manual backfill. The refresh only reviews PRs whose diff is cached
+    and small, so the big ones - often the ones most worth a second opinion - come
+    back empty from get_ai_review forever. Review such a PR yourself (get_pr,
+    get_diff), then record the verdict here so it shows on the dashboard.
+
+    ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
+    On a pair the review is stored against the odoo/odoo half, with the other
+    half kept as its pair context - the same shape a paired automatic review has.
+
+    summary: 1-2 sentences on what the PR actually does.
+    verdict: 'looks-good' (nothing concerning) | 'minor' (small things to ask
+    about) | 'major' (should block merge). Anything else is rejected.
+    concerns: most important first, each {"severity": "high"|"med"|"low",
+    "message": "one specific line", "where": "file path"}. where is optional,
+    entries without a message are dropped, and only the first 5 are kept.
+
+    Calling again for the same PR updates the row in place (replaced: true),
+    including over an automatic review. Returns {id, head_sha, sibling_head_sha,
+    verdict, concern_count, replaced, computed_at}.
+    """
+    cfg = _get_cfg()
+    item = query.resolve_item(query.load_items(cfg), ref)
+    if verdict not in ai._VERDICTS:
+        raise ValueError(
+            f"verdict must be one of {', '.join(ai._VERDICTS)}, got {verdict!r}",
+        )
+    head_sha, sibling_head_sha = _ai_review_shas(item)
+    # Normalised by the same parser the pipeline runs model output through
+    # (unknown severity clamped, blank messages dropped, capped at 5), so a
+    # hand-written row is indistinguishable from a generated one downstream. Its
+    # lenient verdict fallback is not wanted here though - a caller that meant
+    # something by an unknown verdict deserves the error above, not "looks-good".
+    result = ai._parse_review(
+        {"summary": summary, "verdict": verdict, "concerns": concerns or []},
+        head_sha,
+    )
+    if result is None:
+        raise ValueError("nothing to store: pass a summary, at least one concern, or both")
+
+    computed_at = derive.now_utc()
+    conn = db.connect(cfg.db_path)
+    try:
+        # Checked without the pair context, because the table is keyed on
+        # head_sha alone: a row stored under a *different* sibling sha is
+        # overwritten too, and the caller should hear about that.
+        replaced = db.get_ai_review_any(conn, head_sha) is not None
+        with db.transaction(conn):
+            db.upsert_ai_review(
+                conn, head_sha, sibling_head_sha, result.summary,
+                json.dumps(result.concerns), result.verdict, computed_at,
+            )
+    finally:
+        conn.close()
+    return {
+        "id": item["id"],
+        "head_sha": head_sha,
+        "sibling_head_sha": sibling_head_sha,
+        "verdict": result.verdict,
+        "concern_count": len(result.concerns),
+        "replaced": replaced,
+        "computed_at": computed_at,
+    }
 
 
 @mcp.tool()
