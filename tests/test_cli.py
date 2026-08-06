@@ -427,3 +427,24 @@ def test_store_patch_keeps_the_code_around_an_oversized_file(tmp_path, monkeypat
     assert "+row" not in row["patch_text"]
     assert "pull/277589/files#diff-" in row["patch_text"]
     assert row["truncated"] == 1  # partial, so the dashboard still says so
+
+
+def test_review_queue_gates_on_the_compacted_diff(tmp_path):
+    from pr_dash import db
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr(conn, "odoo/odoo#1", head_branch="one", head_sha="sha1")
+    _insert_pr(conn, "odoo/odoo#2", head_branch="two", head_sha="sha2")
+    db.upsert_diff(conn, "sha1", _difffile("m/i18n/fr.po", "+msgid\n" * 400)
+                   + _difffile("m/models/x.py", "+code\n"), False, "t")
+    db.upsert_diff(conn, "sha2", _difffile("m/models/y.py", "+code\n" * 400), False, "t")
+
+    reqs, _ = cli._build_review_queue(conn, {"odoo/odoo#1", "odoo/odoo#2"}, 1500)
+
+    # #1 blows the gate on translations alone, which the prompt never sees; #2 is
+    # genuinely over budget. The request still carries the raw diff, so the
+    # prompt can tell the model what was dropped from it.
+    assert [r.head_sha for r in reqs] == ["sha1"]
+    assert "fr.po" in reqs[0].diff

@@ -33,7 +33,12 @@ class AIConfig:
     # headroom for diffs near review_max_diff_chars; 120s covers the range.
     timeout_seconds: int = 120
     review_enabled: bool = True
-    review_max_diff_chars: int = 40_000
+    # Both the review gate and the prompt's own diff budget: a PR is queued
+    # exactly when its compacted diff fits whole, so nothing is skipped over
+    # bytes the model would never see, nor cut down to a size the gate would
+    # have rejected. A paired PR's companion half gets half of this on top, as
+    # context. Keep in step with ai.DEFAULT_MAX_DIFF_CHARS.
+    review_max_diff_chars: int = 50_000
     # Model for the first-pass sanity check. Sonnet is ~2x faster than the
     # default Opus on a triage review and reaches the same verdict; the slower
     # default model was overrunning timeout_seconds. Empty string = CLI default.
@@ -250,7 +255,10 @@ model = "sonnet"
 # AI first-pass review fires per-PR when the diff fits under this cap. This is
 # a more honest gate than bucket-based gating, since a breadth-XL PR with a tiny
 # diff still reviews fine, and a size-L PR with a huge diff would just truncate.
-review_max_diff_chars = 40000
+# Measured after compaction - generated files dropped, oversized ones stubbed -
+# and it doubles as the prompt's diff budget, so a queued PR always fits whole.
+# A paired PR's companion half is included as context for half this again.
+review_max_diff_chars = 50000
 
 [commands]
 # Shell snippets for the per-PR action buttons. Placeholders:

@@ -93,7 +93,7 @@ enabled = true                   # set false to skip the claude sanity-check ent
 timeout_seconds = 120
 review_enabled = true
 model = "sonnet"                 # "" = claude CLI default; "haiku" for speed
-review_max_diff_chars = 40000
+review_max_diff_chars = 50000    # gate + prompt budget, measured after compaction
 
 [commands]                       # the per-PR action buttons (see below)
 fresh_db = "onew {db} -i {modules}"

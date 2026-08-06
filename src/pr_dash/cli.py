@@ -719,7 +719,7 @@ def _run_refresh(conn, cfg, *, force: bool) -> None:
                 )
                 reviews = ai.review_batch(
                     review_candidates, timeout=cfg.ai.timeout_seconds,
-                    model=cfg.ai.model,
+                    model=cfg.ai.model, max_diff_chars=cfg.ai.review_max_diff_chars,
                 )
                 for head_sha, rev in reviews.items():
                     db.upsert_ai_review(
@@ -1024,6 +1024,13 @@ def _build_review_queue(
     breadth-XL reviews fine; a size-L with a huge diff would just truncate to
     noise.
 
+    The gate measures the *compacted* diff, because that is what the prompt will
+    hold: judging the raw one skipped PRs over bytes the model would never have
+    been shown, and enterprise#125240 - 53% .po files the stripper already knew
+    to drop - was skipped as a 178k diff over 84k of code. max_diff_chars is the
+    prompt's own diff budget, so a PR is skipped only when it genuinely does not
+    fit, and one that fits is never handed to the model half-cut.
+
     Returns (requests, head_sha_to_sibling_head_sha) - the latter is used when
     persisting the result, since ReviewRequest itself doesn't survive the AI call.
     """
@@ -1039,7 +1046,15 @@ def _build_review_queue(
         head_sha = pr_row["head_sha"]
         diff_row = db.get_diff(conn, head_sha)
         diff_text = (diff_row["patch_text"] if diff_row else None) or ""
-        if not diff_text or len(diff_text) > max_diff_chars:
+        if not diff_text:
+            continue
+        # The raw text travels on: _diff_for_prompt compacts it again (a no-op
+        # on an already compacted diff) and needs to see what it omits to tell
+        # the model, so handing over the compacted text would lose the note.
+        compacted = derive.compact_diff(
+            diff_text, repo=pr_row["repo"], number=pr_row["number"],
+        )
+        if not compacted.text or len(compacted.text) > max_diff_chars:
             continue
 
         sibling_head_sha = ""
