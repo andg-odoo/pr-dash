@@ -465,8 +465,16 @@
       const archivedTag = pr.is_archived ? '<span class="archived-tag">ARCHIVED</span>' : "";
       const reviewedCount = (pr.ai_reviews || []).length;
       const isPartialReview = pr.is_pair && reviewedCount > 0 && reviewedCount < pr.members.length;
-      const verdictTag = (pr.ai_review_verdict === "minor" || pr.ai_review_verdict === "major")
-        ? `<span class="verdict-tag verdict-tag-${pr.ai_review_verdict}" title="claude flagged ${pr.ai_review_verdict} concerns${isPartialReview ? " - only " + reviewedCount + " of " + pr.members.length + " halves analyzed" : ""}">${pr.ai_review_verdict.toUpperCase()}${isPartialReview ? ' <span class="verdict-partial">' + reviewedCount + '/' + pr.members.length + '</span>' : ''}</span>`
+      // A clean verdict is normally left untagged - a quiet row means nothing to
+      // look at. That is wrong for a half-reviewed pair: the verdict only covers
+      // the half that was analyzed, so an untagged row claims the whole pair
+      // passed when the other half was never read. Tag those regardless.
+      const analyzed = (pr.ai_reviews || []).map(r => r.repo_short + "#" + r.number).join(", ");
+      const verdictTitle = isPartialReview
+        ? `only ${reviewedCount} of ${pr.members.length} halves analyzed - ${pr.ai_review_verdict} covers ${analyzed} only`
+        : `claude flagged ${pr.ai_review_verdict} concerns`;
+      const verdictTag = (pr.ai_review_verdict === "minor" || pr.ai_review_verdict === "major" || isPartialReview)
+        ? `<span class="verdict-tag verdict-tag-${pr.ai_review_verdict}" title="${escapeHTML(verdictTitle)}">${pr.ai_review_verdict.toUpperCase()}${isPartialReview ? ' <span class="verdict-partial">' + reviewedCount + '/' + pr.members.length + '</span>' : ''}</span>`
         : "";
       const hideLabel = itemHidden ? "↺" : "×";
       const hideTitle = itemHidden ? "Unhide" : "Hide until next push";

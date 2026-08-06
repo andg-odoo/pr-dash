@@ -264,28 +264,37 @@ def test_set_ai_review_records_sibling_pair_context(tmp_path, monkeypatch):
 
     cfg, mcp_server = _seeded_cfg(tmp_path, monkeypatch, seed)
 
-    # Sibling diff not cached -> pair-blind, exactly as _build_review_queue would
-    # have stored it, so the next refresh still reads this row as a cache hit.
-    out = mcp_server.set_ai_review("enterprise#2", summary="Half a feature.",
+    # The ref picks the half. resolve_item collapses either number onto the same
+    # item, so an enterprise ref must still land on the enterprise head - and it
+    # carries the odoo half as pair context, whose diff is cached.
+    out = mcp_server.set_ai_review("enterprise#2", summary="Enterprise half.",
                                    verdict="looks-good")
-    assert (out["head_sha"], out["sibling_head_sha"]) == ("sha1", "")
+    assert (out["head_sha"], out["sibling_head_sha"]) == ("sha2", "sha1")
 
-    # Cache the sibling diff and rewrite: now the pair context is recorded, and
-    # the renderer accepts the row for the odoo/odoo half of the pair.
+    # The odoo half is its own row, not a replacement, and is stored pair-blind
+    # because the enterprise diff was never cached - exactly what
+    # _build_review_queue would have stored, so a refresh reads it as a cache hit.
+    out = mcp_server.set_ai_review("odoo#1", summary="Odoo half.", verdict="minor")
+    assert (out["head_sha"], out["sibling_head_sha"], out["replaced"]) == (
+        "sha1", "", False,
+    )
+
+    # Both rows survive the renderer's pair-context check, so the pair reads as
+    # fully reviewed and the item pill takes the worse of the two verdicts.
+    back = mcp_server.get_ai_review("odoo/odoo#1")
+    assert sorted(r["number"] for r in back["ai_reviews"]) == [1, 2]
+    assert back["ai_review_verdict"] == "minor"
+
+    # Caching the missing diff changes the odoo half's expected pair context, so
+    # that row drops out until it is re-reviewed against the now-visible sibling.
     conn = db.connect(cfg.db_path)
     try:
         with db.transaction(conn):
             db.upsert_diff(conn, "sha2", "diff --git a/b b/b\n", False, "t")
     finally:
         conn.close()
-
-    out = mcp_server.set_ai_review("enterprise#2", summary="Half a feature.",
-                                   verdict="looks-good")
-    assert (out["head_sha"], out["sibling_head_sha"], out["replaced"]) == (
-        "sha1", "sha2", True,
-    )
     back = mcp_server.get_ai_review("odoo/odoo#1")
-    assert [r["number"] for r in back["ai_reviews"]] == [1]
+    assert [r["number"] for r in back["ai_reviews"]] == [2]
 
 
 def test_set_ai_review_rejects_unknown_verdict(tmp_path, monkeypatch):

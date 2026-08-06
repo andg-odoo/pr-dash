@@ -54,29 +54,37 @@ def _hidden_ids(cfg: config.Config, items: list[dict]) -> set[str]:
     return set(mapping)
 
 
-def _ai_review_shas(item: dict) -> tuple[str, str]:
-    """(head_sha, sibling_head_sha) identifying the ai_review row for `item`.
+def _ai_review_shas(item: dict, ref: str) -> tuple[str, str]:
+    """(head_sha, sibling_head_sha) identifying the ai_review row `ref` names.
 
-    The row belongs to the item's primary half (odoo/odoo when paired), and
-    sibling_head_sha is the pair context it was reviewed against - the composite
-    cache key cli._build_review_queue looks a review up by.
+    The pipeline reviews each half of a pair separately, so a fully reviewed pair
+    has one row per half. `ref` therefore selects the half to write: resolve_item
+    collapses either number onto the shared item, so without re-matching here
+    every write would land on the primary and the pair could never be completed.
 
-    That queue only counts a sibling as context when the sibling's diff is
-    actually cached, since that is the only case where it had a companion diff to
-    put in the prompt. Same rule here: an unpaired PR, or a pair whose other half
-    has no cached diff (it blew the diff size gates), is stored pair-blind ('') -
-    which is exactly what the next refresh will look the row up by, so a manual
-    review reads as a cache hit instead of being recomputed over.
+    sibling_head_sha is the pair context the half was reviewed against - the
+    composite cache key cli._build_review_queue looks a review up by. That queue
+    only counts a sibling as context when the sibling's diff is actually cached,
+    since that is the only case where it had a companion diff to put in the
+    prompt. Same rule here: an unpaired PR, or a pair whose other half has no
+    cached diff (it blew the diff size gates), is stored pair-blind ('') - which
+    is exactly what the next refresh will look the row up by, so a manual review
+    reads as a cache hit instead of being recomputed over.
     """
     members = item.get("members") or []
-    head_sha = item["head_sha"]
     if len(members) != 2:
-        return head_sha, ""
-    sibling = members[1]  # members[0] is the primary the head_sha comes from
+        return item["head_sha"], ""
+    repo_full, repo_short, number = query._parse_ref(ref)
+    idx = next(
+        (i for i, m in enumerate(members)
+         if query._member_matches(m, repo_full, repo_short, number)),
+        0,  # an item-level ref names no single half; fall back to the primary
+    )
+    target, sibling = members[idx], members[1 - idx]
     diffs = {(d.get("repo_short"), d.get("number")): d.get("diff")
              for d in item.get("diffs") or []}
     sibling_diff = diffs.get((sibling.get("repo_short"), sibling.get("number")))
-    return head_sha, sibling["head_sha"] if sibling_diff else ""
+    return target["head_sha"], sibling["head_sha"] if sibling_diff else ""
 
 
 @mcp.tool()
@@ -326,8 +334,10 @@ def set_ai_review(ref: str, summary: str, verdict: str,
     get_diff), then record the verdict here so it shows on the dashboard.
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
-    On a pair the review is stored against the odoo/odoo half, with the other
-    half kept as its pair context - the same shape a paired automatic review has.
+    On a pair the ref picks which half to record, with the other half kept as its
+    pair context - the same shape a paired automatic review has. Each half holds
+    its own review, so call this once per half; a pair with only one recorded is
+    shown on the dashboard as partially reviewed.
 
     summary: 1-2 sentences on what the PR actually does.
     verdict: 'looks-good' (nothing concerning) | 'minor' (small things to ask
@@ -346,7 +356,7 @@ def set_ai_review(ref: str, summary: str, verdict: str,
         raise ValueError(
             f"verdict must be one of {', '.join(ai._VERDICTS)}, got {verdict!r}",
         )
-    head_sha, sibling_head_sha = _ai_review_shas(item)
+    head_sha, sibling_head_sha = _ai_review_shas(item, ref)
     # Normalised by the same parser the pipeline runs model output through
     # (unknown severity clamped, blank messages dropped, capped at 5), so a
     # hand-written row is indistinguishable from a generated one downstream. Its

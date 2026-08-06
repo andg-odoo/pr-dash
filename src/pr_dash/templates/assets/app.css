@@ -421,6 +421,9 @@ body {
 }
 .pr-row .verdict-tag-minor { color: var(--yellow); background: rgba(224, 192, 96, 0.14); }
 .pr-row .verdict-tag-major { color: var(--red); background: rgba(224, 104, 104, 0.16); }
+/* Only ever rendered for a half-reviewed pair, where the point is the unread
+   half rather than the clean verdict - so it stays muted, not green. */
+.pr-row .verdict-tag-looks-good { color: var(--fg-dim); background: rgba(255, 255, 255, 0.07); }
 
 .pr-row.archived-row { opacity: 0.75; }
 .pr-row.archived-row .pr-title { color: var(--fg-dim); }
