@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import os
@@ -93,6 +94,141 @@ def _ai_review_shas(item: dict, ref: str) -> tuple[str, str, str]:
     return (target["head_sha"],
             sibling["head_sha"] if sibling_diff else "",
             companion_sha)
+
+
+# --- dashboard re-render -----------------------------------------------------
+
+# The dashboard is a static file, so a tool that writes to the cache leaves it
+# stale until something re-renders. A render is cheap but not free (a subprocess
+# and a full pass over the payload) and recording several reviews in a row is the
+# normal case, so renders are coalesced two ways: a trailing timer within this
+# process, and a lock file across processes, since every agent session runs its
+# own MCP server.
+#
+# Two files carry the state between those processes: every caller appends a byte
+# to `request`, whose size is therefore a request counter (POSIX makes a small
+# O_APPEND write atomic, so no lock is needed to bump it), and the renderer
+# records in `covered` the count it has rendered. requests > covered is work not
+# yet in the HTML - what both the "should I bother" check and the post-render
+# re-check read. Counters rather than timestamps because file mtimes come from a
+# coarse kernel clock: two events milliseconds apart can land on the same mtime,
+# which would silently drop the second one.
+_RERENDER_DEBOUNCE_S = 0.4
+# Bounds the re-check loop under a steady stream of writes; whatever is left is
+# picked up by the next caller's timer.
+_RERENDER_MAX_PASSES = 3
+
+_rerender_timer: threading.Timer | None = None
+_rerender_timer_lock = threading.Lock()
+
+
+def _rerender_paths(cfg: config.Config) -> tuple[Path, Path, Path]:
+    return (cfg.cache_dir / "rerender.request",
+            cfg.cache_dir / "rerender.covered",
+            cfg.cache_dir / "rerender.lock")
+
+
+def _requests(cfg: config.Config) -> int:
+    request_path, _, _ = _rerender_paths(cfg)
+    try:
+        return request_path.stat().st_size
+    except OSError:
+        return 0
+
+
+def _covered(cfg: config.Config) -> int:
+    _, covered_path, _ = _rerender_paths(cfg)
+    try:
+        return int(covered_path.read_text())
+    except (OSError, ValueError):
+        return 0
+
+
+def _set_covered(cfg: config.Config, count: int) -> None:
+    """Written under the render lock, but atomically all the same - a reader that
+    catches a half-written file would render one time too few."""
+    _, covered_path, _ = _rerender_paths(cfg)
+    tmp = covered_path.with_name(covered_path.name + ".tmp")
+    tmp.write_text(str(count))
+    os.replace(tmp, covered_path)
+
+
+def _schedule_rerender(cfg: config.Config) -> None:
+    """Record that the cache changed and arm the debounce timer."""
+    request_path, _, _ = _rerender_paths(cfg)
+    request_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(request_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    try:
+        os.write(fd, b"\x01")
+    finally:
+        os.close(fd)
+    _arm_rerender(cfg)
+
+
+def _arm_rerender(cfg: config.Config) -> None:
+    """(Re-)start the trailing timer, so a burst of writes renders once."""
+    global _rerender_timer
+    with _rerender_timer_lock:
+        if _rerender_timer is not None:
+            _rerender_timer.cancel()
+        _rerender_timer = threading.Timer(_RERENDER_DEBOUNCE_S, _rerender, (cfg,))
+        _rerender_timer.daemon = True
+        _rerender_timer.start()
+
+
+def _rerender(cfg: config.Config) -> None:
+    """Render the dashboard if the cache has moved since the last render.
+
+    Only one process renders at a time. A caller that loses the lock re-arms its
+    timer instead of waiting: by the time it fires the holder has usually covered
+    the request already, which the counter check sees and skips.
+    """
+    _, _, lock_path = _rerender_paths(cfg)
+    if _requests(cfg) <= _covered(cfg):
+        return
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+    except OSError as e:
+        log.warning("dashboard re-render skipped: %s", e)
+        return
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            _arm_rerender(cfg)
+            return
+        for _ in range(_RERENDER_MAX_PASSES):
+            # Read the counter before rendering: a render reads the cache once,
+            # at the start, so anything committed while it runs (by us or by
+            # another session) is not in the HTML it writes and must not be
+            # counted as covered.
+            seen = _requests(cfg)
+            if not _run_rerender():
+                return
+            _set_covered(cfg, seen)
+            if _requests(cfg) <= seen:
+                return
+    finally:
+        os.close(fd)
+
+
+def _run_rerender() -> bool:
+    """Shell out to `pr-dash rerender`, the way the refresh tool does - the
+    render's stdout must stay out of the MCP protocol channel."""
+    cmd = [sys.executable, "-m", "pr_dash", "rerender", "--no-open"]
+    cfg_path = _config_path()
+    if cfg_path is not None:
+        cmd += ["--config", str(cfg_path)]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as e:
+        log.warning("dashboard re-render failed: %s", e)
+        return False
+    if proc.returncode != 0:
+        log.warning("dashboard re-render failed: %s", proc.stderr[-500:].strip())
+        return False
+    return True
 
 
 @mcp.tool()
@@ -366,7 +502,12 @@ def set_ai_review(ref: str, summary: str, verdict: str,
 
     Calling again for the same PR updates the row in place (replaced: true),
     including over an automatic review. Returns {id, head_sha, sibling_head_sha,
-    verdict, concern_count, replaced, computed_at}.
+    verdict, concern_count, replaced, computed_at}, plus replaced_source and
+    replaced_at describing the row that was overwritten - a 'manual' one stamped
+    moments ago means another session was reviewing the same PR.
+
+    The dashboard HTML is re-rendered shortly after the write, so the row shows
+    up on the next browser reload without a `pr-dash refresh`.
     """
     cfg = _get_cfg()
     item = query.resolve_item(query.load_items(cfg), ref)
@@ -393,7 +534,7 @@ def set_ai_review(ref: str, summary: str, verdict: str,
         # Checked without the pair context, because the table is keyed on
         # head_sha alone: a row stored under a *different* sibling sha is
         # overwritten too, and the caller should hear about that.
-        replaced = db.get_ai_review_any(conn, head_sha) is not None
+        previous = db.get_ai_review_any(conn, head_sha)
         with db.transaction(conn):
             db.upsert_ai_review(
                 conn, head_sha, sibling_head_sha, result.summary,
@@ -402,16 +543,24 @@ def set_ai_review(ref: str, summary: str, verdict: str,
             )
     finally:
         conn.close()
-    return {
+    _schedule_rerender(cfg)
+    out = {
         "id": item["id"],
         "head_sha": head_sha,
         "sibling_head_sha": sibling_head_sha,
         "companion_head_sha": companion_head_sha,
         "verdict": result.verdict,
         "concern_count": len(result.concerns),
-        "replaced": replaced,
+        "replaced": previous is not None,
         "computed_at": computed_at,
     }
+    if previous is not None:
+        # Sessions write independently and the last one wins, so say what lost:
+        # replacing a 'manual' row stamped seconds ago means another agent was
+        # reviewing the same PR, which is worth noticing.
+        out["replaced_source"] = previous["source"]
+        out["replaced_at"] = previous["computed_at"]
+    return out
 
 
 @mcp.tool()

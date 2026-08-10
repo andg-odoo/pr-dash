@@ -303,12 +303,12 @@ pipx install '.[mcp]'          # or: pip install 'pr-dash[mcp]'
 claude mcp add pr-dash -- pr-dash mcp          # add --scope user for all projects
 ```
 
-The client spawns `pr-dash mcp` per session over stdio - there's no daemon. It's
-**read-only** over the same cache the dashboard renders (the `refresh` tool is
-the one exception, and does exactly what `pr-dash refresh` does). Each call
-rebuilds the view from the cache, so a parallel `pr-dash refresh` is picked up
-immediately. Point it at an alternate config with `pr-dash mcp --config PATH` or
-the `PR_DASH_CONFIG` env var.
+The client spawns `pr-dash mcp` per session over stdio - there's no daemon. It
+reads the same cache the dashboard renders; the only tools that write are
+`refresh` (which does exactly what `pr-dash refresh` does), `set_ai_review`, and
+`hide_pr` / `unhide_pr`. Each call rebuilds the view from the cache, so a
+parallel `pr-dash refresh` is picked up immediately. Point it at an alternate
+config with `pr-dash mcp --config PATH` or the `PR_DASH_CONFIG` env var.
 
 Tools:
 
@@ -316,6 +316,7 @@ Tools:
 - `get_pr(ref)` - full detail for one PR (body, threads, reviewers, CI, companion migration PR, per-file diff metadata, commands).
 - `get_diff(ref, files, changed_since_review_only, max_chars)` - diff text, whole files only, under a char budget.
 - `get_ai_review(ref)` - the cached AI first-pass sanity check, if any.
+- `set_ai_review(ref, summary, verdict, concerns)` - record a review by hand, in the slot the automatic pass writes to (it skips PRs whose diff is too big to cache). Re-renders the dashboard shortly after, so the row shows up on the next browser reload; several calls in a row coalesce into one render, and concurrent sessions take turns.
 - `review_history(author, module, verdict, limit)` - your archived reviews as triage rows.
 - `stats()` - pending-queue and archived-history counts.
 - `list_tracked(state, include_dismissed)` - watched PRs (the `tracked` tab, not the review queue); `state` is `all` / `open` / `resolved`.

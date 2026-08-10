@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import fcntl
 import http.client
 import importlib.util
 import json
+import os
+import time
 from pathlib import Path
 
 import pytest
@@ -14,6 +17,30 @@ pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("mcp") is None,
     reason="mcp extra not installed",
 )
+
+
+@pytest.fixture(autouse=True)
+def _cancel_rerender_timer():
+    """A daemon timer left armed by one test must not fire into the next one,
+    where the stub is gone and the real subprocess would run."""
+    yield
+    from pr_dash import mcp_server
+
+    with mcp_server._rerender_timer_lock:
+        if mcp_server._rerender_timer is not None:
+            mcp_server._rerender_timer.cancel()
+            mcp_server._rerender_timer = None
+
+
+def _wait_for(pred, timeout=2.0):
+    """Poll until the debounce timer has fired (or give up and let the assert
+    report what actually happened)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if pred():
+            return True
+        time.sleep(0.01)
+    return pred()
 
 
 def _cfg(tmp_path: Path, **kw) -> Config:
@@ -191,7 +218,7 @@ def _seed_pr(conn, pr_id, head_sha, *, head_branch="feat", diff=None):
         db.upsert_diff(conn, head_sha, diff, False, "2026-07-01T00:00:00+00:00")
 
 
-def _seeded_cfg(tmp_path, monkeypatch, seed):
+def _seeded_cfg(tmp_path, monkeypatch, seed, rerenders=None):
     from pr_dash import db, mcp_server
 
     cfg = _cfg(tmp_path)
@@ -202,6 +229,16 @@ def _seeded_cfg(tmp_path, monkeypatch, seed):
     finally:
         conn.close()
     monkeypatch.setattr(mcp_server, "_cfg", cfg)
+
+    # Never spawn the real `pr-dash rerender` from a test: with no config path
+    # set it would render the developer's own dashboard.
+    def _fake_rerender():
+        if rerenders is not None:
+            rerenders.append(time.time())
+        return True
+
+    monkeypatch.setattr(mcp_server, "_run_rerender", _fake_rerender)
+    monkeypatch.setattr(mcp_server, "_RERENDER_DEBOUNCE_S", 0.01)
     return cfg, mcp_server
 
 
@@ -304,3 +341,129 @@ def test_set_ai_review_rejects_unknown_verdict(tmp_path, monkeypatch):
     )
     with pytest.raises(ValueError, match="verdict must be one of"):
         mcp_server.set_ai_review("1", summary="s", verdict="lgtm")
+
+
+def test_set_ai_review_reports_what_it_replaced(tmp_path, monkeypatch):
+    from pr_dash import db
+
+    def seed(conn):
+        _seed_pr(conn, "odoo/odoo#1", "sha1")
+        db.upsert_ai_review(conn, "sha1", "", "earlier", "[]", "minor",
+                            "2026-08-10T09:00:00+00:00", source="manual")
+
+    _, mcp_server = _seeded_cfg(tmp_path, monkeypatch, seed)
+
+    out = mcp_server.set_ai_review("1", summary="Mine.", verdict="major")
+    # Which row lost, so a session can tell it just overwrote another agent's
+    # fresh review rather than a stale automatic one.
+    assert out["replaced"] is True
+    assert out["replaced_source"] == "manual"
+    assert out["replaced_at"] == "2026-08-10T09:00:00+00:00"
+
+
+# --- dashboard re-render ----------------------------------------------------
+
+
+def _request_rerender(mcp_server, cfg, count=1):
+    """Bump the cross-process request counter without arming a timer, standing in
+    for another session's write."""
+    request, _, _ = mcp_server._rerender_paths(cfg)
+    request.parent.mkdir(parents=True, exist_ok=True)
+    with open(request, "ab") as fh:
+        fh.write(b"\x01" * count)
+
+
+def test_set_ai_review_rerenders_the_dashboard(tmp_path, monkeypatch):
+    rerenders = []
+    cfg, mcp_server = _seeded_cfg(
+        tmp_path, monkeypatch, lambda c: _seed_pr(c, "odoo/odoo#1", "sha1"),
+        rerenders=rerenders,
+    )
+
+    mcp_server.set_ai_review("1", summary="s", verdict="minor")
+    assert _wait_for(lambda: len(rerenders) == 1)
+    # Everything requested before the render started is recorded as covered, so
+    # the next caller has nothing to do.
+    assert mcp_server._covered(cfg) == mcp_server._requests(cfg) == 1
+
+
+def test_rerender_coalesces_a_burst_of_writes(tmp_path, monkeypatch):
+    rerenders = []
+
+    def seed(conn):
+        for n in (1, 2, 3):
+            _seed_pr(conn, f"odoo/odoo#{n}", f"sha{n}")
+
+    cfg, mcp_server = _seeded_cfg(tmp_path, monkeypatch, seed, rerenders=rerenders)
+    monkeypatch.setattr(mcp_server, "_RERENDER_DEBOUNCE_S", 0.3)
+
+    for n in (1, 2, 3):
+        mcp_server.set_ai_review(str(n), summary="s", verdict="minor")
+
+    assert _wait_for(lambda: len(rerenders) >= 1)
+    time.sleep(0.4)
+    assert len(rerenders) == 1
+    assert mcp_server._covered(cfg) == 3
+
+
+def test_rerender_skips_when_the_cache_has_not_moved(tmp_path, monkeypatch):
+    rerenders = []
+    cfg, mcp_server = _seeded_cfg(
+        tmp_path, monkeypatch, lambda c: _seed_pr(c, "odoo/odoo#1", "sha1"),
+        rerenders=rerenders,
+    )
+    _request_rerender(mcp_server, cfg, count=2)
+    mcp_server._set_covered(cfg, 2)
+
+    mcp_server._rerender(cfg)
+    assert rerenders == []
+
+
+def test_rerender_defers_to_a_render_running_elsewhere(tmp_path, monkeypatch):
+    rerenders = []
+    cfg, mcp_server = _seeded_cfg(
+        tmp_path, monkeypatch, lambda c: _seed_pr(c, "odoo/odoo#1", "sha1"),
+        rerenders=rerenders,
+    )
+    _, _, lock_path = mcp_server._rerender_paths(cfg)
+    _request_rerender(mcp_server, cfg)
+
+    # Stand in for another agent's MCP server mid-render. flock is per open file
+    # description, so a second handle conflicts even inside one process.
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    try:
+        mcp_server._rerender(cfg)
+        assert rerenders == []
+        # Not dropped: the timer is re-armed, and if the holder covers the
+        # request first, the counter check makes that retry a no-op.
+        assert mcp_server._rerender_timer is not None
+    finally:
+        os.close(fd)
+
+    assert _wait_for(lambda: len(rerenders) == 1)
+
+
+def test_rerender_does_another_pass_for_a_write_that_lands_mid_render(
+    tmp_path, monkeypatch,
+):
+    rerenders = []
+    cfg, mcp_server = _seeded_cfg(
+        tmp_path, monkeypatch, lambda c: _seed_pr(c, "odoo/odoo#1", "sha1"),
+        rerenders=rerenders,
+    )
+    _request_rerender(mcp_server, cfg)
+
+    def _render_then_another_write():
+        rerenders.append(time.time())
+        if len(rerenders) == 1:
+            # Another session commits while this render is reading the cache -
+            # its data cannot be in the HTML this pass is about to write.
+            _request_rerender(mcp_server, cfg)
+        return True
+
+    monkeypatch.setattr(mcp_server, "_run_rerender", _render_then_another_write)
+
+    mcp_server._rerender(cfg)
+    assert len(rerenders) == 2
+    assert mcp_server._covered(cfg) == 2
