@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import time
 from dataclasses import dataclass
 
 log = logging.getLogger("pr_dash.github")
@@ -154,7 +155,23 @@ query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
 
 
 class GithubError(Exception):
-    pass
+    def __init__(self, message: str, *, retryable: bool = False):
+        super().__init__(message)
+        self.retryable = retryable
+
+
+# GitHub-side hiccups that abort an otherwise fine call, matched against the gh stderr.
+RETRYABLE_ERRORS = (
+    "http 502",
+    "http 503",
+    "http 504",
+    "stream error",
+    "connection reset",
+    "unexpected eof",
+    "i/o timeout",
+    "tls handshake timeout",
+)
+MAX_ATTEMPTS = 3
 
 
 @dataclass
@@ -166,13 +183,27 @@ class RateLimit:
 
 def _gh(args: list[str], *, input: str | None = None, timeout: int = 60,
         allow_failure: bool = False) -> str:
-    """Run `gh` and return stdout.
+    """Run `gh` and return stdout, retrying transient GitHub failures with backoff.
 
     `allow_failure` returns stdout on a nonzero exit as long as there *is*
     stdout: `gh api graphql` exits 1 whenever the response carries any `errors`,
     even a partial one where most aliases resolved fine. Callers that can use a
     partial response need the body, not the exception.
     """
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            return _gh_once(args, input=input, timeout=timeout, allow_failure=allow_failure)
+        except GithubError as e:
+            if attempt == MAX_ATTEMPTS or not e.retryable:
+                raise
+            delay = 2 ** (attempt - 1)
+            log.warning("%s; retrying in %ss (attempt %s/%s)", e, delay, attempt + 1, MAX_ATTEMPTS)
+            time.sleep(delay)
+    raise AssertionError("unreachable")
+
+
+def _gh_once(args: list[str], *, input: str | None = None, timeout: int = 60,
+             allow_failure: bool = False) -> str:
     try:
         result = subprocess.run(
             ["gh", *args],
@@ -189,9 +220,15 @@ def _gh(args: list[str], *, input: str | None = None, timeout: int = 60,
         msg = e.stderr or e.stdout or "(no output)"
         if "authentication required" in msg.lower() or "not logged" in msg.lower():
             raise GithubError("`gh` is not authenticated. Run `gh auth login`.") from e
-        raise GithubError(f"`gh {' '.join(args)}` failed: {msg.strip()}") from e
+        low = msg.lower()
+        raise GithubError(
+            f"`gh {' '.join(args)}` failed: {msg.strip()}",
+            retryable=any(p in low for p in RETRYABLE_ERRORS),
+        ) from e
     except subprocess.TimeoutExpired as e:
-        raise GithubError(f"`gh {' '.join(args)}` timed out after {timeout}s") from e
+        raise GithubError(
+            f"`gh {' '.join(args)}` timed out after {timeout}s", retryable=True
+        ) from e
     return result.stdout
 
 
