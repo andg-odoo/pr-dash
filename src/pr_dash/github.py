@@ -262,11 +262,15 @@ def _graphql_partial(query: str, variables: dict) -> dict:
 
 
 def search_personal_review_requested(login: str) -> tuple[list[dict], RateLimit | None]:
-    """Return PRs where `login` is requested as a reviewer (personally or via team).
+    """Return PRs where `login` is personally requested as a reviewer.
 
-    Caller is responsible for filtering team-only requests.
+    `user-review-requested:` is the server-side form of is_personally_requested:
+    a direct User request, team requests excluded, and a PR requested from both
+    the user and their teams still matches. `review-requested:` also returned the
+    team ones, so the whole field fragment was fetched for 148 PRs to keep 13 -
+    39s and 1.5MB a refresh, against 2.8s and 122KB. Callers still filter.
     """
-    q = f"is:open is:pr review-requested:{login} archived:false"
+    q = f"is:open is:pr user-review-requested:{login} archived:false"
     nodes: list[dict] = []
     cursor = None
     rl: RateLimit | None = None
