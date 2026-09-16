@@ -14,6 +14,8 @@ DEFAULT_CONFIG_PATH = Path.home() / ".config" / "pr-dash" / "config.toml"
 @dataclass
 class Thresholds:
     staleness_minutes: int = 15
+    # Tracked PRs are a watch list, not the review queue, so they age slower.
+    tracked_staleness_minutes: int = 360
     diff_max_files: int = 100
     diff_max_lines: int = 5000
     diff_max_bytes: int = 2_000_000
@@ -259,6 +261,8 @@ github_login = "{login}"
 
 [thresholds]
 staleness_minutes = 15
+# Tracked PRs are watched, not queued, so a timer tick need not re-read all of them.
+tracked_staleness_minutes = 360
 # Over these, a diff is compacted before it is cached - generated files and any
 # single file bigger than a whole review prompt become a stub - so a PR drowned
 # by one data file keeps the code around it. diff_max_files still bails

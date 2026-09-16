@@ -487,7 +487,7 @@ def _run_tracked_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
 
         rows = db.list_tracked(conn, include_dismissed=True)
         staleness_cutoff = datetime.now(timezone.utc) - timedelta(
-            minutes=cfg.thresholds.staleness_minutes,
+            minutes=cfg.thresholds.tracked_staleness_minutes,
         )
         stale = [
             (r["repo"], r["number"]) for r in rows
