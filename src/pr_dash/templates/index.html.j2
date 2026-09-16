@@ -8,7 +8,7 @@
 </head>
 <body>
   {% if offline %}
-  <div class="banner">Offline mode - last refresh {{ last_refresh }}</div>
+  <div class="banner">Offline mode{% if last_refresh %} - last refresh {{ last_refresh }}{% endif %}</div>
   {% endif %}
 
   <div class="layout">
@@ -28,6 +28,7 @@
             <span class="kpi" id="kpi"></span>
             <span class="look-count" id="look-count"></span>
           </span>
+          <span class="last-refresh" id="last-refresh" data-at="{{ last_refresh }}"></span>
           <button id="reset-filters" type="button">reset</button>
         </div>
       </header>

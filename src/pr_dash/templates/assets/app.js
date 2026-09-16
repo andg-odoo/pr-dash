@@ -23,6 +23,7 @@
   const totalCountEl = document.getElementById("total-count");
   const kpiEl = document.getElementById("kpi");
   const lookCountEl = document.getElementById("look-count");
+  const lastRefreshEl = document.getElementById("last-refresh");
   const sortEl = document.getElementById("sort");
   const resetBtn = document.getElementById("reset-filters");
   const searchEl = document.getElementById("search");
@@ -1258,6 +1259,26 @@
     return days <= 0 ? "today" : `${days}d ago`;
   }
 
+  // The page outlives the render that wrote it, so the age is counted in the browser.
+  function ageLabel(ms) {
+    const mins = Math.floor(ms / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+  }
+
+  function renderLastRefresh() {
+    if (!lastRefreshEl) return;
+    const at = lastRefreshEl.dataset.at;
+    if (!at) return;
+    const when = new Date(at);
+    if (isNaN(when)) return;
+    lastRefreshEl.textContent = `updated ${ageLabel(Date.now() - when.getTime())}`;
+    lastRefreshEl.title = `Cache last refreshed from GitHub ${when.toLocaleString()}`;
+  }
+
   function highlightTracked(id) {
     trackedListEl.querySelectorAll(".pr-row").forEach(row => {
       row.classList.toggle("selected", row.dataset.id === id);
@@ -1526,6 +1547,8 @@
 
   setupFilters();
   updateKpi();
+  renderLastRefresh();
+  setInterval(renderLastRefresh, 30000);
   flushQueue();
   if (kpiEl) kpiEl.addEventListener("click", renderStats);
   if (lookCountEl) lookCountEl.addEventListener("click", () => {

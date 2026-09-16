@@ -440,6 +440,13 @@ body {
    half rather than the clean verdict - so it stays muted, not green. */
 .pr-row .verdict-tag-looks-good { color: var(--fg-dim); background: rgba(255, 255, 255, 0.07); }
 
+/* Dates the data, not the page: a timer writes this file without anyone watching. */
+.last-refresh {
+  color: var(--fg-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 /* Muted: a review that never ran is a gap to know about, not a finding to act on. */
 .pr-row .ai-failed-tag {
   font-size: 9px;

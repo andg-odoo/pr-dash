@@ -90,7 +90,7 @@ def _acquire_refresh_lock(cfg, *, wait: bool) -> int | None:
     return fd
 
 
-def _render_from_cache(conn, cfg, *, offline=False, last_refresh=None):
+def _render_from_cache(conn, cfg, *, offline=False):
     """Build the payload from cache and write the dashboard HTML, baking in the
     pruned server-side hidden map. Returns (payload, seen_updates,
     tracked_seen_updates); the caller decides whether to advance either
@@ -105,7 +105,8 @@ def _render_from_cache(conn, cfg, *, offline=False, last_refresh=None):
     hidden_map = hidden.prune(hidden.load(cfg), payload)
     hidden.save(cfg, hidden_map)
     tracked, tracked_seen = render.build_tracked_payload(conn)
-    render.render(payload, cfg.html_path, offline=offline, last_refresh=last_refresh,
+    render.render(payload, cfg.html_path, offline=offline,
+                  last_refresh=db.get_meta(conn, "last_refresh"),
                   hidden_map=hidden_map, hidden_sync_port=cfg.hidden_sync_port,
                   tracked=tracked)
     return payload, seen_updates, tracked_seen
@@ -314,7 +315,6 @@ def refresh(no_open, force, offline, cron, config_path):
 
 def _refresh(cfg, *, no_open: bool, force: bool, offline: bool, cron: bool) -> None:
     conn = db.connect(cfg.db_path)
-    last_refresh = derive.now_utc()
 
     if not offline:
         try:
@@ -329,10 +329,10 @@ def _refresh(cfg, *, no_open: bool, force: bool, offline: bool, cron: bool) -> N
             offline = True
         else:
             _run_tracked_refresh(conn, cfg, force=force, cron=cron)
+            # Stamped only on a run that reached GitHub, so the header dates the data.
+            db.set_meta(conn, "last_refresh", derive.now_utc())
 
-    payload, seen_updates, tracked_seen = _render_from_cache(
-        conn, cfg, offline=offline, last_refresh=last_refresh,
-    )
+    payload, seen_updates, tracked_seen = _render_from_cache(conn, cfg, offline=offline)
     if cron:
         # Nobody looked, so advancing the baseline would hide changes never seen.
         log.info("rendered %d PRs -> %s", len(payload), cfg.html_path)

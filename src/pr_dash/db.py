@@ -5,7 +5,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 23
+
+# Cache-wide facts with nowhere better to live, such as when a refresh last reached GitHub.
+META_SCHEMA_SQL = """
+CREATE TABLE meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+"""
 
 # Failed AI review passes, keyed the way a review is looked up, so a moved sha starts over.
 AI_ATTEMPT_SCHEMA_SQL = """
@@ -233,7 +241,7 @@ CREATE INDEX idx_pr_module_pr ON pr_module(pr_id);
 CREATE INDEX idx_pr_reviewer_pr ON pr_reviewer(pr_id);
 CREATE INDEX idx_pr_thread_pr ON pr_thread(pr_id);
 CREATE INDEX idx_pr_comment_pr ON pr_comment(pr_id);
-""" + TRACKED_SCHEMA_SQL + COMPANION_SCHEMA_SQL + AI_ATTEMPT_SCHEMA_SQL
+""" + TRACKED_SCHEMA_SQL + COMPANION_SCHEMA_SQL + AI_ATTEMPT_SCHEMA_SQL + META_SCHEMA_SQL
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
@@ -462,6 +470,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
         }
         if "ai_attempt" not in tables:
             conn.executescript(AI_ATTEMPT_SCHEMA_SQL)
+    if current < 23:
+        tables = {
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        if "meta" not in tables:
+            conn.executescript(META_SCHEMA_SQL)
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -719,6 +735,19 @@ def get_ai_review_any(conn: sqlite3.Connection, head_sha: str) -> sqlite3.Row | 
     return conn.execute(
         "SELECT * FROM ai_review WHERE head_sha = ?", (head_sha,),
     ).fetchone()
+
+
+def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value),
+    )
+
+
+def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
 
 
 def record_ai_attempt(conn: sqlite3.Connection, head_sha: str, sibling_head_sha: str,

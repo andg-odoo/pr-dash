@@ -4,7 +4,6 @@ import json
 import os
 import sqlite3
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -660,7 +659,7 @@ def render(payload: list[dict], html_path: Path, *, offline: bool = False,
         tracked_json=_json_for_script(tracked or []),
         tracked_count=len(tracked or []),
         offline=offline,
-        last_refresh=last_refresh or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        last_refresh=last_refresh or "",
         hidden_server_json=_json_for_script(hidden_map or {}),
         hidden_sync_port=hidden_sync_port,
         app_js=(assets_dir / "app.js").read_text(),
