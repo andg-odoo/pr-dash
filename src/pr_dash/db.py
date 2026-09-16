@@ -5,7 +5,20 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
+
+# Failed AI review passes, keyed the way a review is looked up, so a moved sha starts over.
+AI_ATTEMPT_SCHEMA_SQL = """
+CREATE TABLE ai_attempt (
+  head_sha           TEXT NOT NULL,
+  sibling_head_sha   TEXT NOT NULL DEFAULT '',
+  companion_head_sha TEXT NOT NULL DEFAULT '',
+  attempts           INTEGER NOT NULL DEFAULT 0,
+  last_error         TEXT,
+  last_attempt_at    TEXT NOT NULL,
+  PRIMARY KEY (head_sha, sibling_head_sha, companion_head_sha)
+);
+"""
 
 # The bundle's migration PR (odoo/upgrade), keyed by the cached PR it belongs to.
 #
@@ -220,7 +233,7 @@ CREATE INDEX idx_pr_module_pr ON pr_module(pr_id);
 CREATE INDEX idx_pr_reviewer_pr ON pr_reviewer(pr_id);
 CREATE INDEX idx_pr_thread_pr ON pr_thread(pr_id);
 CREATE INDEX idx_pr_comment_pr ON pr_comment(pr_id);
-""" + TRACKED_SCHEMA_SQL + COMPANION_SCHEMA_SQL
+""" + TRACKED_SCHEMA_SQL + COMPANION_SCHEMA_SQL + AI_ATTEMPT_SCHEMA_SQL
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
@@ -441,6 +454,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 "ALTER TABLE ai_review "
                 "ADD COLUMN companion_head_sha TEXT NOT NULL DEFAULT ''"
             )
+    if current < 22:
+        tables = {
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        if "ai_attempt" not in tables:
+            conn.executescript(AI_ATTEMPT_SCHEMA_SQL)
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -697,6 +718,46 @@ def get_ai_review_any(conn: sqlite3.Connection, head_sha: str) -> sqlite3.Row | 
     Used by the renderer, which must validate the pair context itself."""
     return conn.execute(
         "SELECT * FROM ai_review WHERE head_sha = ?", (head_sha,),
+    ).fetchone()
+
+
+def record_ai_attempt(conn: sqlite3.Connection, head_sha: str, sibling_head_sha: str,
+                      companion_head_sha: str, error: str, when: str) -> None:
+    """Count one failed pass at this review context, so the queue can give up."""
+    conn.execute(
+        "INSERT INTO ai_attempt (head_sha, sibling_head_sha, companion_head_sha, "
+        "attempts, last_error, last_attempt_at) VALUES (?, ?, ?, 1, ?, ?) "
+        "ON CONFLICT(head_sha, sibling_head_sha, companion_head_sha) DO UPDATE SET "
+        "attempts = attempts + 1, last_error = excluded.last_error, "
+        "last_attempt_at = excluded.last_attempt_at",
+        (head_sha, sibling_head_sha, companion_head_sha, error, when),
+    )
+
+
+def clear_ai_attempt(conn: sqlite3.Connection, head_sha: str, sibling_head_sha: str,
+                     companion_head_sha: str) -> None:
+    conn.execute(
+        "DELETE FROM ai_attempt WHERE head_sha = ? AND sibling_head_sha = ? "
+        "AND companion_head_sha = ?",
+        (head_sha, sibling_head_sha, companion_head_sha),
+    )
+
+
+def get_ai_attempt(conn: sqlite3.Connection, head_sha: str,
+                   sibling_head_sha: str = "",
+                   companion_head_sha: str = "") -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM ai_attempt WHERE head_sha = ? AND sibling_head_sha = ? "
+        "AND companion_head_sha = ?",
+        (head_sha, sibling_head_sha, companion_head_sha),
+    ).fetchone()
+
+
+def get_ai_attempt_any(conn: sqlite3.Connection, head_sha: str) -> sqlite3.Row | None:
+    """The most-attempted row for this sha, whatever context it was tried under."""
+    return conn.execute(
+        "SELECT * FROM ai_attempt WHERE head_sha = ? ORDER BY attempts DESC LIMIT 1",
+        (head_sha,),
     ).fetchone()
 
 

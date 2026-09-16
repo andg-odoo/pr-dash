@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import dataclasses
+import fcntl
 import json
 import logging
+import logging.handlers
+import os
 import re
 import subprocess
 import sys
@@ -19,6 +22,73 @@ from pr_dash import query as prquery
 console = Console()
 log = logging.getLogger("pr_dash")
 
+# Waits after the first failed AI pass at a review context, then after the second.
+_AI_RETRY_BACKOFF_HOURS = (1, 4)
+
+# Room for many refreshes' worth of phase lines, without becoming a file to tidy by hand.
+_CRON_LOG_MAX_BYTES = 1_000_000
+
+
+class _LogProgress:
+    """Progress stand-in for cron runs, where rich would write ANSI to a log."""
+
+    def __enter__(self) -> _LogProgress:
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        return False
+
+    def add_task(self, description: str, total=None) -> int:
+        log.info("%s", description)
+        return 0
+
+    def update(self, task: int, description: str | None = None, **kwargs) -> None:
+        if description:
+            log.info("%s", description)
+
+
+def _progress(cron: bool):
+    if cron:
+        return _LogProgress()
+    return Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                    console=console, transient=True)
+
+
+def _setup_cron_logging(cfg) -> None:
+    """Send phase lines to a rotating cron.log and nowhere else."""
+    cfg.cache_dir.mkdir(parents=True, exist_ok=True)
+    handler = logging.handlers.RotatingFileHandler(
+        cfg.cache_dir / "cron.log", maxBytes=_CRON_LOG_MAX_BYTES, backupCount=2,
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    log.addHandler(handler)
+    log.setLevel(logging.INFO)
+    log.propagate = False
+
+
+def _notify(cron: bool, message: str, style: str = "") -> None:
+    """One line to the console, or to the cron log when nobody is watching one."""
+    if cron:
+        log.info("%s", message)
+    else:
+        console.print(f"[{style}]{message}[/{style}]" if style else message)
+
+
+def _acquire_refresh_lock(cfg, *, wait: bool) -> int | None:
+    """Take the refresh lock, which every refresh holds, or None if someone else has it."""
+    lock_path = cfg.cache_dir / "refresh.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        if not wait:
+            os.close(fd)
+            return None
+        console.print("[yellow]Another refresh is running; waiting for it...[/yellow]")
+        fcntl.flock(fd, fcntl.LOCK_EX)
+    return fd
+
 
 def _render_from_cache(conn, cfg, *, offline=False, last_refresh=None):
     """Build the payload from cache and write the dashboard HTML, baking in the
@@ -28,6 +98,7 @@ def _render_from_cache(conn, cfg, *, offline=False, last_refresh=None):
     payload, seen_updates = render.build_payload(
         conn, cfg.github_login, cfg.repos, cfg.thresholds.stale_review_days,
         command_templates=dataclasses.asdict(cfg.commands),
+        ai_max_attempts=cfg.ai.max_attempts,
     )
     for p in payload:
         p["my_login"] = cfg.github_login
@@ -68,7 +139,8 @@ def cli(ctx, no_open, force, offline, config_path, verbose):
     )
     if ctx.invoked_subcommand is not None:
         return
-    ctx.invoke(refresh, no_open=no_open, force=force, offline=offline, config_path=config_path)
+    ctx.invoke(refresh, no_open=no_open, force=force, offline=offline, cron=False,
+               config_path=config_path)
 
 
 @cli.command()
@@ -220,27 +292,51 @@ def init(config_path):
 @click.option("--no-open", is_flag=True)
 @click.option("--force", is_flag=True)
 @click.option("--offline", is_flag=True)
+@click.option("--cron", is_flag=True,
+              help="Unattended run: log to cron.log, skip if another refresh "
+                   "holds the lock, cap AI reviews, and leave the "
+                   "since-last-look baseline where the dashboard left it.")
 @click.option("--config", "config_path", type=click.Path(path_type=Path))
-def refresh(no_open, force, offline, config_path):
+def refresh(no_open, force, offline, cron, config_path):
     """Refresh cache and render dashboard (default action)."""
     cfg = _load_config_or_exit(config_path)
+    if cron:
+        _setup_cron_logging(cfg)
+    lock_fd = _acquire_refresh_lock(cfg, wait=not cron)
+    if lock_fd is None:
+        log.info("another refresh holds the lock; skipping this tick")
+        return
+    try:
+        _refresh(cfg, no_open=no_open, force=force, offline=offline, cron=cron)
+    finally:
+        os.close(lock_fd)
 
+
+def _refresh(cfg, *, no_open: bool, force: bool, offline: bool, cron: bool) -> None:
     conn = db.connect(cfg.db_path)
     last_refresh = derive.now_utc()
 
     if not offline:
         try:
-            _run_refresh(conn, cfg, force=force)
+            _run_refresh(conn, cfg, force=force, cron=cron)
         except github.GithubError as e:
+            if cron:
+                # Re-rendering would put an offline-bannered dashboard over a good one.
+                log.error("GitHub error: %s", e)
+                sys.exit(1)
             console.print(f"[red]GitHub error: {e}[/red]")
             console.print("[yellow]Falling back to cached data.[/yellow]")
             offline = True
         else:
-            _run_tracked_refresh(conn, cfg, force=force)
+            _run_tracked_refresh(conn, cfg, force=force, cron=cron)
 
     payload, seen_updates, tracked_seen = _render_from_cache(
         conn, cfg, offline=offline, last_refresh=last_refresh,
     )
+    if cron:
+        # Nobody looked, so advancing the baseline would hide changes never seen.
+        log.info("rendered %d PRs -> %s", len(payload), cfg.html_path)
+        return
     # Only now that the render succeeded do we advance the "last look" baseline,
     # so a render failure can't silently swallow the since-last-look deltas.
     render.commit_seen_baseline(conn, seen_updates, derive.now_utc())
@@ -363,7 +459,7 @@ def _fetch_tracked_state(conn, refs: list[tuple[str, int]]) -> int:
     return len(nodes)
 
 
-def _run_tracked_refresh(conn, cfg, *, force: bool) -> None:
+def _run_tracked_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
     """Seed tracked PRs from manual notification subscriptions, then refresh the
     cached state of everything tracked.
 
@@ -378,7 +474,7 @@ def _run_tracked_refresh(conn, cfg, *, force: bool) -> None:
         # A notifications failure must not sink the review-queue refresh, which
         # is the tool's primary job.
         log.debug("tracked seed skipped: %s", e)
-        console.print(f"[yellow]Could not read subscriptions: {e}[/yellow]")
+        _notify(cron, f"Could not read subscriptions: {e}", "yellow")
         subs = []
 
     added = 0
@@ -405,13 +501,11 @@ def _run_tracked_refresh(conn, cfg, *, force: bool) -> None:
         try:
             updated = _fetch_tracked_state(conn, stale)
         except github.GithubError as e:
-            console.print(f"[yellow]Tracked PR refresh failed: {e}[/yellow]")
+            _notify(cron, f"Tracked PR refresh failed: {e}", "yellow")
 
     if added or updated:
-        console.print(
-            f"[dim]tracked: +{added} new, {updated} refreshed "
-            f"({len(rows)} total)[/dim]"
-        )
+        _notify(cron, f"tracked: +{added} new, {updated} refreshed "
+                      f"({len(rows)} total)", "dim")
 
 
 @cli.command()
@@ -585,9 +679,8 @@ def _open_html(html_path: Path) -> None:
         console.print(f"[yellow]Open manually: file://{html_path}[/yellow]")
 
 
-def _run_refresh(conn, cfg, *, force: bool) -> None:
-    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
-                  console=console, transient=True) as progress:
+def _run_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
+    with _progress(cron) as progress:
         task = progress.add_task("Searching for review requests...", total=None)
         nodes, rate = github.search_personal_review_requested(cfg.github_login)
         if rate:
@@ -717,24 +810,39 @@ def _run_refresh(conn, cfg, *, force: bool) -> None:
             review_candidates, review_context = _build_review_queue(
                 conn, kept_ids, cfg.ai.review_max_diff_chars,
                 companion_repo=searched_repo,
+                max_attempts=cfg.ai.max_attempts,
+                limit=cfg.ai.cron_max_reviews if cron else None,
             )
             if review_candidates:
                 progress.update(
                     task,
                     description=f"AI sanity-check {len(review_candidates)} small PRs...",
                 )
-                reviews = ai.review_batch(
+                outcomes = ai.review_batch(
                     review_candidates, timeout=cfg.ai.timeout_seconds,
                     model=cfg.ai.model, max_diff_chars=cfg.ai.review_max_diff_chars,
                 )
-                for head_sha, rev in reviews.items():
-                    sibling_sha, companion_sha = review_context.get(head_sha, ("", ""))
-                    db.upsert_ai_review(
-                        conn, head_sha, sibling_sha,
-                        rev.summary, json.dumps(rev.concerns),
-                        rev.verdict, derive.now_utc(),
-                        companion_head_sha=companion_sha,
-                    )
+                _store_reviews(conn, outcomes, review_context)
+
+
+def _store_reviews(conn, outcomes: list, review_context: dict) -> None:
+    """Persist each outcome: the review itself, or the failure that stands in for it."""
+    now = derive.now_utc()
+    for outcome in outcomes:
+        sibling_sha, companion_sha = review_context.get(outcome.head_sha, ("", ""))
+        if outcome.result is not None:
+            rev = outcome.result
+            with db.transaction(conn):
+                db.upsert_ai_review(
+                    conn, outcome.head_sha, sibling_sha,
+                    rev.summary, json.dumps(rev.concerns),
+                    rev.verdict, now, companion_head_sha=companion_sha,
+                )
+                db.clear_ai_attempt(conn, outcome.head_sha, sibling_sha, companion_sha)
+        elif outcome.reason != "cli-missing":
+            # An absent CLI is the batch's problem, not this PR's or its budget's.
+            db.record_ai_attempt(conn, outcome.head_sha, sibling_sha, companion_sha,
+                                 outcome.reason, now)
 
 
 def _store_patch(conn, cfg, pr_row: dict, *, force: bool) -> None:
@@ -1127,12 +1235,26 @@ def _refresh_companions(conn, cfg, kept_ids: set[str]) -> str:
     return repo
 
 
+def _ai_attempt_exhausted(conn, head_sha: str, sibling_head_sha: str,
+                          companion_head_sha: str, max_attempts: int, now) -> bool:
+    """Whether this review context has failed too often, or too recently."""
+    row = db.get_ai_attempt(conn, head_sha, sibling_head_sha, companion_head_sha)
+    if row is None:
+        return False
+    if row["attempts"] >= max_attempts:
+        return True
+    hours = _AI_RETRY_BACKOFF_HOURS[min(row["attempts"], len(_AI_RETRY_BACKOFF_HOURS)) - 1]
+    return derive.parse_iso(row["last_attempt_at"]) + timedelta(hours=hours) > now
+
+
 def _build_review_queue(
     conn,
     kept_ids: set[str],
     max_diff_chars: int,
     *,
     companion_repo: str = "",
+    max_attempts: int = 3,
+    limit: int | None = None,
 ) -> tuple[list, dict[str, tuple[str, str]]]:
     """Build the AI sanity-check queue *after* all PR data is settled so pair
     detection is accurate. Gates per-PR on the actual diff size - a small-code
@@ -1150,16 +1272,22 @@ def _build_review_queue(
     the prompt so it can only claim a migration is missing when one was looked
     for.
 
+    A context that already failed `max_attempts` times is left out for good, and
+    one that failed fewer waits out its backoff. `limit` keeps a scheduled tick
+    to the cheapest few, the rest landing on the next tick or a manual run.
+
     Returns (requests, head_sha -> (sibling_head_sha, companion_head_sha)) - the
     latter is the review's cache key, needed when persisting the result since
     ReviewRequest itself doesn't survive the AI call.
     """
+    now = datetime.now(timezone.utc)
     pr_rows = {pr_id: db.get_cached_pr(conn, pr_id) for pr_id in kept_ids}
     pr_rows = {k: v for k, v in pr_rows.items() if v is not None}
     pair_map = derive.detect_pairs([dict(r) for r in pr_rows.values()])
     modules_by_pr = db.list_modules(conn)
 
-    requests: list = []
+    # (size, head_sha, request), sorted so a capped run takes the cheapest, in a fixed order.
+    sized: list[tuple[int, str, ai.ReviewRequest]] = []
     review_context: dict[str, tuple[str, str]] = {}
 
     for pr_id, pr_row in pr_rows.items():
@@ -1216,8 +1344,11 @@ def _build_review_queue(
             conn, head_sha, sibling_head_sha, companion_head_sha,
         ) is not None:
             continue
+        if _ai_attempt_exhausted(conn, head_sha, sibling_head_sha,
+                                 companion_head_sha, max_attempts, now):
+            continue
 
-        requests.append(ai.ReviewRequest(
+        sized.append((len(compacted.text), head_sha, ai.ReviewRequest(
             head_sha=head_sha,
             title=pr_row["title"],
             body=pr_row["body"] or "",
@@ -1229,10 +1360,14 @@ def _build_review_queue(
             companion=companion,
             companion_repo=companion_repo,
             **sibling_kwargs,
-        ))
+        )))
         review_context[head_sha] = (sibling_head_sha, companion_head_sha)
 
-    return requests, review_context
+    sized.sort(key=lambda item: (item[0], item[1]))
+    if limit is not None:
+        sized = sized[:limit]
+    requests = [r for _, _, r in sized]
+    return requests, {k: review_context[k] for _, k, _ in sized}
 
 
 def _node_id(node: dict) -> str:

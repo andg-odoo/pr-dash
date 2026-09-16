@@ -61,7 +61,7 @@ def test_parses_structured_output(monkeypatch):
     }
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: _envelope(so))
 
-    result = ai._review_one(_req(), timeout=90, model="sonnet", cap=50_000)
+    result = ai._review_one(_req(), timeout=90, model="sonnet", cap=50_000).result
 
     assert result is not None
     assert result.summary == "adds a line"
@@ -107,9 +107,9 @@ def test_timeout_is_terminal_no_retry(monkeypatch):
         raise subprocess.TimeoutExpired(cmd="claude", timeout=90)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    result = ai._review_one(_req(), timeout=90, model="sonnet", cap=50_000)
+    outcome = ai._review_one(_req(), timeout=90, model="sonnet", cap=50_000)
 
-    assert result is None
+    assert (outcome.result, outcome.reason) == (None, "timeout")
     assert calls["n"] == 1  # timeout must not trigger a second 90s attempt
 
 
@@ -123,10 +123,10 @@ def test_error_envelope_retries_once(monkeypatch):
         return _envelope({"summary": "ok now", "verdict": "looks-good", "concerns": []})
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    result = ai._review_one(_req(), timeout=90, model="sonnet", cap=50_000)
+    outcome = ai._review_one(_req(), timeout=90, model="sonnet", cap=50_000)
 
     assert calls["n"] == 2
-    assert result is not None and result.summary == "ok now"
+    assert outcome.result is not None and outcome.result.summary == "ok now"
 
 
 def test_missing_structured_output_retryable(monkeypatch):
@@ -137,10 +137,47 @@ def test_missing_structured_output_retryable(monkeypatch):
         return _envelope(None)  # structured_output is null
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    result = ai._review_one(_req(), timeout=90, model="sonnet", cap=50_000)
+    outcome = ai._review_one(_req(), timeout=90, model="sonnet", cap=50_000)
 
-    assert result is None
+    assert (outcome.result, outcome.reason) == (None, "no-structured-output")
     assert calls["n"] == 2  # retried once, then gave up
+
+
+def test_clean_pr_with_no_concerns_is_a_result(monkeypatch):
+    # A trivially clean PR answers with no concerns, which is a looks-good to store.
+    monkeypatch.setattr(subprocess, "run",
+                        lambda *a, **k: _envelope({"summary": "", "verdict": "looks-good",
+                                                   "concerns": []}))
+    outcome = ai._review_one(_req(), timeout=90, model="sonnet", cap=50_000)
+
+    assert outcome.reason == ""
+    assert outcome.result is not None and outcome.result.verdict == "looks-good"
+
+
+def test_verdictless_payload_is_empty(monkeypatch):
+    monkeypatch.setattr(subprocess, "run",
+                        lambda *a, **k: _envelope({"note": "I could not review this"}))
+    outcome = ai._review_one(_req(), timeout=90, model="sonnet", cap=50_000)
+
+    assert (outcome.result, outcome.reason) == (None, "empty")
+
+
+def test_batch_reports_a_failure_per_request(monkeypatch):
+    monkeypatch.setattr(ai, "is_available", lambda: True)
+    monkeypatch.setattr(subprocess, "run",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            subprocess.TimeoutExpired(cmd="claude", timeout=90)))
+    outcomes = ai.review_batch([_req()], timeout=90)
+
+    assert [(o.head_sha, o.reason) for o in outcomes] == [("deadbeef1234", "timeout")]
+
+
+def test_batch_without_the_cli_blames_the_cli(monkeypatch):
+    # Every queued PR comes back unreviewed, for a reason that is not the PR's fault.
+    monkeypatch.setattr(ai, "is_available", lambda: False)
+    outcomes = ai.review_batch([_req()], timeout=90)
+
+    assert [o.reason for o in outcomes] == ["cli-missing"]
 
 
 def _flat_prompt(req):

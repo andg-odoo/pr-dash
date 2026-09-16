@@ -1,0 +1,12 @@
+[Unit]
+Description=Hourly pr-dash refresh
+
+[Timer]
+OnCalendar=hourly
+# Run a tick missed while the laptop slept, once it wakes.
+Persistent=true
+# Spread the GitHub and AI calls over five minutes rather than on the hour.
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

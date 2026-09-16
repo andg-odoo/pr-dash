@@ -458,6 +458,100 @@ def test_review_queue_gates_on_the_compacted_diff(tmp_path):
     assert reqs == []
 
 
+def test_a_failed_review_records_an_attempt_and_stops_being_requeued(tmp_path):
+    from pr_dash import ai, db
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr(conn, "odoo/odoo#1", head_sha="sha1")
+    db.upsert_diff(conn, "sha1", _difffile("m/models/x.py", "+code\n"), False, "t")
+
+    reqs, ctx = cli._build_review_queue(conn, {"odoo/odoo#1"}, 50_000)
+    assert [r.head_sha for r in reqs] == ["sha1"]
+
+    # An absent CLI is the batch's problem, not the PR's: no attempt is charged.
+    cli._store_reviews(conn, [ai.ReviewOutcome("sha1", None, "cli-missing")], ctx)
+    assert db.get_ai_attempt(conn, "sha1", "", "") is None
+
+    cli._store_reviews(conn, [ai.ReviewOutcome("sha1", None, "timeout")], ctx)
+    row = db.get_ai_attempt(conn, "sha1", "", "")
+    assert (row["attempts"], row["last_error"]) == (1, "timeout")
+
+    # Inside the backoff window the same call is not spent again...
+    assert cli._build_review_queue(conn, {"odoo/odoo#1"}, 50_000)[0] == []
+    conn.execute("UPDATE ai_attempt SET last_attempt_at = '2020-01-01T00:00:00+00:00'")
+    assert [r.head_sha for r in cli._build_review_queue(conn, {"odoo/odoo#1"}, 50_000)[0]]
+
+    # ...and once the budget is spent, not again at all.
+    conn.execute("UPDATE ai_attempt SET attempts = 3")
+    assert cli._build_review_queue(conn, {"odoo/odoo#1"}, 50_000)[0] == []
+
+
+def test_a_successful_review_clears_the_attempt(tmp_path):
+    from pr_dash import ai, db
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr(conn, "odoo/odoo#1", head_sha="sha1")
+    db.upsert_diff(conn, "sha1", _difffile("m/models/x.py", "+code\n"), False, "t")
+    _, ctx = cli._build_review_queue(conn, {"odoo/odoo#1"}, 50_000)
+    cli._store_reviews(conn, [ai.ReviewOutcome("sha1", None, "nonzero")], ctx)
+
+    result = ai.ReviewResult("sha1", "adds a line", [], "looks-good")
+    cli._store_reviews(conn, [ai.ReviewOutcome("sha1", result)], ctx)
+
+    assert db.get_ai_attempt(conn, "sha1", "", "") is None
+    assert db.get_ai_review(conn, "sha1")["verdict"] == "looks-good"
+
+
+def test_the_cron_cap_keeps_the_cheapest_candidates(tmp_path):
+    from pr_dash import db
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr(conn, "odoo/odoo#1", head_branch="one", head_sha="big")
+    _insert_pr(conn, "odoo/odoo#2", head_branch="two", head_sha="small")
+    db.upsert_diff(conn, "big", _difffile("m/models/x.py", "+code\n" * 200), False, "t")
+    db.upsert_diff(conn, "small", _difffile("m/models/y.py", "+code\n"), False, "t")
+
+    reqs, ctx = cli._build_review_queue(conn, {"odoo/odoo#1", "odoo/odoo#2"}, 50_000,
+                                        limit=1)
+
+    # The big one is not skipped, just deferred to the next tick or a manual run.
+    assert [r.head_sha for r in reqs] == ["small"]
+    assert set(ctx) == {"small"}
+
+
+def test_cron_renders_without_consuming_the_since_last_look_baseline(tmp_path):
+    from click.testing import CliRunner
+
+    from pr_dash import db
+
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        '[user]\ngithub_login = "me"\n\n[repos]\n"odoo/odoo" = "/tmp/odoo"\n'
+        f'\n[paths]\ncache_dir = "{tmp_path}"\n'
+    )
+    conn = db.connect(tmp_path / "pr_dash.db")
+    _insert_pr(conn, "odoo/odoo#1", head_sha="sha1")
+    conn.close()
+
+    runner = CliRunner()
+    args = ["refresh", "--offline", "--no-open", "--config", str(config_path)]
+    assert runner.invoke(cli.cli, [*args, "--cron"]).exit_code == 0
+
+    conn = db.connect(tmp_path / "pr_dash.db")
+    assert (tmp_path / "index.html").exists()
+    assert db.list_seen(conn) == {}
+
+    # The same run for a human does look, so it advances the baseline.
+    assert runner.invoke(cli.cli, args).exit_code == 0
+    assert set(db.list_seen(conn)) == {"odoo/odoo#1"}
+
+
 # --- _refresh_companions -----------------------------------------------------
 
 def _upgrade_pr(branch, *, number=900, sha="usha"):

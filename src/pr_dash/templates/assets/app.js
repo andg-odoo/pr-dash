@@ -481,13 +481,17 @@
       const verdictTag = (pr.ai_review_verdict === "minor" || pr.ai_review_verdict === "major" || isPartialReview)
         ? `<span class="verdict-tag verdict-tag-${pr.ai_review_verdict}" title="${escapeHTML(verdictTitle)}">${pr.ai_review_verdict.toUpperCase()}${isPartialReview ? ' <span class="verdict-partial">' + reviewedCount + '/' + pr.members.length + '</span>' : ''}</span>`
         : "";
+      // No review and no badge reads as "too big to review"; say it was tried.
+      const failedTag = pr.ai_failed
+        ? `<span class="ai-failed-tag" title="AI first pass gave up after ${pr.ai_failed.attempts} attempts (${escapeHTML(pr.ai_failed.error)})">AI ✕${pr.ai_failed.attempts}</span>`
+        : "";
       const hideLabel = itemHidden ? "↺" : "×";
       const hideTitle = itemHidden ? "Unhide" : "Hide until next push";
       const lookBadges = (pr.since_last_look || [])
         .map(t => `<span class="look-badge look-${t}">${LOOK_BADGES[t] || t}</span>`)
         .join("");
       li.innerHTML = `
-        <span class="pr-id-group">${idBlock}${pairTag}${companionTag}${draftTag}${archivedTag}${verdictTag}${lookBadges}</span>
+        <span class="pr-id-group">${idBlock}${pairTag}${companionTag}${draftTag}${archivedTag}${verdictTag}${failedTag}${lookBadges}</span>
         <span class="pr-title" title="${escapeHTML(pr.title)}">${escapeHTML(pr.title)}</span>
         <span class="pr-bucket ${pr.bucket}">${pr.bucket}</span>
         <button class="pr-hide" type="button" title="${hideTitle}" data-hide-id="${escapeHTML(pr.id)}">${hideLabel}</button>

@@ -95,6 +95,8 @@ timeout_seconds = 120
 review_enabled = true
 model = "sonnet"                 # "" = claude CLI default; "haiku" for speed
 review_max_diff_chars = 50000    # gate + prompt budget, measured after compaction
+max_attempts = 3                 # failed passes at one PR before the queue gives up
+cron_max_reviews = 5             # reviews one `refresh --cron` tick may start
 
 [companion]
 enabled = true                   # set false to skip the migration-PR lookup
@@ -184,12 +186,43 @@ pr-dash track REF...     watch a PR in the tracked tab (owner/repo#123 or a PR U
 pr-dash untrack REF...   stop watching it
 pr-dash mcp              run the MCP server (stdio) for agent access
 pr-dash query ...        emit cache data as JSON (list/show/diff/history/stats)
+pr-dash refresh --cron   unattended refresh, for a timer (see below)
 pr-dash -v ...           verbose logging
 pr-dash --config PATH    use an alternate config file
 ```
 
 Re-running is the refresh mechanism - there's no daemon. The cache lives in
 `~/.cache/pr-dash/` (`pr_dash.db` + `index.html`).
+
+### Refreshing on a timer
+
+`refresh --cron` is the same refresh with the unattended differences: it takes
+the refresh lock and exits quietly if a manual run (or the MCP `refresh` tool)
+already holds it, logs one line per phase to `~/.cache/pr-dash/cron.log` instead
+of drawing a spinner, caps how many AI reviews one tick may start
+(`[ai] cron_max_reviews`), and exits non-zero on a GitHub error rather than
+writing an offline-bannered dashboard over a good one.
+
+Above all it **does not advance the since-last-look baseline**: the dashboard's
+"changed since you last looked" markers mean you looked, so only a real render
+for you consumes them. A scheduled tick leaves them alone and still writes fresh
+HTML, so the dashboard you open is up to date and the deltas are the ones you
+have not seen.
+
+Ship it with the units in `contrib/` (adjust `ExecStart` to your own
+`which pr-dash`):
+
+```sh
+mkdir -p ~/.config/systemd/user
+cp contrib/pr-dash.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now pr-dash.timer
+systemctl --user list-timers pr-dash.timer   # when it next fires
+journalctl --user -u pr-dash                 # what the last runs did
+```
+
+The timer is hourly with `Persistent=true`, so a tick missed while the laptop
+slept runs on wake, and a randomized delay keeps it off the exact hour.
 
 ## Companion migration PRs
 

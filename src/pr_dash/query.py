@@ -27,6 +27,7 @@ def load_items(cfg: Config) -> list[dict]:
             cfg.repos,
             cfg.thresholds.stale_review_days,
             command_templates=dataclasses.asdict(cfg.commands),
+            ai_max_attempts=cfg.ai.max_attempts,
         )
     finally:
         conn.close()

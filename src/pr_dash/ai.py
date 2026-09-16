@@ -196,6 +196,14 @@ class ReviewResult:
     verdict: str
 
 
+@dataclass
+class ReviewOutcome:
+    """What one request produced: a review, or the short reason there is none."""
+    head_sha: str
+    result: ReviewResult | None = None
+    reason: str = ""
+
+
 _VERDICTS = ("looks-good", "minor", "major")
 _SEVERITIES = ("high", "med", "low")
 
@@ -276,6 +284,9 @@ def _build_prompt(req: ReviewRequest, cap: int) -> str:
 
 
 def _parse_review(parsed: dict, head_sha: str) -> ReviewResult | None:
+    """The model's answer, or None when the payload carries no verdict at all."""
+    if "verdict" not in parsed:
+        return None
     summary = str(parsed.get("summary") or "").strip()
     verdict = parsed.get("verdict") or "looks-good"
     if verdict not in _VERDICTS:
@@ -296,17 +307,17 @@ def _parse_review(parsed: dict, head_sha: str) -> ReviewResult | None:
         where = c.get("where")
         where = str(where).strip() if where else None
         concerns.append({"severity": sev, "message": msg, "where": where or None})
-    if not summary and not concerns:
-        return None
+    # An empty summary with no concerns is what a trivially clean PR looks like.
     return ReviewResult(head_sha, summary, concerns, verdict)
 
 
 def _attempt_review(
     prompt: str, timeout: int, head_sha: str, model: str,
-) -> tuple[ReviewResult | None, bool]:
-    """Run claude once. Returns (result, retryable). retryable is True for
-    transient failures (error envelope, absent structured output) worth one
-    retry, False for terminal ones (claude missing, timeout).
+) -> tuple[ReviewResult | None, bool, str]:
+    """Run claude once. Returns (result, retryable, reason). retryable is True
+    for transient failures (error envelope, absent structured output) worth one
+    retry, False for terminal ones (claude missing, timeout). reason is the
+    short code the attempt is recorded under, empty on success.
 
     `--allowedTools ""` keeps this a single-shot inference: the diff is already
     inline in the prompt, so the model has no reason to use tools, and denying
@@ -329,59 +340,65 @@ def _attempt_review(
         )
     except FileNotFoundError:
         log.warning("claude CLI not on PATH; skipping AI review")
-        return None, False
+        return None, False, "cli-missing"
     except subprocess.CalledProcessError as e:
         log.warning("claude returned non-zero (%s) for review of %s", e.returncode, sha)
-        return None, True
+        return None, True, "nonzero"
     except subprocess.TimeoutExpired:
         # Retrying with the same timeout just spends another `timeout` seconds
         # and tends to time out again; skip this PR for the run instead.
         log.warning("claude review timed out (%ds) for %s; skipping", timeout, sha)
-        return None, False
+        return None, False, "timeout"
 
     try:
         envelope = json.loads(proc.stdout)
     except json.JSONDecodeError:
         log.warning("claude returned non-JSON envelope for %s: %.200r", sha, proc.stdout)
-        return None, True
+        return None, True, "bad-envelope"
 
     if envelope.get("is_error") or envelope.get("subtype") not in (None, "success"):
         log.warning("claude review errored for %s: subtype=%s", sha, envelope.get("subtype"))
-        return None, True
+        return None, True, "bad-envelope"
 
     parsed = envelope.get("structured_output")
     if not isinstance(parsed, dict):
         log.warning("claude returned no structured output for %s", sha)
-        return None, True
+        return None, True, "no-structured-output"
 
-    return _parse_review(parsed, head_sha), False
+    result = _parse_review(parsed, head_sha)
+    if result is None:
+        log.warning("claude returned a verdictless payload for %s", sha)
+        return None, False, "empty"
+    return result, False, ""
 
 
-def _review_one(req: ReviewRequest, timeout: int, model: str, cap: int) -> ReviewResult | None:
+def _review_one(req: ReviewRequest, timeout: int, model: str, cap: int) -> ReviewOutcome:
     prompt = _build_prompt(req, cap)
+    reason = ""
     for attempt in range(2):
-        result, retryable = _attempt_review(prompt, timeout, req.head_sha, model)
-        if result is not None or not retryable:
-            return result
+        result, retryable, reason = _attempt_review(prompt, timeout, req.head_sha, model)
+        if result is not None:
+            return ReviewOutcome(req.head_sha, result)
+        if not retryable:
+            break
         if attempt == 0:
             log.debug("retrying AI review for %s after transient failure", req.head_sha[:8])
-    return None
+    return ReviewOutcome(req.head_sha, None, reason)
 
 
 def review_batch(reqs: list[ReviewRequest], *, timeout: int = 90,
                  model: str = "sonnet", max_workers: int = 4,
-                 max_diff_chars: int = DEFAULT_MAX_DIFF_CHARS) -> dict[str, ReviewResult]:
+                 max_diff_chars: int = DEFAULT_MAX_DIFF_CHARS) -> list[ReviewOutcome]:
+    """One outcome per request, failures included - see ReviewOutcome."""
     if not reqs:
-        return {}
+        return []
     if not is_available():
         log.warning("claude CLI not available; AI review skipped for %d PRs", len(reqs))
-        return {}
+        return [ReviewOutcome(r.head_sha, None, "cli-missing") for r in reqs]
 
-    out: dict[str, ReviewResult] = {}
+    out: list[ReviewOutcome] = []
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         futures = {ex.submit(_review_one, r, timeout, model, max_diff_chars): r for r in reqs}
         for fut in as_completed(futures):
-            result = fut.result()
-            if result:
-                out[result.head_sha] = result
+            out.append(fut.result())
     return out

@@ -45,6 +45,10 @@ class AIConfig:
     # default Opus on a triage review and reaches the same verdict; the slower
     # default model was overrunning timeout_seconds. Empty string = CLI default.
     model: str = "sonnet"
+    # Failed passes at one review context before the queue gives up and stops paying.
+    max_attempts: int = 3
+    # Reviews one `refresh --cron` tick may start, so an hourly timer cannot fan out twenty.
+    cron_max_reviews: int = 5
 
 
 @dataclass
@@ -285,6 +289,10 @@ model = "sonnet"
 # and it doubles as the prompt's diff budget, so a queued PR always fits whole.
 # A paired PR's companion half is included as context for half this again.
 review_max_diff_chars = 50000
+# Failed passes at one PR before the queue stops asking; retries back off 1h, then 4h.
+max_attempts = 3
+# Reviews one `refresh --cron` tick may start, smallest diff first; a manual run is uncapped.
+cron_max_reviews = 5
 
 [companion]
 # A change that moves data between modules ships its migration script in a third

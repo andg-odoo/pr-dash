@@ -54,6 +54,7 @@ def _build_pr_record(
     comments: list[dict],
     my_login: str,
     stale_review_days: int,
+    ai_max_attempts: int = 3,
 ) -> dict:
     installable = derive.installable_modules(modules)
     complexity = db.get_complexity(conn, pr["head_sha"])
@@ -93,6 +94,18 @@ def _build_pr_record(
             # appeared was told nothing carried the data across.
             "companion_head_sha": review_row["companion_head_sha"] or "",
         }
+
+    # Only when there is no review: a PR given up on reads like one never small enough.
+    ai_failed = None
+    if review_row is None:
+        attempt = db.get_ai_attempt_any(conn, pr["head_sha"])
+        if attempt and attempt["attempts"] >= ai_max_attempts:
+            ai_failed = {
+                "attempts": attempt["attempts"],
+                "error": attempt["last_error"] or "unknown",
+                "sibling_head_sha": attempt["sibling_head_sha"] or "",
+                "companion_head_sha": attempt["companion_head_sha"] or "",
+            }
 
     companion_row = db.get_companion(conn, pr["id"])
     companion = {
@@ -192,6 +205,7 @@ def _build_pr_record(
         "push_sha": pr.get("push_sha"),
         "companion": companion,
         "ai_review": ai_review,
+        "ai_failed": ai_failed,
     }
 
 
@@ -334,11 +348,8 @@ def _make_item(members: list[dict], my_login: str,
     # doesn't match the current pair state - those will be re-reviewed on the
     # next live run, and showing stale pair-blind output is misleading.
     ai_reviews = []
+    ai_failed = None
     for idx, m in enumerate(members):
-        review = m.get("ai_review")
-        if not review:
-            continue
-        cached_sibling = review.get("sibling_head_sha") or ""
         # Demand sibling context exactly when _build_review_queue would have
         # recorded it: when the partner's diff was cached, since that is the only
         # case where there was a companion diff to put in the prompt. Keying on
@@ -351,6 +362,16 @@ def _make_item(members: list[dict], my_login: str,
         # The companion needs no such diff condition: it goes in the prompt on
         # existence alone, so its presence is what the review was written under.
         expected_companion = (m.get("companion") or {}).get("head_sha") or ""
+        # Same context check for a failure: one tried under a moved context is queued again.
+        failed = m.get("ai_failed")
+        if (ai_failed is None and failed
+                and failed["sibling_head_sha"] == expected_sibling
+                and failed["companion_head_sha"] == expected_companion):
+            ai_failed = {"attempts": failed["attempts"], "error": failed["error"]}
+        review = m.get("ai_review")
+        if not review:
+            continue
+        cached_sibling = review.get("sibling_head_sha") or ""
         # A hand-written review is exempt: it says what a human read, so it does
         # not go stale when the pair state moves, and the automatic pass will not
         # replace it either. Dropping it here would hide it with nothing to
@@ -454,6 +475,7 @@ def _make_item(members: list[dict], my_login: str,
         "companion": companion,
         "ai_reviews": ai_reviews,
         "ai_review_verdict": worst_verdict,
+        "ai_failed": ai_failed,
     }
 
 
@@ -463,6 +485,7 @@ def build_payload(
     repos: dict[str, RepoSpec],
     stale_review_days: int,
     command_templates: dict[str, str] | None = None,
+    ai_max_attempts: int = 3,
 ) -> tuple[list[dict], list[tuple[str, str | None, str | None, str]]]:
     """Return (items, seen_updates). The caller must persist seen_updates via
     commit_seen_baseline() only *after* a successful render - otherwise a render
@@ -503,7 +526,7 @@ def build_payload(
             reviewers_by_pr.get(pr["id"], []),
             threads_by_pr.get(pr["id"], []),
             comments_by_pr.get(pr["id"], []),
-            my_login, stale_review_days,
+            my_login, stale_review_days, ai_max_attempts,
         )
         records[pr["id"]]["since_last_look"] = delta_map.get(pr["id"], [])
 
