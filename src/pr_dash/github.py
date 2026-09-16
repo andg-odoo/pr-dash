@@ -438,38 +438,71 @@ def fetch_head_sha(repo: str, number: int) -> str | None:
     return pr.get("headRefOid")
 
 
-def list_open_prs_by_head_branch(repo: str) -> dict[str, dict]:
-    """Map head branch name -> that branch's open PR in `repo`.
+_BRANCH_SEARCH_FIELDS = """
+      ... on PullRequest {
+        number
+        title
+        state
+        isDraft
+        url
+        headRefName
+        headRefOid
+        author { login }
+      }
+"""
 
-    One paginated listing answers "does this bundle have a companion migration"
-    for every cached PR at once; the alternative - a search per bundle - is a
-    request each, and the queue is far bigger than the number of pages here
-    (odoo/upgrade runs ~800 open PRs, so 8 pages, ~7s).
 
-    REST rather than GraphQL on purpose: same wall time, and it keeps a listing
-    the review path doesn't depend on out of the GraphQL rate budget the rest of
-    the refresh spends. The listing is newest-first, so if two open PRs ever
-    share a head branch - a bundle robodoo could not resolve either - the newer
-    one wins.
+def search_open_prs_by_head_branch(
+    repo: str, branches: list[str], *, chunk_size: int = 25,
+) -> dict[str, dict]:
+    """Given head branch names, return branch -> that branch's open PR in `repo`.
+
+    Answers "does this bundle have a companion migration" for a handful of
+    branches. Listing every open PR in the repo instead answered it for all of
+    them at once, but its cost tracks the repo rather than the question:
+    odoo/upgrade runs ~750 open PRs, 8 REST pages, 5.2s a refresh. Aliasing one
+    `search` per branch into a single GraphQL request asks only what is being
+    asked - 13 branches in 1.6s, for a rate-limit cost of 1.
+
+    `head:` is a search filter, not an exact match, so a hit whose headRefName
+    merely resembles the branch has to be dropped here. `sort:created-desc`
+    keeps the newest of several exact hits, which is what the REST listing did
+    when two open PRs shared a head branch - a bundle robodoo could not resolve
+    either.
+
+    Strict rather than partial (unlike the by-ref fetchers): a missing branch
+    here means "this bundle has no migration", which is an answer the AI pass
+    acts on, so a half-resolved response has to raise rather than read as a
+    batch of negatives.
     """
     out: dict[str, dict] = {}
-    raw = _gh([
-        "api", f"repos/{repo}/pulls?state=open&per_page=100", "--paginate",
-        "--jq", ".[] | {number, title, state, draft, url: .html_url, "
-                "head_branch: .head.ref, head_sha: .head.sha, "
-                "author: .user.login}",
-    ], timeout=120)
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        branch = entry.get("head_branch")
-        if branch and branch not in out:
-            out[branch] = entry
+    for start in range(0, len(branches), chunk_size):
+        chunk = branches[start:start + chunk_size]
+        parts = []
+        for i, branch in enumerate(chunk):
+            q = json.dumps(f"repo:{repo} is:pr is:open sort:created-desc head:{branch}")
+            parts.append(
+                f'b{i}: search(query: {q}, type: ISSUE, first: 5) {{ '
+                f'nodes {{{_BRANCH_SEARCH_FIELDS}}} }}'
+            )
+        query = "query {\n" + "\n".join(parts) + "\n}"
+        data = _graphql(query, {})
+        for i, branch in enumerate(chunk):
+            nodes = (data.get(f"b{i}") or {}).get("nodes") or []
+            for node in nodes:
+                if not node or node.get("headRefName") != branch:
+                    continue
+                out[branch] = {
+                    "number": node["number"],
+                    "title": node.get("title") or "",
+                    "state": node.get("state") or "",
+                    "draft": bool(node.get("isDraft")),
+                    "url": node.get("url") or "",
+                    "head_branch": branch,
+                    "head_sha": node.get("headRefOid") or "",
+                    "author": (node.get("author") or {}).get("login") or "",
+                }
+                break
     return out
 
 
@@ -477,7 +510,7 @@ def fetch_pr_states(repo: str, numbers: list[int], *,
                     chunk_size: int = 25) -> dict[int, str]:
     """Given PR numbers in one repo, return number -> OPEN / CLOSED / MERGED.
 
-    For companions that dropped out of the open listing above. An upgrade PR has
+    For companions the branch search above no longer returns. An upgrade PR has
     its own review flow and is regularly merged ahead of the addons halves it
     migrates, so treating "no longer open" as "no migration" would resurrect the
     exact false positive the companion exists to kill.

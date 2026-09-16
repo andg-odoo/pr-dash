@@ -575,8 +575,8 @@ def test_refresh_companions_matches_on_branch_only(tmp_path, monkeypatch):
     _insert_pr(conn, "odoo/enterprise#2", author="jdoe", head_branch="feat-x")
     _insert_pr(conn, "odoo/odoo#3", author="jdoe", head_branch="other")
 
-    monkeypatch.setattr(github, "list_open_prs_by_head_branch",
-                        lambda repo: {"feat-x": _upgrade_pr("feat-x")})
+    monkeypatch.setattr(github, "search_open_prs_by_head_branch",
+                        lambda repo, branches: {"feat-x": _upgrade_pr("feat-x")})
     monkeypatch.setattr(cli, "_store_patch", lambda *a, **kw: None)
 
     assert cli._refresh_companions(conn, cfg, {"odoo/odoo#1"}) == "odoo/upgrade"
@@ -602,10 +602,10 @@ def test_refresh_companions_survives_an_unreachable_repo(tmp_path, monkeypatch):
     conn = db.connect(cfg.db_path)
     _insert_pr(conn, "odoo/odoo#1", head_branch="feat-x")
 
-    def boom(repo):
+    def boom(repo, branches):
         raise github.GithubError("HTTP 404: Not Found")
 
-    monkeypatch.setattr(github, "list_open_prs_by_head_branch", boom)
+    monkeypatch.setattr(github, "search_open_prs_by_head_branch", boom)
 
     # No access to the private repo (or no network) must leave the refresh intact
     # and, crucially, report that nothing was searched - the prompt may only call
@@ -614,9 +614,38 @@ def test_refresh_companions_survives_an_unreachable_repo(tmp_path, monkeypatch):
     assert db.get_companion(conn, "odoo/odoo#1") is None
 
     cfg.companion.enabled = False
-    monkeypatch.setattr(github, "list_open_prs_by_head_branch",
-                        lambda repo: {"feat-x": _upgrade_pr("feat-x")})
+    monkeypatch.setattr(github, "search_open_prs_by_head_branch",
+                        lambda repo, branches: {"feat-x": _upgrade_pr("feat-x")})
     assert cli._refresh_companions(conn, cfg, {"odoo/odoo#1"}) == ""
+
+
+def test_refresh_companions_keeps_an_archived_prs_stored_migration(tmp_path, monkeypatch):
+    from pr_dash import db
+
+    cfg = _companion_cfg(tmp_path)
+    conn = db.connect(cfg.db_path)
+    _insert_pr(conn, "odoo/odoo#1", head_branch="feat-x")
+    _insert_pr(conn, "odoo/enterprise#9", head_branch="old-feat",
+               archived_at="2026-07-02T00:00:00Z")
+    db.upsert_companion(conn, "odoo/enterprise#9", {
+        "repo": "odoo/upgrade", "number": 800, "url": "u", "title": "mig", "author": "x",
+        "state": "OPEN", "is_draft": 0, "head_branch": "old-feat", "head_sha": "osha",
+        "fetched_at": "t",
+    })
+
+    asked = []
+    monkeypatch.setattr(github, "search_open_prs_by_head_branch",
+                        lambda repo, branches: asked.append(branches) or {})
+    monkeypatch.setattr(github, "fetch_pr_states", lambda repo, numbers: {800: "MERGED"})
+    monkeypatch.setattr(cli, "_store_patch", lambda *a, **kw: None)
+
+    cli._refresh_companions(conn, cfg, {"odoo/odoo#1"})
+
+    # Only the active queue is searched, so an archived PR's branch is never asked about.
+    assert asked == [["feat-x"]]
+    # Its stored migration must survive that, and still be re-checked from the stored row.
+    row = db.get_companion(conn, "odoo/enterprise#9")
+    assert (row["number"], row["state"]) == (800, "MERGED")
 
 
 def test_review_queue_carries_the_companion_and_rekeys_the_cache(tmp_path):

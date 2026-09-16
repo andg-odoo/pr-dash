@@ -1150,6 +1150,12 @@ def _refresh_companions(conn, cfg, kept_ids: set[str]) -> str:
     The author deliberately is not part of it: the migration is regularly written
     by someone other than the author of the half it migrates.
 
+    Discovery is limited to the branches of the active queue, which is what the
+    batched search is asked about. An archived PR therefore stops *gaining* a
+    migration opened after it was reviewed, and keeps whatever it already has:
+    its stored companion is still re-checked, only from the stored row instead of
+    from the search, since a branch nobody asked about cannot answer.
+
     Best-effort end to end. The upgrade repo is private, so a reviewer without
     access - or an offline moment - has to end up with no companions rather than
     a failed refresh.
@@ -1157,8 +1163,12 @@ def _refresh_companions(conn, cfg, kept_ids: set[str]) -> str:
     if not (cfg.companion.enabled and cfg.companion.repo):
         return ""
     repo = cfg.companion.repo
+    searched = {
+        pr["head_branch"] for pr in db.list_prs(conn)
+        if pr["id"] in kept_ids and pr["repo"] != repo and pr["head_branch"]
+    }
     try:
-        by_branch = github.list_open_prs_by_head_branch(repo)
+        by_branch = github.search_open_prs_by_head_branch(repo, sorted(searched))
     except github.GithubError as e:
         log.debug("companion lookup skipped (%s): %s", repo, e)
         return ""
@@ -1174,8 +1184,13 @@ def _refresh_companions(conn, cfg, kept_ids: set[str]) -> str:
         pr_id, branch = pr["id"], pr["head_branch"]
         if pr["repo"] == repo:
             continue
-        entry = by_branch.get(branch)
         prev = stored.get(pr_id)
+        if branch not in searched:
+            # Unasked, so absence proves nothing and only the stored row can be re-checked.
+            if prev is not None and prev["state"] == "OPEN":
+                vanished.add(prev["number"])
+            continue
+        entry = by_branch.get(branch)
         if entry:
             matched[pr_id] = entry
         elif prev is None:
@@ -1185,10 +1200,7 @@ def _refresh_companions(conn, cfg, kept_ids: set[str]) -> str:
             # was attached belongs to a change this PR no longer is.
             dropped.append(pr_id)
         elif prev["state"] == "OPEN":
-            # The migration left the open listing while the half it migrates is
-            # still here: upgrade PRs have their own review flow and are often
-            # merged ahead of their bundle. Dropping the row would put the false
-            # positive straight back, so re-check what became of it instead.
+            # Gone from the search but often merely merged ahead of its bundle, so re-check it.
             vanished.add(prev["number"])
 
     states: dict[int, str] = {}
@@ -1228,9 +1240,7 @@ def _refresh_companions(conn, cfg, kept_ids: set[str]) -> str:
             "repo": repo,
             "number": entry["number"],
             "head_sha": entry.get("head_sha") or "",
-            # The listing endpoint carries no file count, and a migration is a
-            # script rather than a wide change, so nothing is gated on breadth
-            # here; the line/byte guards inside _store_patch still apply.
+            # No file count is fetched and a migration is a script, so only the byte guards apply.
             "changed_files": 0,
         }, force=False)
 
