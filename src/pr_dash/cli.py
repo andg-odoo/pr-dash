@@ -468,40 +468,41 @@ def _run_tracked_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
     explicit `untrack` (or a dismissal from the dashboard).
     """
     now = derive.now_utc()
-    try:
-        subs = github.list_manual_subscriptions()
-    except github.GithubError as e:
-        # A notifications failure must not sink the review-queue refresh, which
-        # is the tool's primary job.
-        log.debug("tracked seed skipped: %s", e)
-        _notify(cron, f"Could not read subscriptions: {e}", "yellow")
-        subs = []
-
-    added = 0
-    with db.transaction(conn):
-        for s in subs:
-            if db.add_tracked(conn, s["id"], s["repo"], s["number"], s["url"],
-                              "notif", now):
-                added += 1
-
-    rows = db.list_tracked(conn, include_dismissed=True)
-    staleness_cutoff = datetime.now(timezone.utc) - timedelta(
-        minutes=cfg.thresholds.staleness_minutes,
-    )
-    stale = [
-        (r["repo"], r["number"]) for r in rows
-        # A dismissed row is not rendered, so spending a fetch on it is waste -
-        # but it stays in the table to keep deduping against the next seed.
-        if r["dismissed_at"] is None
-        and (force or not r["fetched_at"]
-             or derive.parse_iso(r["fetched_at"]) < staleness_cutoff)
-    ]
-    updated = 0
-    if stale:
+    with _progress(cron) as progress:
+        task = progress.add_task("Reading tracked subscriptions...", total=None)
         try:
-            updated = _fetch_tracked_state(conn, stale)
+            subs = github.list_manual_subscriptions()
         except github.GithubError as e:
-            _notify(cron, f"Tracked PR refresh failed: {e}", "yellow")
+            # A notifications failure must not sink the review-queue refresh, the primary job.
+            log.debug("tracked seed skipped: %s", e)
+            _notify(cron, f"Could not read subscriptions: {e}", "yellow")
+            subs = []
+
+        added = 0
+        with db.transaction(conn):
+            for s in subs:
+                if db.add_tracked(conn, s["id"], s["repo"], s["number"], s["url"],
+                                  "notif", now):
+                    added += 1
+
+        rows = db.list_tracked(conn, include_dismissed=True)
+        staleness_cutoff = datetime.now(timezone.utc) - timedelta(
+            minutes=cfg.thresholds.staleness_minutes,
+        )
+        stale = [
+            (r["repo"], r["number"]) for r in rows
+            # Fetching a dismissed row is waste, but it stays in the table to dedupe the next seed.
+            if r["dismissed_at"] is None
+            and (force or not r["fetched_at"]
+                 or derive.parse_iso(r["fetched_at"]) < staleness_cutoff)
+        ]
+        updated = 0
+        if stale:
+            progress.update(task, description=f"Refreshing {len(stale)} tracked PRs...")
+            try:
+                updated = _fetch_tracked_state(conn, stale)
+            except github.GithubError as e:
+                _notify(cron, f"Tracked PR refresh failed: {e}", "yellow")
 
     if added or updated:
         _notify(cron, f"tracked: +{added} new, {updated} refreshed "
@@ -777,6 +778,7 @@ def _run_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
         # Prime open pair-siblings I already reviewed (so no longer in the
         # review-requested search): their threads/reviews/comments are fetched
         # nowhere else. Adds them to kept_ids so the sweep leaves them be.
+        progress.update(task, description="Priming reviewed pair siblings...")
         _prime_reviewed_siblings(conn, cfg, kept_ids, force=force)
 
         # Before sweeping, rescue delete-candidates whose cached
@@ -784,6 +786,7 @@ def _run_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
         # drops out of `review-requested:` immediately, so its last fetch
         # predates my review. Verify those against GitHub and flip the ones I
         # actually reviewed so the sweep archives (not deletes) them.
+        progress.update(task, description="Reconciling PRs that left the queue...")
         reconciled = _reconcile_reviewed(conn, kept_ids, cfg.github_login)
 
         # Sweep PRs that fell out of the result set: archive ones I reviewed,
@@ -799,11 +802,13 @@ def _run_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
         # they left the request set (the search only returns open PRs, so their
         # cached state never updates). Re-check just those so the UI can tell
         # "closed on GitHub" apart from "merely reviewed by me".
+        progress.update(task, description="Re-checking archived siblings...")
         _reconcile_sibling_states(conn, cfg, kept_ids)
 
         # Attach each bundle's migration PR. Before the review queue is built, so
         # the AI pass is told whether one exists rather than inferring from a
         # diff that could never contain it.
+        progress.update(task, description="Matching migration PRs...")
         searched_repo = _refresh_companions(conn, cfg, kept_ids)
 
         if cfg.ai.enabled and cfg.ai.review_enabled:
