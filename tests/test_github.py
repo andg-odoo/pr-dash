@@ -75,3 +75,10 @@ def test_branch_search_keeps_only_exact_head_matches(monkeypatch):
                               "author": "a"}}
     # Newest-first is the server's job, which is what keeps the tie-break the listing had.
     assert "sort:created-desc" in sent["query"]
+
+
+def test_graphql_partial_turns_a_truncated_body_into_a_github_error(monkeypatch):
+    monkeypatch.setattr(github, "_gh", lambda *a, **k: '{"data":{"p0"')
+
+    with pytest.raises(github.GithubError, match="non-JSON"):
+        github._graphql_partial("query {}", {})

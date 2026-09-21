@@ -9,4 +9,6 @@ Type=oneshot
 TimeoutStartSec=30min
 # systemd user units get a bare PATH: gh lives in /usr/bin, claude in ~/.local/bin.
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# After a resume the timer fires before Wi-Fi is back, and the network targets are not re-reached.
+ExecStartPre=-/usr/bin/nm-online -q -t 60
 ExecStart=/home/andg/.pyenv/versions/odoo/bin/pr-dash refresh --cron

@@ -170,8 +170,10 @@ RETRYABLE_ERRORS = (
     "unexpected eof",
     "i/o timeout",
     "tls handshake timeout",
+    "error connecting to",
+    "unexpected end of json input",
 )
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 4
 
 
 @dataclass
@@ -232,13 +234,20 @@ def _gh_once(args: list[str], *, input: str | None = None, timeout: int = 60,
     return result.stdout
 
 
+def _loads(out: str) -> dict:
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError as e:
+        raise GithubError(f"`gh api graphql` returned non-JSON: {out[:200]!r}") from e
+
+
 def _graphql(query: str, variables: dict) -> dict:
     payload = json.dumps({"query": query, "variables": variables})
     out = _gh(
         ["api", "graphql", "--input", "-"],
         input=payload,
     )
-    data = json.loads(out)
+    data = _loads(out)
     if "errors" in data:
         raise GithubError(f"GraphQL errors: {data['errors']}")
     return data["data"]
@@ -253,9 +262,7 @@ def _graphql_partial(query: str, variables: dict) -> dict:
     nulled, so the caller's "absent means skip" handling covers it.
     """
     payload = json.dumps({"query": query, "variables": variables})
-    data = json.loads(
-        _gh(["api", "graphql", "--input", "-"], input=payload, allow_failure=True)
-    )
+    data = _loads(_gh(["api", "graphql", "--input", "-"], input=payload, allow_failure=True))
     if data.get("errors"):
         log.debug("partial GraphQL errors: %s", data["errors"])
     return data.get("data") or {}
