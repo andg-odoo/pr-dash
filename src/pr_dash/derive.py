@@ -208,10 +208,7 @@ def tracked_row_from_node(node: dict, fetched_at: str) -> tuple[dict, list[dict]
     approvals and the actual argument are reviews and threads, so fetching only
     conversation comments makes a busy PR look silent.
     """
-    ci_state, _ = status_check_state(
-        ((node.get("commits") or {}).get("nodes") or [{}])[0]
-        .get("commit", {}).get("statusCheckRollup"),
-    )
+    ci_state, _ = status_check_state(_head_rollup(node))
     comment_block = node.get("comments") or {}
     review_block = node.get("reviews") or {}
     thread_block = node.get("reviewThreads") or {}
@@ -246,6 +243,44 @@ def tracked_row_from_node(node: dict, fetched_at: str) -> tuple[dict, list[dict]
         "merged_at": node.get("mergedAt"),
         "fetched_at": fetched_at,
     }
+    return row, comments
+
+
+def _head_rollup(node: dict) -> dict | None:
+    return ((node.get("commits") or {}).get("nodes") or [{}])[0].get("commit", {}).get(
+        "statusCheckRollup")
+
+
+def mine_row_from_node(node: dict, fetched_at: str) -> tuple[dict, list[dict]]:
+    """Flatten an Authored PR node into (state columns, comments), the tracked ones plus more."""
+    row, comments = tracked_row_from_node(node, fetched_at)
+    requested = [
+        r.get("requestedReviewer") or {}
+        for r in (node.get("reviewRequests") or {}).get("nodes") or []
+    ]
+    events = []
+    for e in (node.get("timelineItems") or {}).get("nodes") or []:
+        reviewer = e.get("requestedReviewer") or {}
+        if reviewer.get("login") or reviewer.get("slug"):
+            events.append({
+                "kind": "requested" if e["__typename"] == "ReviewRequestedEvent" else "removed",
+                "reviewer": reviewer.get("login") or reviewer.get("slug"),
+                "is_team": reviewer["__typename"] == "Team",
+                "at": e.get("createdAt"),
+            })
+    row.update({
+        "head_branch": node.get("headRefName") or "",
+        "review_decision": node.get("reviewDecision"),
+        "mergeable": node.get("mergeable"),
+        "checks": [
+            {"name": c["name"],
+             "state": "failure" if c["failing"] else "pending" if c["pending"] else "success"}
+            for c in _iter_checks(_head_rollup(node))
+        ],
+        "requested_people": [r["login"] for r in requested if r.get("__typename") == "User"],
+        "requested_teams": [r["slug"] for r in requested if r.get("__typename") == "Team"],
+        "review_request_events": events,
+    })
     return row, comments
 
 
@@ -684,7 +719,7 @@ _FAILING_CONCLUSIONS = {"FAILURE", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUI
 
 
 def _iter_checks(status_check_rollup: dict | None) -> Iterator[dict]:
-    """Yield each rollup check normalized to {name, url, failing}, hiding the
+    """Yield each rollup check normalized to {name, url, failing, pending}, hiding the
     StatusContext vs CheckRun field-name differences (context/targetUrl/state
     vs name/detailsUrl/conclusion)."""
     if not status_check_rollup:
@@ -696,12 +731,15 @@ def _iter_checks(status_check_rollup: dict | None) -> Iterator[dict]:
                 "name": ctx.get("context") or "(check)",
                 "url": ctx.get("targetUrl"),
                 "failing": (ctx.get("state") or "") in _FAILING_STATES,
+                "pending": ctx.get("state") in ("PENDING", "EXPECTED"),
             }
         elif typename == "CheckRun":
             yield {
                 "name": ctx.get("name") or "(check)",
                 "url": ctx.get("detailsUrl"),
                 "failing": (ctx.get("conclusion") or "") in _FAILING_CONCLUSIONS,
+                # GitHub sets a check run's conclusion only once it has completed
+                "pending": not ctx.get("conclusion"),
             }
 
 
@@ -818,3 +856,70 @@ def detect_pairs(prs: list[dict]) -> dict[str, str]:
             pairs[a["id"]] = b["id"]
             pairs[b["id"]] = a["id"]
     return pairs
+
+
+# Odoo branch names carry the task id between dashes, e.g. master-l10n_ec-x-6396725-andg.
+_BRANCH_TASK_RE = re.compile(r"-(\d{6,8})-")
+_CI_WORST_FIRST = {"failure": "red", "pending": "pending", "success": "green"}
+
+
+def branch_sets(members: list[dict], mergebot_states: dict[str, dict]) -> list[dict]:
+    """Group Authored PRs into Branch sets by head branch, most recently active first.
+
+    :param members: Authored PR rows, as db.list_mine returns them
+    :param mergebot_states: pr id -> last stored Mergebot read, a mergebot.MergebotState as a dict
+    """
+    groups: dict[str, list[dict]] = {}
+    for row in members:
+        groups.setdefault(row["head_branch"], []).append(
+            _mine_member(row, mergebot_states.get(row["id"])))
+    sets = []
+    for key, group in groups.items():
+        group.sort(key=lambda m: (m["repo"], m["num"]))
+        task = _BRANCH_TASK_RE.search(key)
+        sets.append({
+            "key": key,
+            "task": task and task.group(1),
+            "members": group,
+            "band": "done" if all(m["state"] in ("MERGED", "CLOSED") for m in group) else "open",
+        })
+    sets.sort(key=lambda s: max(m["updated_at"] or "" for m in s["members"]), reverse=True)
+    return sets
+
+
+def _mine_member(row: dict, mergebot: dict | None) -> dict:
+    """One Branch set member, its readiness read from the Mergebot page where there is one."""
+    managed = mergebot is not None and mergebot["state"] not in ("unmanaged", "unknown")
+    page_checks = mergebot["checks"] if managed else []
+    checks = {c["name"]: c["state"] for c in row["checks"]}
+    # The page lists only the checks it requires, the rest keep GitHub's state.
+    for c in page_checks:
+        if c["overridden"] or c["status"] == "ok":
+            checks[c["name"]] = "success"
+        elif c["status"] == "fail":
+            checks[c["name"]] = "failure"
+        elif c["status"] is not None:
+            checks[c["name"]] = "pending"
+    state = row["state"]
+    if state == "CLOSED" and managed and mergebot["state"] == "merged":
+        state = "MERGED"
+    return {
+        "repo": row["repo"],
+        "num": row["number"],
+        "title": row["title"],
+        "url": row["url"],
+        "state": state,
+        "draft": bool(row["is_draft"]),
+        "ci": next((w for s, w in _CI_WORST_FIRST.items() if s in checks.values()), None),
+        "ci_failing": [name for name, s in checks.items() if s == "failure"],
+        "override": [
+            {"check": c["name"], "by": c["overridden_by"]} for c in page_checks if c["overridden"]
+        ],
+        "decision": row["review_decision"],
+        "r_plus": mergebot["r_plus"] if managed else None,
+        "requested_people": row["requested_people"],
+        "requested_teams": row["requested_teams"],
+        "conflict": row["mergeable"] == "CONFLICTING",
+        "updated_at": row["updated_at"],
+        "mergebot_unknown": mergebot is None or mergebot["state"] == "unknown",
+    }

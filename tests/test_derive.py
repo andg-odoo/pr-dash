@@ -1,4 +1,9 @@
-from pr_dash import derive
+import dataclasses
+from pathlib import Path
+
+from pr_dash import derive, mergebot
+
+MERGEBOT_FIXTURES = Path(__file__).parent / "fixtures" / "mergebot"
 
 
 def test_signatures_ignore_context_and_line_numbers():
@@ -591,3 +596,114 @@ def test_push_falls_back_to_head_ref_oid_without_commits():
     node = _shnode(reviews=[_rvc("me", "2026-07-01T00:00:00Z", "aaa")], head_ref="bbb")
     p = derive.detect_push_since_review(node, "me")
     assert p == {"push_at": "", "push_sha": "bbb"}
+
+
+# --- derive.branch_sets ------------------------------------------------------
+
+def _mine_row(repo, number, branch, *, checks=(("ci/runbot", "SUCCESS"),), **over):
+    node = {
+        "title": f"PR {number}", "state": "OPEN", "isDraft": False, "headRefName": branch,
+        "updatedAt": "2026-10-01T00:00:00Z", "reviewDecision": None,
+        "mergeable": "MERGEABLE",
+        "reviewRequests": {"nodes": [
+            {"requestedReviewer": {"__typename": "User", "login": "clbr-odoo"}},
+            {"requestedReviewer": {"__typename": "Team", "slug": "rd-accounting"}},
+        ]},
+        "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": [
+            {"__typename": "StatusContext", "context": name, "state": state}
+            for name, state in checks
+        ]}}}}]},
+        **over,
+    }
+    row, _ = derive.mine_row_from_node(node, "2026-10-05T00:00:00+00:00")
+    return {**row, "id": f"{repo}#{number}", "repo": repo, "number": number, "url": "u"}
+
+
+def _page(name):
+    return dataclasses.asdict(mergebot.parse((MERGEBOT_FIXTURES / f"{name}.html").read_text()))
+
+
+def _member(sets, repo, number):
+    return next(m for s in sets for m in s["members"] if (m["repo"], m["num"]) == (repo, number))
+
+
+def test_branch_sets_group_by_head_branch_across_repos():
+    ec, cr = "master-l10n_ec-drop-account_edi-6396725-andg", "master-l10n_cr-base-6439180-andg"
+    rows = [
+        _mine_row("odoo/odoo-ls", 658, "alpha-xmlid-andg"),
+        _mine_row("odoo/odoo", 292635, cr), _mine_row("odoo/odoo", 290109, ec),
+        _mine_row("odoo/upgrade", 11485, cr, updatedAt="2026-10-04T00:00:00Z"),
+        _mine_row("odoo/enterprise", 132695, ec),
+        _mine_row("odoo/upgrade", 11389, ec, updatedAt="2026-10-05T00:00:00Z"),
+    ]
+    sets = derive.branch_sets(rows, {})
+    assert [(s["key"], s["task"], [(m["repo"], m["num"]) for m in s["members"]]) for s in sets] == [
+        (ec, "6396725",
+         [("odoo/enterprise", 132695), ("odoo/odoo", 290109), ("odoo/upgrade", 11389)]),
+        (cr, "6439180", [("odoo/odoo", 292635), ("odoo/upgrade", 11485)]),
+        ("alpha-xmlid-andg", None, [("odoo/odoo-ls", 658)]),
+    ]
+    member = sets[0]["members"][0]
+    assert (member["requested_people"], member["requested_teams"]) == (
+        ["clbr-odoo"], ["rd-accounting"])
+
+
+def test_override_greens_ci_but_an_unlisted_red_check_stays_red():
+    branch = "master-x-1234567-andg"
+    rows = [
+        _mine_row("odoo/odoo", 290109, branch, reviewDecision="APPROVED",
+                  checks=[("ci/style", "ERROR"), ("ci/runbot", "SUCCESS")]),
+        _mine_row("odoo/upgrade", 11485, branch,
+                  checks=[("upgradeci/matt", "ERROR"), ("ci/runbot", "SUCCESS")]),
+    ]
+    upgrade_page = mergebot.MergebotState(
+        "blocked", checks=[mergebot.Check("ci/runbot", "ok", "", False, None)], r_plus=False)
+    sets = derive.branch_sets(rows, {
+        "odoo/odoo#290109": _page("odoo_odoo_290109_blocked_linked"),
+        "odoo/upgrade#11485": dataclasses.asdict(upgrade_page),
+    })
+    odoo = _member(sets, "odoo/odoo", 290109)
+    assert (odoo["ci"], odoo["ci_failing"], odoo["override"]) == (
+        "green", [], [{"check": "ci/style", "by": "kmagusiak"}])
+    # A GitHub approval is not an r+, the two are shown apart.
+    assert (odoo["decision"], odoo["r_plus"], odoo["mergebot_unknown"]) == (
+        "APPROVED", False, False)
+    upgrade = _member(sets, "odoo/upgrade", 11485)
+    assert (upgrade["ci"], upgrade["ci_failing"]) == ("red", ["upgradeci/matt"])
+
+
+def test_lazy_page_check_is_pending_not_red():
+    pages = {"odoo/odoo#291953": _page("odoo_odoo_291953_missing_statuses")}
+    sets = derive.branch_sets([_mine_row("odoo/odoo", 291953, "b")], pages)
+    assert _member(sets, "odoo/odoo", 291953)["ci"] == "pending"
+
+
+def test_merged_vs_closed_and_done_only_when_every_member_resolved():
+    rows = [
+        _mine_row("odoo/odoo", 290657, "b", state="CLOSED"),
+        _mine_row("odoo/odoo", 255698, "b", state="CLOSED"),
+        _mine_row("odoo/enterprise", 1, "b"),
+    ]
+    pages = {"odoo/odoo#290657": _page("odoo_odoo_290657_merged"),
+             "odoo/odoo#255698": _page("odoo_odoo_255698_closed")}
+    [open_set] = derive.branch_sets(rows, pages)
+    assert [m["state"] for m in open_set["members"]] == ["OPEN", "CLOSED", "MERGED"]
+    assert open_set["band"] == "open"
+    [done] = derive.branch_sets(rows[:2], pages)
+    assert done["band"] == "done"
+
+
+def test_unmanaged_repo_trusts_github_and_unknown_falls_back_flagged():
+    rows = [
+        _mine_row("odoo/odoo-ls", 658, "a", mergeable="CONFLICTING"),
+        _mine_row("odoo/odoo", 269608, "b", checks=[("ci/style", "ERROR")]),
+    ]
+    sets = derive.branch_sets(rows, {
+        "odoo/odoo-ls#658": dataclasses.asdict(mergebot.MergebotState("unmanaged")),
+        "odoo/odoo#269608": dataclasses.asdict(mergebot.MergebotState("unknown")),
+    })
+    ls = _member(sets, "odoo/odoo-ls", 658)
+    assert (ls["conflict"], ls["ci"], ls["r_plus"], ls["mergebot_unknown"]) == (
+        True, "green", None, False)
+    odoo = _member(sets, "odoo/odoo", 269608)
+    assert (odoo["ci"], odoo["r_plus"], odoo["mergebot_unknown"]) == ("red", None, True)

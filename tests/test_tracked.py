@@ -61,7 +61,7 @@ def test_explicit_track_revives_dismissed(tmp_path):
 def test_remove_tracked_cascades(tmp_path):
     conn = _conn(tmp_path)
     _add(conn, "odoo/odoo#1")
-    db.replace_tracked_comments(conn, "odoo/odoo#1", [
+    db.replace_tab_comments(conn, "tracked", "odoo/odoo#1", [
         {"comment_id": "c1", "kind": "issue", "author": "a", "created_at": "t",
          "body": "hi", "path": None, "state": None, "url": "u"},
     ])
@@ -69,7 +69,7 @@ def test_remove_tracked_cascades(tmp_path):
                                          "activity_count": 1, "seen_at": "t"})
 
     assert db.remove_tracked(conn, "odoo/odoo#1") is True
-    assert db.list_tracked_comments(conn) == {}
+    assert db.list_tab_comments(conn, "tracked") == {}
     assert db.list_tab_seen(conn, "tracked") == {}
     assert db.remove_tracked(conn, "odoo/odoo#1") is False
 
@@ -77,7 +77,7 @@ def test_remove_tracked_cascades(tmp_path):
 def test_update_tracked_state_preserves_tracking_metadata(tmp_path):
     conn = _conn(tmp_path)
     _add(conn, "odoo/odoo#1", source="manual", when="2026-08-01T00:00:00+00:00")
-    db.update_tracked_state(conn, "odoo/odoo#1", {
+    db.update_tab_state(conn, "tracked", "odoo/odoo#1", {
         "title": "[FIX] x", "state": "MERGED", "fetched_at": "2026-08-03T00:00:00+00:00",
     })
     row = db.get_tracked(conn, "odoo/odoo#1")
@@ -274,11 +274,11 @@ def test_build_tracked_payload_sorts_active_first_and_drops_bots(tmp_path):
         ("odoo/odoo#3", "OPEN", "2026-08-02T00:00:00Z"),
     ]:
         _add(conn, pr_id)
-        db.update_tracked_state(conn, pr_id, {
+        db.update_tab_state(conn, "tracked", pr_id, {
             "state": state, "updated_at": updated, "created_at": updated,
             "head_sha": "s", "fetched_at": "t",
         })
-    db.replace_tracked_comments(conn, "odoo/odoo#1", [
+    db.replace_tab_comments(conn, "tracked", "odoo/odoo#1", [
         {"comment_id": "c1", "kind": "issue", "author": "robodoo",
          "created_at": "t", "body": "ci", "path": None, "state": None, "url": None},
         {"comment_id": "c2", "kind": "issue", "author": "human",
@@ -318,13 +318,13 @@ def test_build_tracked_payload_handles_never_fetched_row(tmp_path):
 def test_tracked_seen_baseline_roundtrip(tmp_path):
     conn = _conn(tmp_path)
     _add(conn, "odoo/odoo#1")
-    db.update_tracked_state(conn, "odoo/odoo#1", {"state": "OPEN", "head_sha": "s1"})
+    db.update_tab_state(conn, "tracked", "odoo/odoo#1", {"state": "OPEN", "head_sha": "s1"})
 
     items, updates = render.build_tracked_payload(conn)
     assert items[0]["since_last_look"] == []          # first run, no baseline
     render.commit_tab_seen_baseline(conn, "tracked", updates, "t")
 
-    db.update_tracked_state(conn, "odoo/odoo#1", {"state": "MERGED", "head_sha": "s1"})
+    db.update_tab_state(conn, "tracked", "odoo/odoo#1", {"state": "MERGED", "head_sha": "s1"})
     items, _ = render.build_tracked_payload(conn)
     assert items[0]["since_last_look"] == ["resolved"]
 

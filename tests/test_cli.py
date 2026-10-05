@@ -1,5 +1,8 @@
-from pr_dash import cli, github
+import json
 
+from click.testing import CliRunner
+
+from pr_dash import cli, config, db, github, mergebot
 
 # --- _reviewed_open_siblings -------------------------------------------------
 
@@ -682,3 +685,48 @@ def test_review_queue_carries_the_companion_and_rekeys_the_cache(tmp_path):
     reqs, _ = cli._build_review_queue(conn, {"odoo/odoo#1"}, 50_000,
                                       companion_repo="odoo/upgrade")
     assert reqs == []
+
+
+# --- _run_mine_refresh -------------------------------------------------------
+
+def _mine_node(repo, number, state):
+    return {"url": f"https://github.com/{repo}/pull/{number}", "title": f"PR {number}",
+            "state": state, "headRefName": "master-x-6396725-andg",
+            "updatedAt": "2026-10-05T00:00:00Z"}
+
+
+def test_mine_refresh_keeps_resolved_members_and_stops_reading_their_final_page(
+        tmp_path, monkeypatch):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        '[user]\ngithub_login = "me"\n\n[repos]\n"odoo/odoo" = "/tmp/odoo"\n'
+        f'\n[paths]\ncache_dir = "{tmp_path}"\n',
+    )
+    cfg = config.load(config_path)
+    gh = {"open": [("odoo/odoo", 10), ("odoo/upgrade", 20)], "state": "OPEN"}
+    pages = {"odoo/odoo": "blocked", "odoo/upgrade": "unknown"}
+    reads = []
+    monkeypatch.setattr(github, "search_authored_open", lambda login: gh["open"])
+    monkeypatch.setattr(github, "fetch_nodes", lambda refs, fragment: {
+        f"{r}#{n}": _mine_node(r, n, gh["state"]) for r, n in refs})
+    monkeypatch.setattr(mergebot, "fetch", lambda repo, n: reads.append(repo)
+                        or mergebot.MergebotState(pages[repo]))
+
+    conn = db.connect(cfg.db_path)
+    cli._run_mine_refresh(conn, cfg, force=False)
+    # Fresh within mine_staleness_minutes, so the second run reads nothing.
+    cli._run_mine_refresh(conn, cfg, force=False)
+    assert sorted(reads) == ["odoo/odoo", "odoo/upgrade"]
+
+    # Both left the open search and closed, the Mergebot telling Merged from closed.
+    gh["open"] = []
+    gh["state"], pages["odoo/odoo"], pages["odoo/upgrade"] = "CLOSED", "merged", "closed"
+    cli._run_mine_refresh(conn, cfg, force=True)
+    cli._run_mine_refresh(conn, cfg, force=True)
+    assert sorted(reads) == ["odoo/odoo"] * 2 + ["odoo/upgrade"] * 2
+
+    out = json.loads(CliRunner().invoke(
+        cli.cli, ["query", "mine", "--config", str(config_path)]).output)
+    assert [(s["key"], s["band"], [(m["num"], m["state"]) for m in s["members"]])
+            for s in out["branch_sets"]] == [
+        ("master-x-6396725-andg", "done", [(10, "MERGED"), (20, "CLOSED")])]

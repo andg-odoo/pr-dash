@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import re
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
@@ -66,7 +67,7 @@ class LinkedPR:
 class MergebotState:
     """What the Mergebot page says about one PR, or state "unknown" with the reason."""
 
-    state: str  # blocked, ready, staged, merged, closed, error or unknown
+    state: str  # blocked, ready, staged, merged, closed, error, unmanaged or unknown
     checks: list[Check] = field(default_factory=list)
     r_plus: bool | None = None
     merge_method: bool | None = None
@@ -149,11 +150,15 @@ def page_url(repo: str, number: int) -> str:
 
 
 def fetch(repo: str, number: int) -> MergebotState:
-    """Fetch and parse one PR's page, returning state "unknown" instead of raising."""
+    """Fetch and parse one PR's page, "unmanaged" on a 404 and "unknown" instead of raising."""
     url = page_url(repo, number)
     try:
         with urllib.request.urlopen(url, timeout=TIMEOUT_SECONDS) as resp:
             html = resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return MergebotState("unmanaged", reason=f"{url} not found")
+        return MergebotState("unknown", reason=f"fetch {url} failed: {e}")
     except (OSError, http.client.HTTPException) as e:
         return MergebotState("unknown", reason=f"fetch {url} failed: {e}")
     return parse(html)

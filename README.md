@@ -80,6 +80,7 @@ github_login = "your-login"      # auto-detected by `pr-dash init`
 [thresholds]
 staleness_minutes = 15           # skip re-fetching PRs fetched more recently than this
 tracked_staleness_minutes = 360  # the same, for the tracked tab's watch list
+mine_staleness_minutes = 15      # the same, for your authored PRs and their Mergebot pages
 diff_max_files = 100             # more files than this: no diff cached at all
 diff_max_lines = 5000
 diff_max_bytes = 2000000         # over these, the diff is compacted before caching
@@ -186,7 +187,7 @@ pr-dash init             write a default config
 pr-dash track REF...     watch a PR in the tracked tab (owner/repo#123 or a PR URL)
 pr-dash untrack REF...   stop watching it
 pr-dash mcp              run the MCP server (stdio) for agent access
-pr-dash query ...        emit cache data as JSON (list/show/diff/history/stats)
+pr-dash query ...        emit cache data as JSON (list/show/diff/history/stats/tracked/mine)
 pr-dash refresh --cron   unattended refresh, for a timer (see below)
 pr-dash -v ...           verbose logging
 pr-dash --config PATH    use an alternate config file
@@ -222,8 +223,9 @@ systemctl --user list-timers pr-dash.timer   # when it next fires
 journalctl --user -u pr-dash                 # what the last runs did
 ```
 
-The timer is hourly with `Persistent=true`, so a tick missed while the laptop
-slept runs on wake, and a randomized delay keeps it off the exact hour.
+The timer runs every 15 minutes with `Persistent=true`, so a tick missed while
+the laptop slept runs on wake, and a fixed randomized delay keeps it off the
+quarter hour.
 
 ## Companion migration PRs
 

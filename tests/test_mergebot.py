@@ -1,4 +1,5 @@
 import json
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -114,6 +115,19 @@ def test_network_failure_is_unknown(monkeypatch):
         state.reason
         == "fetch https://mergebot.odoo.com/odoo/odoo/pull/1 failed: timed out"
     )
+
+
+def test_not_found_is_unmanaged_but_a_server_error_is_unknown(monkeypatch):
+    def respond(code):
+        def urlopen(url, timeout):
+            raise urllib.error.HTTPError(url, code, "x", {}, None)
+
+        return urlopen
+
+    monkeypatch.setattr(urllib.request, "urlopen", respond(404))
+    assert mergebot.fetch("odoo/odoo-ls", 658).state == "unmanaged"
+    monkeypatch.setattr(urllib.request, "urlopen", respond(502))
+    assert mergebot.fetch("odoo/odoo", 1).state == "unknown"
 
 
 def test_query_mergebot_resolves_short_and_url_refs(monkeypatch):

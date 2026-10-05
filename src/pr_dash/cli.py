@@ -9,14 +9,15 @@ import os
 import re
 import subprocess
 import sys
-from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import click
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from pr_dash import ai, config, db, derive, github, hidden, render
+from pr_dash import ai, config, db, derive, github, hidden, mergebot, render
 from pr_dash import query as prquery
 
 console = Console()
@@ -329,6 +330,7 @@ def _refresh(cfg, *, no_open: bool, force: bool, offline: bool, cron: bool) -> N
             offline = True
         else:
             _run_tracked_refresh(conn, cfg, force=force, cron=cron)
+            _run_mine_refresh(conn, cfg, force=force, cron=cron)
             # Stamped only on a run that reached GitHub, so the header dates the data.
             db.set_meta(conn, "last_refresh", derive.now_utc())
 
@@ -455,8 +457,8 @@ def _fetch_tracked_state(conn, refs: list[tuple[str, int]]) -> int:
     with db.transaction(conn):
         for pr_id, node in nodes.items():
             row, comments = derive.tracked_row_from_node(node, now)
-            db.update_tracked_state(conn, pr_id, row)
-            db.replace_tracked_comments(conn, pr_id, comments)
+            db.update_tab_state(conn, "tracked", pr_id, row)
+            db.replace_tab_comments(conn, "tracked", pr_id, comments)
     return len(nodes)
 
 
@@ -508,6 +510,56 @@ def _run_tracked_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
     if added or updated:
         _notify(cron, f"tracked: +{added} new, {updated} refreshed "
                       f"({len(rows)} total)", "dim")
+
+
+def _run_mine_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
+    """Refresh the open and the undismissed Authored PRs, and their Mergebot pages."""
+    known = db.list_mine(conn)
+    last = max((r["fetched_at"] for r in known if r["fetched_at"]), default=None)
+    # A timer tick lands seconds short of the threshold after the last one, hence the minute off.
+    due = datetime.now(UTC) - timedelta(
+        minutes=cfg.thresholds.mine_staleness_minutes - 1)
+    if not force and last and derive.parse_iso(last) > due:
+        return
+    with _progress(cron) as progress:
+        task = progress.add_task("Searching for authored PRs...", total=None)
+        try:
+            refs = github.search_authored_open(cfg.github_login)
+            # Known PRs that left the open search are still fetched, so they can turn Done.
+            refs = list(dict.fromkeys([*refs, *((r["repo"], r["number"]) for r in known)]))
+            progress.update(task, description=f"Fetching {len(refs)} authored PRs...")
+            nodes = github.fetch_nodes(refs, github.MINE_NODE_FRAGMENT)
+        except github.GithubError as e:
+            _notify(cron, f"Authored PR refresh failed: {e}", "yellow")
+            return
+        now = derive.now_utc()
+        added = 0
+        with db.transaction(conn):
+            for pr_id, node in nodes.items():
+                repo, _, number = pr_id.rpartition("#")
+                added += db.add_mine(conn, pr_id, repo, int(number), node["url"], now)
+                row, comments = derive.mine_row_from_node(node, now)
+                db.update_tab_state(conn, "mine", pr_id, row)
+                db.replace_tab_comments(conn, "mine", pr_id, comments)
+
+        stored = db.list_mine_mergebot(conn)
+        # A resolved PR's final Mergebot read cannot change, so it is not fetched again.
+        unread = [
+            r for r in db.list_mine(conn)
+            if r["state"] == "OPEN"
+            or stored.get(r["id"], {}).get("state") not in ("merged", "closed", "unmanaged")
+        ]
+        progress.update(task, description=f"Reading {len(unread)} Mergebot pages...")
+        # A page takes about a second, a few in flight keep the tick short without loading the bot.
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            pages = pool.map(lambda r: mergebot.fetch(r["repo"], r["number"]), unread)
+            reads = {r["id"]: page for r, page in zip(unread, pages, strict=True)}
+        with db.transaction(conn):
+            for pr_id, state in reads.items():
+                db.upsert_mine_mergebot(conn, pr_id, dataclasses.asdict(state), derive.now_utc())
+
+    _notify(cron, f"mine: +{added} new, {len(nodes)} refreshed, "
+                  f"{len(reads)} Mergebot pages read", "dim")
 
 
 @cli.command()
@@ -668,12 +720,19 @@ def query_tracked(ref, state, include_dismissed, config_path):
            "tracked": [prquery.summarize_tracked(t) for t in items]})
 
 
+@query.command("mine")
+@click.option("--config", "config_path", type=click.Path(path_type=Path))
+def query_mine(config_path):
+    """List Authored PRs as Branch sets."""
+    cfg = _load_config_or_exit(config_path)
+    sets = prquery.load_mine(cfg)
+    _emit({"count": len(sets), "branch_sets": sets})
+
+
 @query.command("mergebot")
 @click.argument("ref")
 def query_mergebot(ref):
     """Live Mergebot readiness for one PR (odoo#123, odoo/odoo#123 or a PR URL)."""
-    from pr_dash import mergebot
-
     try:
         repo, short, number = prquery._parse_ref(ref.replace("mergebot.odoo.com/", "github.com/"))
     except ValueError as e:

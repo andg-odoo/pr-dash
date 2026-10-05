@@ -416,6 +416,17 @@ def stats(items: list[dict]) -> dict:
     }
 
 
+# --- authored PRs ------------------------------------------------------------
+
+def load_mine(cfg: Config) -> list[dict]:
+    """Build the Branch sets from the cache, read-only, so no seen baseline moves."""
+    conn = db.connect(cfg.db_path)
+    try:
+        return derive.branch_sets(db.list_mine(conn), db.list_mine_mergebot(conn))
+    finally:
+        conn.close()
+
+
 # --- tracked PRs -------------------------------------------------------------
 
 def load_tracked(cfg: Config, *, include_dismissed: bool = False) -> list[dict]:

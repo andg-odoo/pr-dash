@@ -231,3 +231,24 @@ def test_migration_adds_ping_columns_to_v12_db(tmp_path):
     conn = db.connect(path)
     cols = {r[1] for r in conn.execute("PRAGMA table_info(pr)").fetchall()}
     assert {"ping_at", "ping_author", "ping_snippet"} <= cols
+
+
+def test_migration_adds_mine_tables_to_v23_db(tmp_path):
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path, isolation_level=None)
+    conn.executescript(db.SCHEMA_SQL.replace(db.MINE_SCHEMA_SQL, ""))
+    conn.execute("INSERT INTO tracked (id, repo, number, url, added_at) "
+                 "VALUES ('odoo/odoo#1', 'odoo/odoo', 1, 'u', 't')")
+    conn.execute("PRAGMA user_version = 23")
+    conn.close()
+
+    conn = db.connect(path)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 24
+    assert db.add_mine(conn, "odoo/odoo#2", "odoo/odoo", 2, "u", "t") is True
+    db.upsert_tab_seen(conn, "mine", {"pr_id": "odoo/odoo#2", "state": "OPEN", "seen_at": "t"})
+    db.upsert_mine_mergebot(conn, "odoo/odoo#2", {
+        "state": "blocked", "r_plus": False, "merge_method": True, "checks": [],
+        "linked": [], "reason": None}, "t")
+    assert [r["id"] for r in db.list_mine(conn)] == ["odoo/odoo#2"]
+    assert db.list_mine_mergebot(conn)["odoo/odoo#2"]["r_plus"] is False
+    assert [r["id"] for r in db.list_tracked(conn)] == ["odoo/odoo#1"]

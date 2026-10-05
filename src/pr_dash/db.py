@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 
 # Cache-wide facts with nowhere better to live, such as when a refresh last reached GitHub.
 META_SCHEMA_SQL = """
@@ -116,6 +117,80 @@ CREATE TABLE tracked_seen (
 );
 
 CREATE INDEX idx_tracked_comment_pr ON tracked_comment(pr_id);
+"""
+
+# Authored PRs, shaped like the tracked tables so the shared tab helpers work on both.
+MINE_SCHEMA_SQL = """
+CREATE TABLE mine (
+  id            TEXT PRIMARY KEY,
+  repo          TEXT NOT NULL,
+  number        INTEGER NOT NULL,
+  url           TEXT NOT NULL,
+  title         TEXT NOT NULL DEFAULT '',
+  author        TEXT NOT NULL DEFAULT '',
+  state         TEXT NOT NULL DEFAULT 'OPEN',
+  is_draft      INTEGER NOT NULL DEFAULT 0,
+  target_branch TEXT NOT NULL DEFAULT '',
+  head_branch   TEXT NOT NULL DEFAULT '',
+  head_sha      TEXT NOT NULL DEFAULT '',
+  body          TEXT,
+  ci_state      TEXT,
+  checks        TEXT NOT NULL DEFAULT '[]',
+  review_decision  TEXT,
+  mergeable        TEXT,
+  requested_people TEXT NOT NULL DEFAULT '[]',
+  requested_teams  TEXT NOT NULL DEFAULT '[]',
+  review_request_events TEXT NOT NULL DEFAULT '[]',
+  comment_count      INTEGER NOT NULL DEFAULT 0,
+  activity_count     INTEGER NOT NULL DEFAULT 0,
+  review_count       INTEGER NOT NULL DEFAULT 0,
+  thread_count       INTEGER NOT NULL DEFAULT 0,
+  unresolved_threads INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT,
+  updated_at    TEXT,
+  closed_at     TEXT,
+  merged_at     TEXT,
+  added_at      TEXT NOT NULL,
+  dismissed_at  TEXT,
+  fetched_at    TEXT
+);
+
+CREATE TABLE mine_comment (
+  pr_id      TEXT NOT NULL REFERENCES mine(id) ON DELETE CASCADE,
+  comment_id TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  thread_id  TEXT,
+  parent_id  TEXT,
+  author     TEXT,
+  created_at TEXT,
+  body       TEXT,
+  path       TEXT,
+  state      TEXT,
+  url        TEXT,
+  PRIMARY KEY (pr_id, comment_id)
+);
+
+CREATE TABLE mine_seen (
+  pr_id          TEXT PRIMARY KEY REFERENCES mine(id) ON DELETE CASCADE,
+  state          TEXT,
+  head_sha       TEXT,
+  comment_count  INTEGER,
+  activity_count INTEGER,
+  seen_at        TEXT NOT NULL
+);
+
+CREATE TABLE mine_mergebot (
+  pr_id        TEXT PRIMARY KEY REFERENCES mine(id) ON DELETE CASCADE,
+  state        TEXT NOT NULL,
+  r_plus       INTEGER,
+  merge_method INTEGER,
+  checks       TEXT NOT NULL DEFAULT '[]',
+  linked       TEXT NOT NULL DEFAULT '[]',
+  reason       TEXT,
+  fetched_at   TEXT NOT NULL
+);
+
+CREATE INDEX idx_mine_comment_pr ON mine_comment(pr_id);
 """
 
 SCHEMA_SQL = """
@@ -241,7 +316,7 @@ CREATE INDEX idx_pr_module_pr ON pr_module(pr_id);
 CREATE INDEX idx_pr_reviewer_pr ON pr_reviewer(pr_id);
 CREATE INDEX idx_pr_thread_pr ON pr_thread(pr_id);
 CREATE INDEX idx_pr_comment_pr ON pr_comment(pr_id);
-""" + TRACKED_SCHEMA_SQL + COMPANION_SCHEMA_SQL + AI_ATTEMPT_SCHEMA_SQL + META_SCHEMA_SQL
+""" + TRACKED_SCHEMA_SQL + COMPANION_SCHEMA_SQL + AI_ATTEMPT_SCHEMA_SQL + META_SCHEMA_SQL + MINE_SCHEMA_SQL
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
@@ -478,6 +553,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
         }
         if "meta" not in tables:
             conn.executescript(META_SCHEMA_SQL)
+    if current < 24:
+        tables = {
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'",
+            ).fetchall()
+        }
+        if "mine" not in tables:
+            conn.executescript(MINE_SCHEMA_SQL)
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -927,6 +1010,12 @@ TRACKED_STATE_COLS = [
     "merged_at", "fetched_at", "activity_count", "unresolved_threads",
     "review_count", "thread_count",
 ]
+_MINE_JSON_COLS = ["checks", "requested_people", "requested_teams", "review_request_events"]
+_TAB_STATE_COLS = {
+    "tracked": TRACKED_STATE_COLS,
+    "mine": [*TRACKED_STATE_COLS, "head_branch", "review_decision", "mergeable",
+             *_MINE_JSON_COLS],
+}
 
 
 def add_tracked(conn: sqlite3.Connection, pr_id: str, repo: str, number: int,
@@ -967,13 +1056,14 @@ def set_dismissed(conn: sqlite3.Connection, tab: str, pr_id: str, when: str | No
     conn.execute(f"UPDATE {tab} SET dismissed_at = ? WHERE id = ?", (when, pr_id))
 
 
-def update_tracked_state(conn: sqlite3.Connection, pr_id: str, row: dict) -> None:
-    """Write the freshly-fetched GitHub state onto a tracked row, leaving the
-    tracking metadata (source, added_at, dismissed_at) untouched."""
-    sets = ", ".join(f"{c} = :{c}" for c in TRACKED_STATE_COLS if c in row)
-    if not sets:
+def update_tab_state(conn: sqlite3.Connection, tab: str, pr_id: str, row: dict) -> None:
+    """Write freshly fetched GitHub state onto a `tab` row, its membership columns left alone."""
+    cols = [c for c in _TAB_STATE_COLS[tab] if c in row]
+    if not cols:
         return
-    conn.execute(f"UPDATE tracked SET {sets} WHERE id = :id", {**row, "id": pr_id})
+    values = {c: json.dumps(row[c]) if isinstance(row[c], list) else row[c] for c in cols}
+    sets = ", ".join(f"{c} = :{c}" for c in cols)
+    conn.execute(f"UPDATE {tab} SET {sets} WHERE id = :id", {**values, "id": pr_id})
 
 
 def get_tracked(conn: sqlite3.Connection, pr_id: str) -> sqlite3.Row | None:
@@ -988,28 +1078,74 @@ def list_tracked(conn: sqlite3.Connection, *,
     ).fetchall()
 
 
-_TRACKED_COMMENT_COLS = ["comment_id", "kind", "thread_id", "parent_id", "author",
-                         "created_at", "body", "path", "state", "url"]
+_TAB_COMMENT_COLS = ["comment_id", "kind", "thread_id", "parent_id", "author",
+                     "created_at", "body", "path", "state", "url"]
 
 
-def replace_tracked_comments(conn: sqlite3.Connection, pr_id: str,
-                             comments: list[dict]) -> None:
-    conn.execute("DELETE FROM tracked_comment WHERE pr_id = ?", (pr_id,))
+def replace_tab_comments(conn: sqlite3.Connection, tab: str, pr_id: str,
+                         comments: list[dict]) -> None:
+    conn.execute(f"DELETE FROM {tab}_comment WHERE pr_id = ?", (pr_id,))
     conn.executemany(
-        f"INSERT INTO tracked_comment (pr_id, {', '.join(_TRACKED_COMMENT_COLS)}) "
-        f"VALUES (?, {', '.join('?' for _ in _TRACKED_COMMENT_COLS)})",
-        [(pr_id, *(c.get(col) for col in _TRACKED_COMMENT_COLS)) for c in comments],
+        f"INSERT INTO {tab}_comment (pr_id, {', '.join(_TAB_COMMENT_COLS)}) "
+        f"VALUES (?, {', '.join('?' for _ in _TAB_COMMENT_COLS)})",
+        [(pr_id, *(c.get(col) for col in _TAB_COMMENT_COLS)) for c in comments],
     )
 
 
-def list_tracked_comments(conn: sqlite3.Connection) -> dict[str, list[dict]]:
+def list_tab_comments(conn: sqlite3.Connection, tab: str) -> dict[str, list[dict]]:
     rows = conn.execute(
-        f"SELECT pr_id, {', '.join(_TRACKED_COMMENT_COLS)} "
-        "FROM tracked_comment ORDER BY pr_id, created_at"
+        f"SELECT pr_id, {', '.join(_TAB_COMMENT_COLS)} "
+        f"FROM {tab}_comment ORDER BY pr_id, created_at",
     ).fetchall()
     out: dict[str, list[dict]] = {}
     for r in rows:
         out.setdefault(r["pr_id"], []).append(dict(r))
+    return out
+
+
+def add_mine(conn: sqlite3.Connection, pr_id: str, repo: str, number: int, url: str,
+             added_at: str) -> bool:
+    """Start listing an Authored PR, True when it is new, a known row keeping its membership."""
+    return conn.execute(
+        "INSERT OR IGNORE INTO mine (id, repo, number, url, added_at) VALUES (?, ?, ?, ?, ?)",
+        (pr_id, repo, number, url, added_at),
+    ).rowcount > 0
+
+
+def list_mine(conn: sqlite3.Connection) -> list[dict]:
+    rows = [dict(r) for r in conn.execute("SELECT * FROM mine WHERE dismissed_at IS NULL")]
+    for row in rows:
+        for col in _MINE_JSON_COLS:
+            row[col] = json.loads(row[col])
+    return rows
+
+
+def upsert_mine_mergebot(conn: sqlite3.Connection, pr_id: str, state: dict,
+                         fetched_at: str) -> None:
+    """Store one Mergebot read, `state` being a mergebot.MergebotState as a dict."""
+    _upsert(conn, "mine_mergebot", {
+        "pr_id": pr_id,
+        "state": state["state"],
+        "r_plus": state["r_plus"],
+        "merge_method": state["merge_method"],
+        "checks": json.dumps(state["checks"]),
+        "linked": json.dumps(state["linked"]),
+        "reason": state["reason"],
+        "fetched_at": fetched_at,
+    }, ["pr_id"])
+
+
+def list_mine_mergebot(conn: sqlite3.Connection) -> dict[str, dict]:
+    out = {}
+    for r in conn.execute("SELECT * FROM mine_mergebot"):
+        row = dict(r)
+        out[row.pop("pr_id")] = {
+            **row,
+            "r_plus": None if row["r_plus"] is None else bool(row["r_plus"]),
+            "merge_method": None if row["merge_method"] is None else bool(row["merge_method"]),
+            "checks": json.loads(row["checks"]),
+            "linked": json.loads(row["linked"]),
+        }
     return out
 
 

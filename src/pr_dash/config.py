@@ -16,6 +16,8 @@ class Thresholds:
     staleness_minutes: int = 15
     # Tracked PRs are a watch list, not the review queue, so they age slower.
     tracked_staleness_minutes: int = 360
+    # Authored PRs replace watching GitHub by hand, so they follow the 15-minute timer.
+    mine_staleness_minutes: int = 15
     diff_max_files: int = 100
     diff_max_lines: int = 5000
     diff_max_bytes: int = 2_000_000
@@ -263,6 +265,8 @@ github_login = "{login}"
 staleness_minutes = 15
 # Tracked PRs are watched, not queued, so a timer tick need not re-read all of them.
 tracked_staleness_minutes = 360
+# Authored PRs (the mine tab) and their Mergebot pages, read on every timer tick.
+mine_staleness_minutes = 15
 # Over these, a diff is compacted before it is cached - generated files and any
 # single file bigger than a whole review prompt become a stub - so a PR drowned
 # by one data file keeps the code around it. diff_max_files still bails

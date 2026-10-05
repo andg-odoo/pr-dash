@@ -631,6 +631,49 @@ fragment TrackedFields on PullRequest {
 """
 
 
+_REVIEWER = "requestedReviewer { __typename ... on User { login } ... on Team { slug } }"
+
+# Authored PRs need what an author acts on, on top of the tracked fields.
+MINE_NODE_FRAGMENT = f"""
+fragment MineFields on PullRequest {{
+  ...TrackedFields
+  headRefName
+  reviewDecision
+  mergeable
+  reviewRequests(first: 30) {{ nodes {{ {_REVIEWER} }} }}
+  timelineItems(last: 30, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]) {{
+    nodes {{
+      __typename
+      ... on ReviewRequestedEvent {{ createdAt {_REVIEWER} }}
+      ... on ReviewRequestRemovedEvent {{ createdAt {_REVIEWER} }}
+    }}
+  }}
+}}
+""" + TRACKED_NODE_FRAGMENT
+
+AUTHORED_SEARCH_QUERY = """
+query($q: String!, $cursor: String) {
+  search(query: $q, type: ISSUE, first: 50, after: $cursor) {
+    pageInfo { hasNextPage endCursor }
+    nodes { ... on PullRequest { number repository { nameWithOwner } } }
+  }
+}
+"""
+
+
+def search_authored_open(login: str) -> list[tuple[str, int]]:
+    """Return (repo, number) of every open PR `login` authored, across all repos."""
+    q = f"is:open is:pr author:{login} archived:false"
+    refs: list[tuple[str, int]] = []
+    cursor = None
+    while True:
+        search = _graphql(AUTHORED_SEARCH_QUERY, {"q": q, "cursor": cursor})["search"]
+        refs.extend((n["repository"]["nameWithOwner"], n["number"]) for n in search["nodes"] if n)
+        if not search["pageInfo"]["hasNextPage"]:
+            return refs
+        cursor = search["pageInfo"]["endCursor"]
+
+
 def list_manual_subscriptions() -> list[dict]:
     """Return the PR threads the user subscribed to *themselves*.
 

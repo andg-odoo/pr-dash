@@ -560,7 +560,7 @@ def build_tracked_payload(
     a successful render, so a render failure can't swallow the deltas.
     """
     rows = [dict(r) for r in db.list_tracked(conn)]
-    comments_by_pr = db.list_tracked_comments(conn)
+    comments_by_pr = db.list_tab_comments(conn, "tracked")
     seen_rows = db.list_tab_seen(conn, "tracked")
     first_run = not seen_rows
 
