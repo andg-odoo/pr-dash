@@ -668,6 +668,24 @@ def query_tracked(ref, state, include_dismissed, config_path):
            "tracked": [prquery.summarize_tracked(t) for t in items]})
 
 
+@query.command("mergebot")
+@click.argument("ref")
+def query_mergebot(ref):
+    """Live Mergebot readiness for one PR (odoo#123, odoo/odoo#123 or a PR URL)."""
+    from pr_dash import mergebot
+
+    try:
+        repo, short, number = prquery._parse_ref(ref.replace("mergebot.odoo.com/", "github.com/"))
+    except ValueError as e:
+        click.echo(str(e), err=True)
+        sys.exit(1)
+    if repo is None and short is None:
+        click.echo(f"{ref!r} names no repo, use e.g. odoo#{number}", err=True)
+        sys.exit(1)
+    # the Mergebot only serves repos of the odoo organization
+    _emit(dataclasses.asdict(mergebot.fetch(repo or f"odoo/{short}", number)))
+
+
 def _open_html(html_path: Path) -> None:
     try:
         subprocess.Popen(
