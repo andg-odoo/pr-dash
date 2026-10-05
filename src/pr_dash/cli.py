@@ -106,11 +106,12 @@ def _render_from_cache(conn, cfg, *, offline=False):
     hidden_map = hidden.prune(hidden.load(cfg), payload)
     hidden.save(cfg, hidden_map)
     tracked, tracked_seen = render.build_tracked_payload(conn)
+    mine, mine_seen = render.build_mine_payload(conn)
     render.render(payload, cfg.html_path, offline=offline,
                   last_refresh=db.get_meta(conn, "last_refresh"),
                   hidden_map=hidden_map, hidden_sync_port=cfg.hidden_sync_port,
-                  tracked=tracked)
-    return payload, seen_updates, {"tracked": tracked_seen}
+                  tracked=tracked, mine=mine)
+    return payload, seen_updates, {"tracked": tracked_seen, "mine": mine_seen}
 
 
 def _load_config_or_exit(config_path):
@@ -721,11 +722,12 @@ def query_tracked(ref, state, include_dismissed, config_path):
 
 
 @query.command("mine")
+@click.option("--include-dismissed", is_flag=True)
 @click.option("--config", "config_path", type=click.Path(path_type=Path))
-def query_mine(config_path):
+def query_mine(include_dismissed, config_path):
     """List Authored PRs as Branch sets."""
     cfg = _load_config_or_exit(config_path)
-    sets = prquery.load_mine(cfg)
+    sets = prquery.load_mine(cfg, include_dismissed=include_dismissed)
     _emit({"count": len(sets), "branch_sets": sets})
 
 

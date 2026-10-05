@@ -20,11 +20,14 @@
           <button type="button" class="tab" data-tab="tracked">
             tracked <span class="tab-count" id="tracked-tab-count">{{ tracked_count }}</span>
           </button>
+          <button type="button" class="tab" data-tab="mine">
+            mine <span class="tab-count" id="mine-tab-count">{{ mine_count }}</span>
+          </button>
         </nav>
         <div class="meta">
           <span class="count-line">
             <span id="visible-count">{{ pr_count }} / {{ pr_count }}</span>
-            <span id="total-count">active</span> PRs
+            <span id="total-count">active PRs</span>
             <span class="kpi" id="kpi"></span>
             <span class="look-count" id="look-count"></span>
           </span>
@@ -92,8 +95,15 @@
         </span>
       </div>
 
+      <div class="sort-bar" id="mine-sort-bar" hidden>
+        <span class="kbd-hint" title="j/k move · o or enter open on GitHub · x dismiss">
+          <kbd>j</kbd><kbd>k</kbd> move · <kbd>o</kbd> open · <kbd>x</kbd> dismiss
+        </span>
+      </div>
+
       <ol class="pr-list" id="pr-list"></ol>
       <ol class="pr-list" id="tracked-list" hidden></ol>
+      <ol class="pr-list" id="mine-list" hidden></ol>
     </aside>
 
     <main class="right" id="detail">
@@ -107,6 +117,7 @@
     window.HIDDEN_SERVER = {{ hidden_server_json|safe }};
     window.HIDDEN_SYNC_PORT = {{ hidden_sync_port }};
     window.TRACKED_DATA = {{ tracked_json|safe }};
+    window.MINE_DATA = {{ mine_json|safe }};
   </script>
   <script>{{ diff2html_js|safe }}</script>
   <script>{{ markdown_it_js|safe }}</script>

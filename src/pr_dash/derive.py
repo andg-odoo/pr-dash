@@ -273,7 +273,7 @@ def mine_row_from_node(node: dict, fetched_at: str) -> tuple[dict, list[dict]]:
         "review_decision": node.get("reviewDecision"),
         "mergeable": node.get("mergeable"),
         "checks": [
-            {"name": c["name"],
+            {"name": c["name"], "url": c["url"],
              "state": "failure" if c["failing"] else "pending" if c["pending"] else "success"}
             for c in _iter_checks(_head_rollup(node))
         ],
@@ -904,6 +904,7 @@ def _mine_member(row: dict, mergebot: dict | None) -> dict:
     if state == "CLOSED" and managed and mergebot["state"] == "merged":
         state = "MERGED"
     return {
+        "id": row["id"],
         "repo": row["repo"],
         "num": row["number"],
         "title": row["title"],

@@ -1486,3 +1486,56 @@ body {
 /* Reuse the queue's .pair-badge shape for the tracked state pill. */
 .tr-badge-merged { background: #c08ae0; }
 .tr-badge-closed { background: var(--red); }
+
+.mine-band {
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 6px 14px;
+  position: sticky;
+  text-transform: uppercase;
+  top: 0;
+  z-index: 1;
+}
+
+.mine-band-n { color: var(--fg-faint); margin-left: 4px; }
+.mine-band-done { color: #c08ae0; }
+
+.pr-row.mine-row { grid-template-columns: 1fr auto; }
+.pr-row.mine-row-done { opacity: 0.75; }
+.pr-row .mine-members { gap: 4px; }
+
+.mine-chip {
+  align-items: center;
+  background: var(--chip-bg);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  display: inline-flex;
+  font-family: ui-monospace, monospace;
+  gap: 4px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.mine-chip-bad { border-color: rgba(224, 104, 104, 0.5); }
+.mine-chip-ok { border-color: rgba(106, 208, 138, 0.35); }
+.mine-chip-merged { border-color: rgba(192, 138, 224, 0.5); color: #c08ae0; }
+.mine-chip-draft { opacity: 0.6; }
+
+.mine-dot { border-radius: 50%; display: inline-block; height: 7px; width: 7px; }
+.mine-dot-ok { background: var(--green); }
+.mine-dot-bad { background: var(--red); }
+.mine-dot-merged { background: #c08ae0; }
+.mine-dot-closed { background: var(--fg-faint); }
+
+.mine-unknown { background: #33290f; color: var(--yellow); }
+.mine-dim { color: var(--fg-faint); }
+.mine-ci-green { color: var(--green); }
+
+.mine-table { border-collapse: collapse; font-size: 13px; width: 100%; }
+.mine-table th,
+.mine-table td { border-bottom: 1px solid var(--border); padding: 5px 8px; text-align: left; }
+.mine-table th { color: var(--fg-faint); font-size: 12px; font-weight: 500; }
+.mine-table a { color: var(--accent); }

@@ -711,7 +711,7 @@ def _make_handler(cfg: config.Config) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             path = self.path.split("?", 1)[0]
-            if path not in ("/hidden", "/tracked"):
+            if path not in ("/hidden", "/tracked", "/mine"):
                 self._send_json(404, {"error": "not found"})
                 return
             length = int(self.headers.get("Content-Length") or 0)

@@ -540,6 +540,7 @@ def test_cron_renders_without_consuming_the_since_last_look_baseline(tmp_path):
     )
     conn = db.connect(tmp_path / "pr_dash.db")
     _insert_pr(conn, "odoo/odoo#1", head_sha="sha1")
+    db.add_mine(conn, "odoo/odoo#2", "odoo/odoo", 2, "u", "t")
     conn.close()
 
     runner = CliRunner()
@@ -549,10 +550,12 @@ def test_cron_renders_without_consuming_the_since_last_look_baseline(tmp_path):
     conn = db.connect(tmp_path / "pr_dash.db")
     assert (tmp_path / "index.html").exists()
     assert db.list_seen(conn) == {}
+    assert db.list_tab_seen(conn, "mine") == {}
 
     # The same run for a human does look, so it advances the baseline.
     assert runner.invoke(cli.cli, args).exit_code == 0
     assert set(db.list_seen(conn)) == {"odoo/odoo#1"}
+    assert set(db.list_tab_seen(conn, "mine")) == {"odoo/odoo#2"}
 
 
 # --- _refresh_companions -----------------------------------------------------

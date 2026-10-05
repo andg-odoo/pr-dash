@@ -551,6 +551,14 @@ def build_payload(
     return items, seen_updates
 
 
+def _tab_seen_row(row: dict) -> dict:
+    """The state a tab's since-last-look baseline records for one PR row."""
+    return {
+        "pr_id": row["id"], "state": row["state"], "head_sha": row["head_sha"],
+        "activity_count": row["activity_count"] or 0,
+    }
+
+
 def build_tracked_payload(
     conn: sqlite3.Connection,
 ) -> tuple[list[dict], list[dict]]:
@@ -575,10 +583,7 @@ def build_tracked_payload(
             prev_tuple, row["state"], row["head_sha"], row["activity_count"] or 0,
             first_run=first_run,
         )
-        seen_updates.append({
-            "pr_id": row["id"], "state": row["state"], "head_sha": row["head_sha"],
-            "activity_count": row["activity_count"] or 0,
-        })
+        seen_updates.append(_tab_seen_row(row))
         repo_short = row["repo"].split("/")[-1]
         items.append({
             "id": row["id"],
@@ -625,6 +630,33 @@ def build_tracked_payload(
     return items, seen_updates
 
 
+def build_mine_payload(conn: sqlite3.Connection) -> tuple[list[dict], list[dict]]:
+    """Return (Branch sets with their discussion, mine seen_updates), Done sets last."""
+    rows = db.list_mine(conn)
+    by_id = {r["id"]: r for r in rows}
+    comments_by_pr = db.list_tab_comments(conn, "mine")
+    sets = derive.branch_sets(rows, db.list_mine_mergebot(conn))
+    for s in sets:
+        for m in s["members"]:
+            row = by_id[m["id"]]
+            m["ref"] = f"{m['repo'].split('/')[-1]}#{m['num']}"
+            m["target_branch"] = row["target_branch"]
+            approval = {"APPROVED": "approved", "CHANGES_REQUESTED": "changes requested"}.get(
+                m["decision"])
+            r_plus = {True: "r+", False: "r+ missing"}.get(m["r_plus"])
+            m["review"] = " · ".join(filter(None, [approval, r_plus]))
+            runbot = {c["name"]: c["url"] for c in row["checks"]
+                      if "runbot.odoo.com" in (c.get("url") or "")}
+            m["runbot_url"] = runbot.get("ci/runbot") or next(iter(runbot.values()), None)
+        s["comments"] = [
+            {**c, "member": m["ref"]}
+            for m in s["members"] for c in comments_by_pr.get(m["id"], [])
+            if not derive.is_bot(c["author"])
+        ]
+    sets.sort(key=lambda s: s["band"] == "done")
+    return sets, [_tab_seen_row(r) for r in rows]
+
+
 def commit_tab_seen_baseline(
     conn: sqlite3.Connection, tab: str, seen_updates: list[dict], now: str,
 ) -> None:
@@ -648,7 +680,7 @@ def commit_seen_baseline(
 def render(payload: list[dict], html_path: Path, *, offline: bool = False,
            last_refresh: str | None = None, hidden_map: dict | None = None,
            hidden_sync_port: int = 7391,
-           tracked: list[dict] | None = None) -> None:
+           tracked: list[dict] | None = None, mine: list[dict] | None = None) -> None:
     env = _env()
     template = env.get_template("index.html.j2")
     assets_dir = TEMPLATES_DIR / "assets"
@@ -657,6 +689,8 @@ def render(payload: list[dict], html_path: Path, *, offline: bool = False,
         pr_count=len(payload),
         tracked_json=_json_for_script(tracked or []),
         tracked_count=len(tracked or []),
+        mine_json=_json_for_script(mine or []),
+        mine_count=sum(s["band"] == "open" for s in mine or []),
         offline=offline,
         last_refresh=last_refresh or "",
         hidden_server_json=_json_for_script(hidden_map or {}),

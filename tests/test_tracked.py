@@ -1,10 +1,11 @@
+import dataclasses
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from pr_dash import cli, db, derive, github, render
+from pr_dash import cli, db, derive, github, mcp_server, mergebot, render
 from pr_dash import query as prquery
 
 
@@ -327,6 +328,78 @@ def test_tracked_seen_baseline_roundtrip(tmp_path):
     db.update_tab_state(conn, "tracked", "odoo/odoo#1", {"state": "MERGED", "head_sha": "s1"})
     items, _ = render.build_tracked_payload(conn)
     assert items[0]["since_last_look"] == ["resolved"]
+
+
+# --- render.build_mine_payload -----------------------------------------------
+
+def _mine(conn, pr_id, branch, updated, page=None, **node):
+    repo, number = pr_id.split("#")
+    db.add_mine(conn, pr_id, repo, int(number), f"https://github.com/{repo}/pull/{number}", "t")
+    row, comments = derive.mine_row_from_node(
+        {"title": f"PR {number}", "headRefName": branch, "baseRefName": "master",
+         "headRefOid": "s", "updatedAt": updated, **node}, "t")
+    db.update_tab_state(conn, "mine", pr_id, row)
+    db.replace_tab_comments(conn, "mine", pr_id, comments)
+    if page:
+        db.upsert_mine_mergebot(conn, pr_id, dataclasses.asdict(page), "t")
+
+
+def _mine_sets(conn):
+    ec, done = "master-l10n_ec-6396725-andg", "saas-19.1-l10n_ar-6470810-andg"
+    runbot = "https://runbot.odoo.com/runbot/batch/1"
+    _mine(conn, "odoo/odoo#290657", done, "2026-10-06T00:00:00Z", state="CLOSED",
+          page=mergebot.MergebotState("merged"))
+    _mine(conn, "odoo/odoo#290109", ec, "2026-10-02T00:00:00Z", reviewDecision="APPROVED",
+          commits={"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": [
+              {"__typename": "StatusContext", "context": "ci/style", "state": "ERROR",
+               "targetUrl": "https://runbot.odoo.com/runbot/build/2"},
+              {"__typename": "StatusContext", "context": "ci/runbot", "state": "SUCCESS",
+               "targetUrl": runbot}]}}}}]},
+          page=mergebot.MergebotState("blocked", r_plus=False, checks=[
+              mergebot.Check("ci/style", "fail", "", True, "kmagusiak")]))
+    _mine(conn, "odoo/enterprise#132695", ec, "2026-10-03T00:00:00Z",
+          page=mergebot.MergebotState("blocked", r_plus=False),
+          comments={"nodes": [
+              {"author": {"login": "robodoo"}, "body": "staging failed", "createdAt": "t1"},
+              {"author": {"login": "clbr-odoo"}, "body": "why?", "createdAt": "t2"}]})
+    _mine(conn, "odoo/odoo#269608", "19.0-mp-test-mode-andg", "2026-10-04T00:00:00Z",
+          isDraft=True, page=mergebot.MergebotState("unknown", reason="timeout"))
+    return ec, done, runbot
+
+
+def test_mine_payload_bands_members_and_discussion(tmp_path):
+    conn = _conn(tmp_path)
+    ec, done, runbot = _mine_sets(conn)
+
+    sets, seen_updates = render.build_mine_payload(conn)
+
+    # Open by most recent activity, the Done set below them.
+    assert [(s["key"], s["band"]) for s in sets] == [
+        ("19.0-mp-test-mode-andg", "open"), (ec, "open"), (done, "done")]
+    assert len(seen_updates) == 4
+    odoo = next(m for m in sets[1]["members"] if m["ref"] == "odoo#290109")
+    assert (odoo["ci"], odoo["override"], odoo["review"], odoo["runbot_url"]) == (
+        "green", [{"check": "ci/style", "by": "kmagusiak"}], "approved · r+ missing", runbot)
+    # Bot comments stay out of the human stream, each comment names its member.
+    assert [(c["author"], c["member"]) for c in sets[1]["comments"]] == [
+        ("clbr-odoo", "enterprise#132695")]
+    [mp] = sets[0]["members"]
+    assert (mp["draft"], mp["mergebot_unknown"], mp["review"]) == (True, True, "")
+
+
+def test_dismissed_mine_set_stays_hidden_after_a_refresh(tmp_path):
+    conn = _conn(tmp_path)
+    ec, _, _ = _mine_sets(conn)
+    cfg = SimpleNamespace(db_path=tmp_path / "t.db")
+    ops = [{"op": "dismiss", "pr_id": pr_id}
+           for pr_id in ("odoo/odoo#290109", "odoo/enterprise#132695")]
+    assert mcp_server._apply_dismiss_ops(cfg, "mine", ops) == 2
+
+    # The next refresh writes fresh state for the same PRs.
+    _mine(conn, "odoo/enterprise#132695", ec, "2026-10-05T00:00:00Z")
+    sets, _ = render.build_mine_payload(conn)
+    assert ec not in [s["key"] for s in sets]
+    assert len(sets) == 2
 
 
 # --- cli._parse_pr_ref -------------------------------------------------------

@@ -3,6 +3,7 @@
 
   const PRS = window.PR_DATA || [];
   const TRACKED = window.TRACKED_DATA || [];
+  const MINE = window.MINE_DATA || [];
   const md = window.markdownit({
     html: false,        // strip raw HTML: prevents <script> in PR bodies from firing
     linkify: true,      // turn bare URLs into links
@@ -35,6 +36,9 @@
   const trackedFiltersEl = document.getElementById("tracked-filters");
   const queueSortBarEl = document.getElementById("queue-sort-bar");
   const trackedSortBarEl = document.getElementById("tracked-sort-bar");
+  const mineListEl = document.getElementById("mine-list");
+  const mineTabCountEl = document.getElementById("mine-tab-count");
+  const mineSortBarEl = document.getElementById("mine-sort-bar");
 
   const STATE_KEY = "pr-dash:filters:v1";
   const TAB_KEY = "pr-dash:tab:v1";
@@ -425,7 +429,7 @@
     visibleCountEl.textContent = hiddenCount
       ? `${visible.length} / ${denom}  ·  ${hiddenCount} hidden`
       : `${visible.length} / ${denom}`;
-    if (totalCountEl) totalCountEl.textContent = view;
+    if (totalCountEl) totalCountEl.textContent = `${view} PRs`;
     if (lookCountEl) {
       const n = PRS.filter(p => !p.is_archived && !p.is_draft && (p.since_last_look || []).length).length;
       lookCountEl.textContent = n ? `${n} updated` : "";
@@ -546,7 +550,14 @@
 
   /** Move keyboard selection through the visible list by `delta` rows. */
   function moveSelection(delta) {
-    if (activeTab === "tracked") return moveTrackedSelection(delta);
+    if (activeTab === "tracked") {
+      return moveListSelection(visibleTracked.map(t => t.id), selectedTrackedId, delta,
+                               selectTracked, trackedListEl);
+    }
+    if (activeTab === "mine") {
+      return moveListSelection(visibleMine.map(s => s.key), selectedMineKey, delta,
+                               selectMine, mineListEl);
+    }
     if (!visiblePRs.length) return;
     const cur = visiblePRs.findIndex(p => p.id === selectedId);
     const next = cur === -1
@@ -556,16 +567,14 @@
     if (pr) { selectPR(pr.id); scrollRowIntoView(pr.id); }
   }
 
-  function moveTrackedSelection(delta) {
-    if (!visibleTracked.length) return;
-    const cur = visibleTracked.findIndex(t => t.id === selectedTrackedId);
+  function moveListSelection(ids, currentId, delta, select, host) {
+    if (!ids.length) return;
+    const cur = ids.indexOf(currentId);
     const next = cur === -1
-      ? (delta > 0 ? 0 : visibleTracked.length - 1)
-      : Math.max(0, Math.min(visibleTracked.length - 1, cur + delta));
-    const t = visibleTracked[next];
-    if (!t) return;
-    selectTracked(t.id);
-    const row = trackedListEl.querySelector(`.pr-row[data-id="${CSS.escape(t.id)}"]`);
+      ? (delta > 0 ? 0 : ids.length - 1)
+      : Math.max(0, Math.min(ids.length - 1, cur + delta));
+    select(ids[next]);
+    const row = host.querySelector(`.pr-row[data-id="${CSS.escape(ids[next])}"]`);
     if (row) row.scrollIntoView({ block: "nearest" });
   }
 
@@ -573,6 +582,11 @@
     if (activeTab === "tracked") {
       const t = TRACKED.find(x => x.id === selectedTrackedId);
       if (t) window.open(t.url, "_blank", "noopener");
+      return;
+    }
+    if (activeTab === "mine") {
+      const set = MINE.find(x => x.key === selectedMineKey);
+      if (set) window.open(set.members[0].url, "_blank", "noopener");
       return;
     }
     const pr = PRS.find(p => p.id === selectedId);
@@ -1068,7 +1082,8 @@
   // added with `pr-dash track`. Read-only watch list: no review state, no diff,
   // no AI - the question it answers is "did it move, did it land".
 
-  let activeTab = localStorage.getItem(TAB_KEY) === "tracked" ? "tracked" : "queue";
+  const TABS = ["queue", "tracked", "mine"];
+  let activeTab = TABS.includes(localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : "queue";
   let selectedTrackedId = null;
   let visibleTracked = [];
 
@@ -1094,19 +1109,22 @@
     try { const d = JSON.parse(raw); return d && typeof d === "object" ? d : {}; }
     catch { return {}; }
   }
-  const dismissed = { tracked: loadDismissed("tracked") };
+  const dismissed = { tracked: loadDismissed("tracked"), mine: loadDismissed("mine") };
 
-  function setDismissed(tab, id, on) {
+  function setDismissed(tab, ids, on) {
     const map = dismissed[tab];
-    if (on) map[id] = new Date().toISOString();
-    else delete map[id];
+    const when = new Date().toISOString();
+    for (const id of ids) {
+      if (on) map[id] = when;
+      else delete map[id];
+    }
     localStorage.setItem(dismissedKey(tab), JSON.stringify(map));
     if (!HIDDEN_SYNC_PORT) return;
     fetch(`http://127.0.0.1:${HIDDEN_SYNC_PORT}/${tab}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        ops: [{ op: on ? "dismiss" : "restore", pr_id: id, dismissed_at: map[id] || null }],
+        ops: ids.map(id => ({ op: on ? "dismiss" : "restore", pr_id: id, dismissed_at: map[id] || null })),
       }),
     }).catch(() => {});
   }
@@ -1187,7 +1205,7 @@
     visibleCountEl.textContent = dismissedCount
       ? `${visible.length} / ${TRACKED.length}  ·  ${dismissedCount} dismissed`
       : `${visible.length} / ${TRACKED.length}`;
-    if (totalCountEl) totalCountEl.textContent = "tracked";
+    if (totalCountEl) totalCountEl.textContent = "tracked PRs";
     if (lookCountEl) {
       const n = TRACKED.filter(t => !dismissed.tracked[t.id] && (t.since_last_look || []).length).length;
       lookCountEl.textContent = n ? `${n} moved` : "";
@@ -1241,7 +1259,7 @@
       });
       li.querySelector(".pr-hide").addEventListener("click", (e) => {
         e.stopPropagation();
-        setDismissed("tracked", t.id, true);
+        setDismissed("tracked", [t.id], true);
         renderTrackedList();
         if (selectedTrackedId === t.id) {
           selectedTrackedId = null;
@@ -1329,14 +1347,14 @@
     return tops;
   }
 
-  const TRACKED_VERDICT = {
+  const VERDICT = {
     APPROVED: ["approved", "tr-verdict-ok"],
     CHANGES_REQUESTED: ["requested changes", "tr-verdict-no"],
     DISMISSED: ["dismissed", "tr-verdict-dim"],
     COMMENTED: ["reviewed", "tr-verdict-dim"],
   };
 
-  function trackedCommentHTML(c, { badge = "" } = {}) {
+  function commentHTML(c, { badge = "" } = {}) {
     const body = (c.body || "").trim();
     return `
       <div class="tr-msg">
@@ -1350,7 +1368,7 @@
       </div>`;
   }
 
-  function trackedThreadsHTML(threads) {
+  function threadsHTML(threads, showMember) {
     if (!threads.length) return "";
     const unresolved = threads.filter(t => t.state === "UNRESOLVED").length;
     const n = threads.length;
@@ -1363,12 +1381,38 @@
         ${threads.map(t => `
           <div class="tr-thread${t.state === "UNRESOLVED" ? " tr-thread-open" : ""}">
             <div class="tr-thread-head">
+              ${showMember ? memberTag(t.comments[0]) : ""}
               <span class="tr-onpath" title="${escapeHTML(t.path || "")}">${escapeHTML((t.path || "?").split("/").pop())}</span>
               ${t.state === "UNRESOLVED" ? '<span class="tr-unresolved">unresolved</span>' : ""}
             </div>
-            ${t.comments.map(c => trackedCommentHTML(c)).join("")}
+            ${t.comments.map(c => commentHTML(c)).join("")}
           </div>`).join("")}
       </details>`;
+  }
+
+  // The Branch set member a comment came from.
+  function memberTag(c) {
+    return `<span class="tr-onpath">${escapeHTML(c.member || "")}</span>`;
+  }
+
+  // The merged discussion stream, newest review-rooted group first.
+  function discussionHTML(comments, showMember = false) {
+    const groups = groupDiscussion(comments);
+    if (!groups.length) return '<div class="tr-none">No discussion cached.</div>';
+    return groups.map(g => {
+      if (g.kind === "orphan-threads") {
+        return `<article class="tr-entry tr-entry-orphan">${threadsHTML(g.threads, showMember)}</article>`;
+      }
+      const c = g.entry;
+      const v = c.kind === "review" ? VERDICT[c.state] : null;
+      const badge = (showMember ? memberTag(c) : "")
+        + (v ? `<span class="tr-verdict ${v[1]}">${v[0]}</span>` : "");
+      return `
+        <article class="tr-entry">
+          ${commentHTML(c, { badge })}
+          ${threadsHTML(g.threads, showMember)}
+        </article>`;
+    }).join("");
   }
 
   function renderTrackedDetail(t) {
@@ -1381,23 +1425,6 @@
       ? '<span class="pair-badge tr-badge-merged">merged</span>'
       : t.state === "CLOSED" ? '<span class="pair-badge tr-badge-closed">closed</span>'
       : t.is_draft ? '<span class="draft-badge">draft</span>' : "";
-
-    const groups = groupDiscussion(t.comments || []);
-    const discussionHTML = groups.length
-      ? groups.map(g => {
-          if (g.kind === "orphan-threads") {
-            return `<article class="tr-entry tr-entry-orphan">${trackedThreadsHTML(g.threads)}</article>`;
-          }
-          const c = g.entry;
-          const v = c.kind === "review" ? TRACKED_VERDICT[c.state] : null;
-          const badge = v ? `<span class="tr-verdict ${v[1]}">${v[0]}</span>` : "";
-          return `
-            <article class="tr-entry">
-              ${trackedCommentHTML(c, { badge })}
-              ${trackedThreadsHTML(g.threads)}
-            </article>`;
-        }).join("")
-      : '<div class="tr-none">No discussion cached.</div>';
 
     detailEl.innerHTML = `
       <div class="detail">
@@ -1437,12 +1464,12 @@
 
         <section class="section">
           <h3>Discussion</h3>
-          ${discussionHTML}
+          ${discussionHTML(t.comments || [])}
         </section>
       </div>`;
     const btn = detailEl.querySelector(".tr-dismiss");
     if (btn) btn.addEventListener("click", () => {
-      setDismissed("tracked", t.id, true);
+      setDismissed("tracked", [t.id], true);
       selectedTrackedId = null;
       renderTrackedList();
       renderTrackedDetail(null);
@@ -1452,40 +1479,240 @@
   function dismissSelectedTracked() {
     if (!selectedTrackedId) return;
     const idx = visibleTracked.findIndex(t => t.id === selectedTrackedId);
-    setDismissed("tracked", selectedTrackedId, true);
+    setDismissed("tracked", [selectedTrackedId], true);
     renderTrackedList();
     const next = visibleTracked[Math.min(idx, visibleTracked.length - 1)];
     if (next) selectTracked(next.id);
     else { selectedTrackedId = null; renderTrackedDetail(null); }
   }
 
+  // ---- mine: Authored PRs as Branch sets, one row per head branch, each member inline --
+
+  let selectedMineKey = null;
+  let visibleMine = [];
+
+  const isMineDismissed = s => s.members.every(m => dismissed.mine[m.id]);
+
+  function mineHaystack(s) {
+    if (s._haystack === undefined) {
+      const parts = [s.key, s.task || ""];
+      s.members.forEach(m => parts.push(m.title, m.ref, m.repo, m.target_branch));
+      s._haystack = parts.join(" ").toLowerCase();
+    }
+    return s._haystack;
+  }
+
+  function minePasses(s) {
+    if (isMineDismissed(s)) return false;
+    return !searchQuery || searchQuery.split(/\s+/).every(q => !q || mineHaystack(s).includes(q));
+  }
+
+  const mineTitle = s => s.members[0].title;
+  const mineTargets = s => [...new Set(s.members.map(m => m.target_branch))].join(", ");
+
+  // CI pending stays green: the Mergebot lists lazy checks GitHub never reports.
+  function memberTone(m) {
+    if (m.state === "MERGED") return "merged";
+    if (m.state === "CLOSED") return "closed";
+    return m.conflict || m.ci === "red" ? "bad" : "ok";
+  }
+
+  function memberChip(m) {
+    const bits = [];
+    if (m.ci === "red") bits.push("ci✕");
+    if (m.conflict) bits.push("conflict");
+    if (m.decision === "APPROVED") bits.push("✓");
+    const tone = memberTone(m);
+    return `<span class="mine-chip mine-chip-${tone}${m.draft ? " mine-chip-draft" : ""}" title="${escapeHTML(m.title)}">`
+      + `<span class="mine-dot mine-dot-${tone}"></span>${escapeHTML(m.ref)}${bits.length ? " " + bits.join(" ") : ""}</span>`;
+  }
+
+  function mineLabels(s) {
+    return (s.members.some(m => m.draft) ? '<span class="tr-state tr-draft">draft</span>' : "")
+      + (s.members.some(m => m.mergebot_unknown)
+        ? '<span class="tr-state mine-unknown" title="The Mergebot page could not be read, CI and r+ fall back to GitHub">mergebot?</span>'
+        : "");
+  }
+
+  function renderMineList() {
+    const live = MINE.filter(s => !isMineDismissed(s));
+    const visible = MINE.filter(minePasses);
+    const bands = [
+      ["Open", "", visible.filter(s => s.band !== "done")],
+      ["Done", " mine-band-done", visible.filter(s => s.band === "done")],
+    ];
+    visibleMine = bands.flatMap(b => b[2]);
+    const openCount = live.filter(s => s.band !== "done").length;
+    visibleCountEl.textContent = `${openCount} open · ${live.length - openCount} done`;
+    if (totalCountEl) totalCountEl.textContent = "";
+    if (lookCountEl) lookCountEl.textContent = "";
+    if (mineTabCountEl) mineTabCountEl.textContent = String(openCount);
+
+    mineListEl.innerHTML = "";
+    if (!visible.length) {
+      const li = document.createElement("li");
+      li.className = "tr-empty";
+      li.textContent = live.length
+        ? "Nothing matches. Clear the search."
+        : "No Authored PRs yet. The next refresh lists every open PR you opened.";
+      mineListEl.appendChild(li);
+      return;
+    }
+    for (const [label, cls, sets] of bands) {
+      const head = document.createElement("li");
+      head.className = "mine-band" + cls;
+      head.innerHTML = `${label} <span class="mine-band-n">${sets.length}</span>`;
+      mineListEl.appendChild(head);
+      sets.forEach(s => mineListEl.appendChild(mineRow(s)));
+    }
+    if (selectedMineKey) highlightMine(selectedMineKey);
+  }
+
+  function mineRow(s) {
+    const li = document.createElement("li");
+    li.className = "pr-row mine-row" + (s.band === "done" ? " mine-row-done" : "");
+    li.dataset.id = s.key;
+    li.innerHTML = `
+      <span class="pr-title" title="${escapeHTML(mineTitle(s))}">${escapeHTML(mineTitle(s))}</span>
+      <button class="pr-hide" type="button" title="Dismiss this Branch set">×</button>
+      <span class="pr-sub mine-members">${s.members.map(memberChip).join("")}</span>
+      <span class="pr-sub">
+        <span class="tr-branch">${escapeHTML(s.key)} → ${escapeHTML(mineTargets(s))}</span>
+        ${s.task ? `<span>task-${escapeHTML(s.task)}</span>` : ""}
+        ${mineLabels(s)}
+      </span>`;
+    li.addEventListener("click", (e) => {
+      if (e.target.classList.contains("pr-hide")) return;
+      selectMine(s.key);
+    });
+    li.querySelector(".pr-hide").addEventListener("click", (e) => {
+      e.stopPropagation();
+      dismissMine(s.key);
+    });
+    return li;
+  }
+
+  function highlightMine(key) {
+    mineListEl.querySelectorAll(".pr-row").forEach(row => {
+      row.classList.toggle("selected", row.dataset.id === key);
+    });
+  }
+
+  function selectMine(key) {
+    selectedMineKey = key;
+    highlightMine(key);
+    renderMineDetail(MINE.find(s => s.key === key) || null);
+  }
+
+  // Dismiss a Branch set by stamping every member, then select the row that took its place.
+  function dismissMine(key) {
+    const set = MINE.find(s => s.key === key);
+    if (!set) return;
+    const idx = visibleMine.indexOf(set);
+    setDismissed("mine", set.members.map(m => m.id), true);
+    renderMineList();
+    if (selectedMineKey !== key) return;
+    const next = visibleMine[Math.min(idx, visibleMine.length - 1)];
+    if (next) selectMine(next.key);
+    else { selectedMineKey = null; renderMineDetail(null); }
+  }
+
+  function memberCI(m) {
+    const ci = m.ci === "red"
+      ? `<span class="tr-ci-failure">red: ${m.ci_failing.map(escapeHTML).join(", ")}</span>`
+      : `<span class="${m.ci === "green" ? "mine-ci-green" : "mine-dim"}">${escapeHTML(m.ci || "-")}</span>`;
+    return ci + m.override.map(o =>
+      ` <span class="mine-dim">(override ${escapeHTML(o.check)}, ${escapeHTML(o.by || "?")})</span>`).join("");
+  }
+
+  function memberRequested(m) {
+    const people = m.requested_people.map(p => "@" + escapeHTML(p)).join(", ");
+    const teams = m.requested_teams.map(t => "@" + escapeHTML(t)).join(", ");
+    return (people || "-") + (teams ? ` <span class="mine-dim">+ teams ${teams}</span>` : "");
+  }
+
+  function renderMineDetail(s) {
+    if (!s) {
+      detailEl.innerHTML = '<div class="empty">Select a Branch set on the left.</div>';
+      return;
+    }
+    const rows = s.members.map(m => `
+      <tr>
+        <td title="${escapeHTML(m.title)}">${escapeHTML(m.ref)}</td>
+        <td>${escapeHTML(m.state.toLowerCase())}${m.draft ? " · draft" : ""}${
+          m.conflict ? ' · <span class="tr-ci-failure">conflict</span>' : ""}${
+          m.mergebot_unknown ? ' · <span class="mine-unknown">mergebot?</span>' : ""}</td>
+        <td>${memberCI(m)}</td>
+        <td>${escapeHTML(m.review || "-")}</td>
+        <td>${memberRequested(m)}</td>
+        <td><a href="${escapeHTML(m.url)}" target="_blank" rel="noopener">GitHub ↗</a>${
+          m.runbot_url ? ` · <a href="${escapeHTML(m.runbot_url)}" target="_blank" rel="noopener">runbot ↗</a>` : ""}</td>
+      </tr>`).join("");
+    detailEl.innerHTML = `
+      <div class="detail">
+        <div class="detail-header">
+          <h2>${s.members.some(m => m.draft) ? '<span class="draft-badge">draft</span>' : ""}${escapeHTML(mineTitle(s))}</h2>
+          <div class="crumbs">
+            <span>${escapeHTML(s.key)}</span> ·
+            <span>→ ${escapeHTML(mineTargets(s))}</span>
+            ${s.task ? ` · <a href="https://www.odoo.com/odoo/all-tasks/${escapeHTML(s.task)}" target="_blank" rel="noopener">task-${escapeHTML(s.task)}</a>` : ""}
+          </div>
+        </div>
+
+        <div class="detail-links">
+          <button class="detail-hide mine-dismiss" type="button">Dismiss</button>
+        </div>
+
+        <section class="section">
+          <h3>Members</h3>
+          <table class="mine-table">
+            <tr><th>PR</th><th>State</th><th>CI</th><th>Review</th><th>Requested</th><th>Links</th></tr>
+            ${rows}
+          </table>
+        </section>
+
+        <section class="section">
+          <h3>Discussion</h3>
+          ${discussionHTML(s.comments, s.members.length > 1)}
+        </section>
+      </div>`;
+    detailEl.querySelector(".mine-dismiss").addEventListener("click", () => dismissMine(s.key));
+  }
+
   /** Render whichever tab is showing. Shared controls (search, reset, the
    *  updated-count) call this instead of renderList so they work in both. */
   function rerenderActive() {
     if (activeTab === "tracked") renderTrackedList();
+    else if (activeTab === "mine") renderMineList();
     else renderList();
   }
 
   function setTab(tab) {
-    activeTab = tab === "tracked" ? "tracked" : "queue";
+    activeTab = TABS.includes(tab) ? tab : "queue";
     localStorage.setItem(TAB_KEY, activeTab);
-    const tracked = activeTab === "tracked";
     tabsEl.querySelectorAll(".tab").forEach(b => {
       b.classList.toggle("is-active", b.dataset.tab === activeTab);
     });
-    listEl.hidden = tracked;
-    trackedListEl.hidden = !tracked;
-    queueFiltersEl.hidden = tracked;
-    trackedFiltersEl.hidden = !tracked;
-    queueSortBarEl.hidden = tracked;
-    trackedSortBarEl.hidden = !tracked;
-    searchEl.placeholder = tracked
-      ? "Search tracked title, #, author…  ( / )"
-      : "Search title, #, author, module…  ( / )";
+    listEl.hidden = activeTab !== "queue";
+    trackedListEl.hidden = activeTab !== "tracked";
+    mineListEl.hidden = activeTab !== "mine";
+    queueFiltersEl.hidden = activeTab !== "queue";
+    trackedFiltersEl.hidden = activeTab !== "tracked";
+    queueSortBarEl.hidden = activeTab !== "queue";
+    trackedSortBarEl.hidden = activeTab !== "tracked";
+    mineSortBarEl.hidden = activeTab !== "mine";
+    searchEl.placeholder = {
+      queue: "Search title, #, author, module…  ( / )",
+      tracked: "Search tracked title, #, author…  ( / )",
+      mine: "Search title, #, branch, task…  ( / )",
+    }[activeTab];
     rerenderActive();
-    if (tracked) {
+    if (activeTab === "tracked") {
       if (!selectedTrackedId && visibleTracked.length) selectTracked(visibleTracked[0].id);
       else renderTrackedDetail(TRACKED.find(t => t.id === selectedTrackedId) || null);
+    } else if (activeTab === "mine") {
+      if (!selectedMineKey && visibleMine.length) selectMine(visibleMine[0].key);
+      else renderMineDetail(MINE.find(s => s.key === selectedMineKey) || null);
     } else {
       renderDetail(PRS.find(p => p.id === selectedId));
     }
@@ -1535,8 +1762,11 @@
         if (/^(BUTTON|A)$/.test(tag)) break;  // let a focused control act normally
         openSelectedOnGithub(); break;
       case "h": if (activeTab === "queue") hideSelected(); break;
-      case "x": if (activeTab === "tracked") dismissSelectedTracked(); break;
-      case "t": setTab(activeTab === "tracked" ? "queue" : "tracked"); break;
+      case "x":
+        if (activeTab === "tracked") dismissSelectedTracked();
+        else if (activeTab === "mine" && selectedMineKey) dismissMine(selectedMineKey);
+        break;
+      case "t": setTab(TABS[(TABS.indexOf(activeTab) + 1) % TABS.length]); break;
     }
   });
 
@@ -1566,6 +1796,5 @@
 
   // Restore the last tab. Deep links (#pr=) always mean the queue, so an
   // incoming link isn't swallowed by a stored `tracked` preference.
-  if (activeTab === "tracked" && !initial) setTab("tracked");
-  else { activeTab = "queue"; setTab("queue"); }
+  setTab(initial ? "queue" : activeTab);
 })();
