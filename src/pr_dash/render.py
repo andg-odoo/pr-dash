@@ -553,7 +553,7 @@ def build_payload(
 
 def build_tracked_payload(
     conn: sqlite3.Connection,
-) -> tuple[list[dict], list[tuple[str, str | None, str | None, int | None]]]:
+) -> tuple[list[dict], list[dict]]:
     """Return (tracked items, tracked seen_updates).
 
     Same contract as build_payload: the caller persists the baseline only after
@@ -561,11 +561,11 @@ def build_tracked_payload(
     """
     rows = [dict(r) for r in db.list_tracked(conn)]
     comments_by_pr = db.list_tracked_comments(conn)
-    seen_rows = db.list_tracked_seen(conn)
+    seen_rows = db.list_tab_seen(conn, "tracked")
     first_run = not seen_rows
 
     items: list[dict] = []
-    seen_updates: list[tuple[str, str | None, str | None, int | None]] = []
+    seen_updates: list[dict] = []
     for row in rows:
         prev = seen_rows.get(row["id"])
         prev_tuple = (
@@ -575,9 +575,10 @@ def build_tracked_payload(
             prev_tuple, row["state"], row["head_sha"], row["activity_count"] or 0,
             first_run=first_run,
         )
-        seen_updates.append(
-            (row["id"], row["state"], row["head_sha"], row["activity_count"] or 0),
-        )
+        seen_updates.append({
+            "pr_id": row["id"], "state": row["state"], "head_sha": row["head_sha"],
+            "activity_count": row["activity_count"] or 0,
+        })
         repo_short = row["repo"].split("/")[-1]
         items.append({
             "id": row["id"],
@@ -624,14 +625,12 @@ def build_tracked_payload(
     return items, seen_updates
 
 
-def commit_tracked_seen_baseline(
-    conn: sqlite3.Connection,
-    seen_updates: list[tuple[str, str | None, str | None, int | None]],
-    now: str,
+def commit_tab_seen_baseline(
+    conn: sqlite3.Connection, tab: str, seen_updates: list[dict], now: str,
 ) -> None:
     with db.transaction(conn):
-        for pr_id, state, head_sha, activity_count in seen_updates:
-            db.upsert_tracked_seen(conn, pr_id, state, head_sha, activity_count, now)
+        for row in seen_updates:
+            db.upsert_tab_seen(conn, tab, {**row, "seen_at": now})
 
 
 def commit_seen_baseline(

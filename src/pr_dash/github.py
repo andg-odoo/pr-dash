@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 import time
 from dataclasses import dataclass
@@ -687,10 +688,10 @@ def list_manual_subscriptions() -> list[dict]:
     return out
 
 
-def fetch_tracked_nodes(
-    refs: list[tuple[str, int]], *, chunk_size: int = 50,
+def fetch_nodes(
+    refs: list[tuple[str, int]], fragment: str, *, chunk_size: int = 50,
 ) -> dict[str, dict]:
-    """Given (repo, number) pairs, return pr_id -> a slim PR node.
+    """Given (repo, number) pairs, return pr_id -> the PR node `fragment` selects.
 
     Batched via GraphQL field aliases. A ref that no longer resolves (deleted
     repo, or a number that was never a PR) is simply absent from the result
@@ -699,6 +700,7 @@ def fetch_tracked_nodes(
     The chunk is wide because each one is a round trip and the node is slim: 43
     tracked PRs took 10.5s in fives and 6.4s in one go.
     """
+    spread = re.search(r"fragment (\w+) on PullRequest", fragment).group(1)
     out: dict[str, dict] = {}
     for start in range(0, len(refs), chunk_size):
         chunk = refs[start:start + chunk_size]
@@ -707,9 +709,9 @@ def fetch_tracked_nodes(
             owner, name = repo.split("/", 1)
             parts.append(
                 f'p{i}: repository(owner: "{owner}", name: "{name}") {{ '
-                f'pullRequest(number: {number}) {{ ...TrackedFields }} }}'
+                f'pullRequest(number: {number}) {{ ...{spread} }} }}'
             )
-        query = "query {\n" + "\n".join(parts) + "\n}\n" + TRACKED_NODE_FRAGMENT
+        query = "query {\n" + "\n".join(parts) + "\n}\n" + fragment
         data = _graphql_partial(query, {})
         for i, (repo, number) in enumerate(chunk):
             pr = (data.get(f"p{i}") or {}).get("pullRequest")

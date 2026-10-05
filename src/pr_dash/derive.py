@@ -215,6 +215,45 @@ def tracked_row_from_node(node: dict, fetched_at: str) -> tuple[dict, list[dict]
     comment_block = node.get("comments") or {}
     review_block = node.get("reviews") or {}
     thread_block = node.get("reviewThreads") or {}
+    comments = discussion_stream(node)
+
+    unresolved = sum(
+        1 for t in (thread_block.get("nodes") or []) if not t.get("isResolved")
+    )
+    # Movement signal: replies move no totalCount, but a new review, thread or comment does.
+    activity_count = (
+        (comment_block.get("totalCount") or 0)
+        + (review_block.get("totalCount") or 0)
+        + (thread_block.get("totalCount") or 0)
+    )
+    row = {
+        "title": node.get("title") or "",
+        "author": _login(node) or "",
+        "state": node.get("state") or "OPEN",
+        "is_draft": int(bool(node.get("isDraft"))),
+        "target_branch": node.get("baseRefName") or "",
+        "head_sha": node.get("headRefOid") or "",
+        "body": node.get("body"),
+        "ci_state": ci_state,
+        "comment_count": comment_block.get("totalCount") or 0,
+        "activity_count": activity_count,
+        "review_count": review_block.get("totalCount") or 0,
+        "thread_count": thread_block.get("totalCount") or 0,
+        "unresolved_threads": unresolved,
+        "created_at": node.get("createdAt"),
+        "updated_at": node.get("updatedAt"),
+        "closed_at": node.get("closedAt"),
+        "merged_at": node.get("mergedAt"),
+        "fetched_at": fetched_at,
+    }
+    return row, comments
+
+
+def discussion_stream(node: dict) -> list[dict]:
+    """Merge a PR node's conversation comments, reviews and inline threads, oldest first."""
+    comment_block = node.get("comments") or {}
+    review_block = node.get("reviews") or {}
+    thread_block = node.get("reviewThreads") or {}
 
     def _entry(c, kind, when, *, path=None, state=None,
                thread_id=None, parent_id=None):
@@ -261,39 +300,7 @@ def tracked_row_from_node(node: dict, fetched_at: str) -> tuple[dict, list[dict]
                                    state=state, thread_id=t.get("id"),
                                    parent_id=parent))
     comments.sort(key=lambda c: c["created_at"] or "")
-
-    unresolved = sum(
-        1 for t in (thread_block.get("nodes") or []) if not t.get("isResolved")
-    )
-    # Movement signal. Thread *replies* don't move any totalCount, but a new
-    # review, a new thread, or a new conversation comment does - which covers
-    # every way a watched PR visibly progresses.
-    activity_count = (
-        (comment_block.get("totalCount") or 0)
-        + (review_block.get("totalCount") or 0)
-        + (thread_block.get("totalCount") or 0)
-    )
-    row = {
-        "title": node.get("title") or "",
-        "author": _login(node) or "",
-        "state": node.get("state") or "OPEN",
-        "is_draft": int(bool(node.get("isDraft"))),
-        "target_branch": node.get("baseRefName") or "",
-        "head_sha": node.get("headRefOid") or "",
-        "body": node.get("body"),
-        "ci_state": ci_state,
-        "comment_count": comment_block.get("totalCount") or 0,
-        "activity_count": activity_count,
-        "review_count": review_block.get("totalCount") or 0,
-        "thread_count": thread_block.get("totalCount") or 0,
-        "unresolved_threads": unresolved,
-        "created_at": node.get("createdAt"),
-        "updated_at": node.get("updatedAt"),
-        "closed_at": node.get("closedAt"),
-        "merged_at": node.get("mergedAt"),
-        "fetched_at": fetched_at,
-    }
-    return row, comments
+    return comments
 
 
 def tracked_since_last_look(

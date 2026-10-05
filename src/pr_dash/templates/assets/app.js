@@ -38,7 +38,6 @@
 
   const STATE_KEY = "pr-dash:filters:v1";
   const TAB_KEY = "pr-dash:tab:v1";
-  const DISMISSED_KEY = "pr-dash:tracked-dismissed:v1";
   const TRACKED_SORT_KEY = "pr-dash:tracked-sort:v1";
   const SORT_KEY = "pr-dash:sort:v1";
   const HIDDEN_KEY = "pr-dash:hidden:v1";
@@ -1088,24 +1087,26 @@
    *  and the op is flushed to the `pr-dash mcp` listener when it happens to be
    *  running, which stamps dismissed_at so the next render bakes it in. Without
    *  the listener the dismissal still holds in this browser. */
-  function loadDismissed() {
-    const raw = localStorage.getItem(DISMISSED_KEY);
+  const dismissedKey = tab => `pr-dash:${tab}-dismissed:v1`;
+  function loadDismissed(tab) {
+    const raw = localStorage.getItem(dismissedKey(tab));
     if (!raw) return {};
     try { const d = JSON.parse(raw); return d && typeof d === "object" ? d : {}; }
     catch { return {}; }
   }
-  let dismissed = loadDismissed();
+  const dismissed = { tracked: loadDismissed("tracked") };
 
-  function setDismissed(id, on) {
-    if (on) dismissed[id] = new Date().toISOString();
-    else delete dismissed[id];
-    localStorage.setItem(DISMISSED_KEY, JSON.stringify(dismissed));
+  function setDismissed(tab, id, on) {
+    const map = dismissed[tab];
+    if (on) map[id] = new Date().toISOString();
+    else delete map[id];
+    localStorage.setItem(dismissedKey(tab), JSON.stringify(map));
     if (!HIDDEN_SYNC_PORT) return;
-    fetch(`http://127.0.0.1:${HIDDEN_SYNC_PORT}/tracked`, {
+    fetch(`http://127.0.0.1:${HIDDEN_SYNC_PORT}/${tab}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        ops: [{ op: on ? "dismiss" : "restore", pr_id: id, dismissed_at: dismissed[id] || null }],
+        ops: [{ op: on ? "dismiss" : "restore", pr_id: id, dismissed_at: map[id] || null }],
       }),
     }).catch(() => {});
   }
@@ -1120,7 +1121,7 @@
   }
 
   function trackedPasses(t) {
-    if (dismissed[t.id]) return false;
+    if (dismissed.tracked[t.id]) return false;
     if (searchQuery && !searchQuery.split(/\s+/).every(
       q => !q || trackedHaystack(t).includes(q))) return false;
     const f = filters["tracked-state"];
@@ -1182,13 +1183,13 @@
   function renderTrackedList() {
     const visible = sortTracked(TRACKED.filter(trackedPasses));
     visibleTracked = visible;
-    const dismissedCount = TRACKED.filter(t => dismissed[t.id]).length;
+    const dismissedCount = TRACKED.filter(t => dismissed.tracked[t.id]).length;
     visibleCountEl.textContent = dismissedCount
       ? `${visible.length} / ${TRACKED.length}  ·  ${dismissedCount} dismissed`
       : `${visible.length} / ${TRACKED.length}`;
     if (totalCountEl) totalCountEl.textContent = "tracked";
     if (lookCountEl) {
-      const n = TRACKED.filter(t => !dismissed[t.id] && (t.since_last_look || []).length).length;
+      const n = TRACKED.filter(t => !dismissed.tracked[t.id] && (t.since_last_look || []).length).length;
       lookCountEl.textContent = n ? `${n} moved` : "";
       lookCountEl.title = n ? "Show only tracked PRs that moved since your last visit" : "";
     }
@@ -1240,7 +1241,7 @@
       });
       li.querySelector(".pr-hide").addEventListener("click", (e) => {
         e.stopPropagation();
-        setDismissed(t.id, true);
+        setDismissed("tracked", t.id, true);
         renderTrackedList();
         if (selectedTrackedId === t.id) {
           selectedTrackedId = null;
@@ -1441,7 +1442,7 @@
       </div>`;
     const btn = detailEl.querySelector(".tr-dismiss");
     if (btn) btn.addEventListener("click", () => {
-      setDismissed(t.id, true);
+      setDismissed("tracked", t.id, true);
       selectedTrackedId = null;
       renderTrackedList();
       renderTrackedDetail(null);
@@ -1451,7 +1452,7 @@
   function dismissSelectedTracked() {
     if (!selectedTrackedId) return;
     const idx = visibleTracked.findIndex(t => t.id === selectedTrackedId);
-    setDismissed(selectedTrackedId, true);
+    setDismissed("tracked", selectedTrackedId, true);
     renderTrackedList();
     const next = visibleTracked[Math.min(idx, visibleTracked.length - 1)];
     if (next) selectTracked(next.id);

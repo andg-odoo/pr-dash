@@ -421,7 +421,7 @@ def stats(items: list[dict]) -> dict:
 def load_tracked(cfg: Config, *, include_dismissed: bool = False) -> list[dict]:
     """Build the tracked list from the cache, read-only.
 
-    Like load_items, this deliberately skips commit_tracked_seen_baseline: an
+    Like load_items, this deliberately skips commit_tab_seen_baseline: an
     agent peeking must not consume the since-last-look deltas the dashboard is
     about to show the user.
     """

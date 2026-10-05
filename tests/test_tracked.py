@@ -41,7 +41,7 @@ def test_notification_seed_does_not_revive_dismissed(tmp_path):
     # an un-dismissing seed would resurrect every row right after it is cleared.
     conn = _conn(tmp_path)
     _add(conn, "odoo/odoo#1")
-    db.dismiss_tracked(conn, "odoo/odoo#1", "2026-08-02T00:00:00+00:00")
+    db.set_dismissed(conn, "tracked", "odoo/odoo#1", "2026-08-02T00:00:00+00:00")
     assert db.list_tracked(conn) == []
 
     _add(conn, "odoo/odoo#1", source="notif")
@@ -52,7 +52,7 @@ def test_notification_seed_does_not_revive_dismissed(tmp_path):
 def test_explicit_track_revives_dismissed(tmp_path):
     conn = _conn(tmp_path)
     _add(conn, "odoo/odoo#1")
-    db.dismiss_tracked(conn, "odoo/odoo#1", "2026-08-02T00:00:00+00:00")
+    db.set_dismissed(conn, "tracked", "odoo/odoo#1", "2026-08-02T00:00:00+00:00")
 
     _add(conn, "odoo/odoo#1", source="manual")
     assert [r["id"] for r in db.list_tracked(conn)] == ["odoo/odoo#1"]
@@ -65,11 +65,12 @@ def test_remove_tracked_cascades(tmp_path):
         {"comment_id": "c1", "kind": "issue", "author": "a", "created_at": "t",
          "body": "hi", "path": None, "state": None, "url": "u"},
     ])
-    db.upsert_tracked_seen(conn, "odoo/odoo#1", "OPEN", "sha", 1, "t")
+    db.upsert_tab_seen(conn, "tracked", {"pr_id": "odoo/odoo#1", "state": "OPEN", "head_sha": "sha",
+                                         "activity_count": 1, "seen_at": "t"})
 
     assert db.remove_tracked(conn, "odoo/odoo#1") is True
     assert db.list_tracked_comments(conn) == {}
-    assert db.list_tracked_seen(conn) == {}
+    assert db.list_tab_seen(conn, "tracked") == {}
     assert db.remove_tracked(conn, "odoo/odoo#1") is False
 
 
@@ -299,7 +300,7 @@ def test_build_tracked_payload_excludes_dismissed(tmp_path):
     conn = _conn(tmp_path)
     _add(conn, "odoo/odoo#1")
     _add(conn, "odoo/odoo#2")
-    db.dismiss_tracked(conn, "odoo/odoo#2", "2026-08-02T00:00:00+00:00")
+    db.set_dismissed(conn, "tracked", "odoo/odoo#2", "2026-08-02T00:00:00+00:00")
 
     items, _ = render.build_tracked_payload(conn)
     assert [i["id"] for i in items] == ["odoo/odoo#1"]
@@ -321,7 +322,7 @@ def test_tracked_seen_baseline_roundtrip(tmp_path):
 
     items, updates = render.build_tracked_payload(conn)
     assert items[0]["since_last_look"] == []          # first run, no baseline
-    render.commit_tracked_seen_baseline(conn, updates, "t")
+    render.commit_tab_seen_baseline(conn, "tracked", updates, "t")
 
     db.update_tracked_state(conn, "odoo/odoo#1", {"state": "MERGED", "head_sha": "s1"})
     items, _ = render.build_tracked_payload(conn)
@@ -434,7 +435,7 @@ def test_load_tracked_include_dismissed_flags_them(tmp_path):
     conn = _conn(tmp_path)
     _add(conn, "odoo/odoo#1")
     _add(conn, "odoo/odoo#2")
-    db.dismiss_tracked(conn, "odoo/odoo#2", "2026-08-02T00:00:00+00:00")
+    db.set_dismissed(conn, "tracked", "odoo/odoo#2", "2026-08-02T00:00:00+00:00")
     conn.close()
 
     cfg = SimpleNamespace(db_path=tmp_path / "t.db")

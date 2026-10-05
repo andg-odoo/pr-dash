@@ -660,8 +660,9 @@ def _make_handler(cfg: config.Config) -> type[BaseHTTPRequestHandler]:
             except (ValueError, AttributeError):
                 self._send_json(400, {"error": "invalid body"})
                 return
-            if path == "/tracked":
-                self._send_json(200, {"ok": True, "count": _apply_tracked_ops(cfg, ops)})
+            if path != "/hidden":
+                count = _apply_dismiss_ops(cfg, path[1:], ops)
+                self._send_json(200, {"ok": True, "count": count})
                 return
             mapping = hidden.apply_ops(cfg, ops)
             self._send_json(200, {"ok": True, "count": len(mapping)})
@@ -669,8 +670,8 @@ def _make_handler(cfg: config.Config) -> type[BaseHTTPRequestHandler]:
     return HiddenSyncHandler
 
 
-def _apply_tracked_ops(cfg: config.Config, ops: list) -> int:
-    """Write dashboard dismiss/restore ops through to the tracked table.
+def _apply_dismiss_ops(cfg: config.Config, tab: str, ops: list) -> int:
+    """Write dashboard dismiss/restore ops through to the `tab` table.
 
     Unlike hides (a JSON file), dismissals live in SQLite, so this opens its own
     short-lived connection - the handler runs on the listener thread and sqlite3
@@ -687,7 +688,7 @@ def _apply_tracked_ops(cfg: config.Config, ops: list) -> int:
                     continue
                 when = (op.get("dismissed_at") or derive.now_utc()) \
                     if kind == "dismiss" else None
-                db.dismiss_tracked(conn, pr_id, when)
+                db.set_dismissed(conn, tab, pr_id, when)
                 applied += 1
     finally:
         conn.close()

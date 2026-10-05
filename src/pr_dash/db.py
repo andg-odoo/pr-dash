@@ -962,13 +962,9 @@ def remove_tracked(conn: sqlite3.Connection, pr_id: str) -> bool:
     return conn.execute("DELETE FROM tracked WHERE id = ?", (pr_id,)).rowcount > 0
 
 
-def dismiss_tracked(conn: sqlite3.Connection, pr_id: str, when: str | None) -> None:
-    """Set (or clear, with when=None) the dismissal stamp on a tracked PR.
-
-    Dismissing keeps the row - it only drops out of the dashboard list - so a
-    PR you dismissed stays deduped against the next notification re-seed.
-    """
-    conn.execute("UPDATE tracked SET dismissed_at = ? WHERE id = ?", (when, pr_id))
+def set_dismissed(conn: sqlite3.Connection, tab: str, pr_id: str, when: str | None) -> None:
+    """Stamp (or clear, with when=None) a dismissal in `tab`, keeping the row for re-seed dedup."""
+    conn.execute(f"UPDATE {tab} SET dismissed_at = ? WHERE id = ?", (when, pr_id))
 
 
 def update_tracked_state(conn: sqlite3.Connection, pr_id: str, row: dict) -> None:
@@ -1017,20 +1013,12 @@ def list_tracked_comments(conn: sqlite3.Connection) -> dict[str, list[dict]]:
     return out
 
 
-def list_tracked_seen(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
-    return {r["pr_id"]: r for r in conn.execute("SELECT * FROM tracked_seen").fetchall()}
+def list_tab_seen(conn: sqlite3.Connection, tab: str) -> dict[str, sqlite3.Row]:
+    return {r["pr_id"]: r for r in conn.execute(f"SELECT * FROM {tab}_seen").fetchall()}
 
 
-def upsert_tracked_seen(conn: sqlite3.Connection, pr_id: str, state: str | None,
-                        head_sha: str | None, activity_count: int | None,
-                        seen_at: str) -> None:
-    _upsert(conn, "tracked_seen", {
-        "pr_id": pr_id,
-        "state": state,
-        "head_sha": head_sha,
-        "activity_count": activity_count,
-        "seen_at": seen_at,
-    }, ["pr_id"])
+def upsert_tab_seen(conn: sqlite3.Connection, tab: str, row: dict) -> None:
+    _upsert(conn, f"{tab}_seen", row, ["pr_id"])
 
 
 def comments_for(conn: sqlite3.Connection, pr_id: str) -> list[dict]:

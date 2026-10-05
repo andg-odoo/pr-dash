@@ -93,8 +93,8 @@ def _acquire_refresh_lock(cfg, *, wait: bool) -> int | None:
 def _render_from_cache(conn, cfg, *, offline=False):
     """Build the payload from cache and write the dashboard HTML, baking in the
     pruned server-side hidden map. Returns (payload, seen_updates,
-    tracked_seen_updates); the caller decides whether to advance either
-    since-last-look baseline."""
+    tab_seen_updates keyed by tab); the caller decides whether to advance the
+    since-last-look baselines."""
     payload, seen_updates = render.build_payload(
         conn, cfg.github_login, cfg.repos, cfg.thresholds.stale_review_days,
         command_templates=dataclasses.asdict(cfg.commands),
@@ -109,7 +109,7 @@ def _render_from_cache(conn, cfg, *, offline=False):
                   last_refresh=db.get_meta(conn, "last_refresh"),
                   hidden_map=hidden_map, hidden_sync_port=cfg.hidden_sync_port,
                   tracked=tracked)
-    return payload, seen_updates, tracked_seen
+    return payload, seen_updates, {"tracked": tracked_seen}
 
 
 def _load_config_or_exit(config_path):
@@ -332,7 +332,7 @@ def _refresh(cfg, *, no_open: bool, force: bool, offline: bool, cron: bool) -> N
             # Stamped only on a run that reached GitHub, so the header dates the data.
             db.set_meta(conn, "last_refresh", derive.now_utc())
 
-    payload, seen_updates, tracked_seen = _render_from_cache(conn, cfg, offline=offline)
+    payload, seen_updates, tab_seen = _render_from_cache(conn, cfg, offline=offline)
     if cron:
         # Nobody looked, so advancing the baseline would hide changes never seen.
         log.info("rendered %d PRs -> %s", len(payload), cfg.html_path)
@@ -340,7 +340,8 @@ def _refresh(cfg, *, no_open: bool, force: bool, offline: bool, cron: bool) -> N
     # Only now that the render succeeded do we advance the "last look" baseline,
     # so a render failure can't silently swallow the since-last-look deltas.
     render.commit_seen_baseline(conn, seen_updates, derive.now_utc())
-    render.commit_tracked_seen_baseline(conn, tracked_seen, derive.now_utc())
+    for tab, updates in tab_seen.items():
+        render.commit_tab_seen_baseline(conn, tab, updates, derive.now_utc())
     console.print(f"[green]Rendered {len(payload)} PRs → {cfg.html_path}[/green]")
 
     if not no_open:
@@ -449,7 +450,7 @@ def _fetch_tracked_state(conn, refs: list[tuple[str, int]]) -> int:
     number of rows updated."""
     if not refs:
         return 0
-    nodes = github.fetch_tracked_nodes(refs)
+    nodes = github.fetch_nodes(refs, github.TRACKED_NODE_FRAGMENT)
     now = derive.now_utc()
     with db.transaction(conn):
         for pr_id, node in nodes.items():
