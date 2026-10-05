@@ -319,8 +319,14 @@ def _refresh(cfg, *, no_open: bool, force: bool, offline: bool, cron: bool) -> N
     conn = db.connect(cfg.db_path)
 
     if not offline:
+        last_queue = db.get_meta(conn, "last_queue_refresh")
+        # Same minute of slack as the mine tab, a tick lands seconds short of the interval.
+        queue_due = force or not cron or not last_queue or derive.parse_iso(last_queue) <= (
+            datetime.now(UTC) - timedelta(minutes=cfg.thresholds.queue_interval_minutes - 1))
         try:
-            _run_refresh(conn, cfg, force=force, cron=cron)
+            if queue_due:
+                _run_refresh(conn, cfg, force=force, cron=cron)
+                db.set_meta(conn, "last_queue_refresh", derive.now_utc())
         except github.GithubError as e:
             if cron:
                 # Re-rendering would put an offline-bannered dashboard over a good one.

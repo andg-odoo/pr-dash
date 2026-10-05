@@ -14,6 +14,8 @@ DEFAULT_CONFIG_PATH = Path.home() / ".config" / "pr-dash" / "config.toml"
 @dataclass
 class Thresholds:
     staleness_minutes: int = 15
+    # Timer ticks come every 15 minutes for the mine tab, the review queue search stays hourly.
+    queue_interval_minutes: int = 60
     # Tracked PRs are a watch list, not the review queue, so they age slower.
     tracked_staleness_minutes: int = 360
     # Authored PRs replace watching GitHub by hand, so they follow the 15-minute timer.
@@ -263,6 +265,8 @@ github_login = "{login}"
 
 [thresholds]
 staleness_minutes = 15
+# Timer ticks search the review queue at most this often, manual refreshes always do.
+queue_interval_minutes = 60
 # Tracked PRs are watched, not queued, so a timer tick need not re-read all of them.
 tracked_staleness_minutes = 360
 # Authored PRs (the mine tab) and their Mergebot pages, read on every timer tick.

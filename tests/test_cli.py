@@ -558,6 +558,28 @@ def test_cron_renders_without_consuming_the_since_last_look_baseline(tmp_path):
     assert set(db.list_tab_seen(conn, "mine")) == {"odoo/odoo#2"}
 
 
+def test_timer_ticks_search_the_review_queue_hourly(tmp_path, monkeypatch):
+    from pr_dash import db
+    from pr_dash.config import Config
+
+    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    runs = []
+    monkeypatch.setattr(cli, "_run_refresh", lambda *a, **kw: runs.append(kw["cron"]))
+    monkeypatch.setattr(cli, "_run_tracked_refresh", lambda *a, **kw: None)
+    monkeypatch.setattr(cli, "_run_mine_refresh", lambda *a, **kw: None)
+    tick = dict(no_open=True, force=False, offline=False, cron=True)
+
+    cli._refresh(cfg, **tick)
+    cli._refresh(cfg, **tick)
+    cli._refresh(cfg, **{**tick, "cron": False})
+    assert runs == [True, False]
+
+    conn = db.connect(cfg.db_path)
+    db.set_meta(conn, "last_queue_refresh", "2026-01-01T00:00:00Z")
+    cli._refresh(cfg, **tick)
+    assert runs == [True, False, True]
+
+
 # --- _refresh_companions -----------------------------------------------------
 
 def _upgrade_pr(branch, *, number=900, sha="usha"):

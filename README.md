@@ -226,7 +226,8 @@ journalctl --user -u pr-dash                 # what the last runs did
 
 The timer runs every 15 minutes with `Persistent=true`, so a tick missed while
 the laptop slept runs on wake, and a fixed randomized delay keeps it off the
-quarter hour.
+quarter hour. Ticks search the review queue at most hourly
+(`queue_interval_minutes`), the mine tab every tick.
 
 ## Companion migration PRs
 
