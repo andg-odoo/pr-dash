@@ -616,7 +616,8 @@ def _mine_row(repo, number, branch, *, checks=(("ci/runbot", "SUCCESS"),), **ove
         **over,
     }
     row, _ = derive.mine_row_from_node(node, "2026-10-05T00:00:00+00:00")
-    return {**row, "id": f"{repo}#{number}", "repo": repo, "number": number, "url": "u"}
+    return {**row, "id": f"{repo}#{number}", "repo": repo, "number": number, "url": "u",
+            "dismissed_at": None}
 
 
 def _page(name):

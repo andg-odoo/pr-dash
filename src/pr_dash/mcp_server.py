@@ -300,8 +300,16 @@ def get_pr(ref: str) -> dict:
     CFL=merge conflict, OLD=stale request. Buckets S/M/L/XL = rough complexity.
     my_pending_review is true when you have an unsent review draft (get_comments
     shows its body). Output stays slim - no comment bodies here.
+
+    A ref naming no review-queue PR but one of your Authored PRs returns its
+    Branch set instead, as get_mine does but without the discussion.
     """
-    items = query.load_items(_get_cfg())
+    cfg = _get_cfg()
+    items = query.load_items(cfg)
+    authored = query.resolve_authored(cfg, items, ref)
+    if authored is not None:
+        members = [{k: v for k, v in m.items() if k != "discussion"} for m in authored["members"]]
+        return {**authored, "members": members}
     return query.detail(query.resolve_item(items, ref))
 
 
@@ -316,10 +324,15 @@ def get_comments(ref: str) -> dict:
     Bot authors (robodoo, fw-bot, *[bot]) carry bot: true so you can filter them.
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
+    A ref naming no review-queue PR but one of your Authored PRs returns its
+    Branch set instead, the same output as get_mine.
     """
     cfg = _get_cfg()
-    item = query.resolve_item(query.load_items(cfg), ref)
-    return query.get_comments(cfg, item)
+    items = query.load_items(cfg)
+    authored = query.resolve_authored(cfg, items, ref)
+    if authored is not None:
+        return authored
+    return query.get_comments(cfg, query.resolve_item(items, ref))
 
 
 @mcp.tool()
@@ -376,6 +389,55 @@ def get_tracked(ref: str) -> dict:
     cfg = _get_cfg()
     items = query.load_tracked(cfg, include_dismissed=True)
     return query.tracked_detail(query.resolve_tracked(items, ref))
+
+
+@mcp.tool()
+def list_mine(band: str | None = None, include_dismissed: bool = False) -> dict:
+    """List your Authored PRs as Branch sets - PRs sharing one head branch across
+    repos, one row per set, most recently active first.
+
+    Use this to answer "what needs doing on my PRs" instead of shelling out to gh.
+
+    band: only sets in this band ('open', 'done', ...), every band by default.
+    include_dismissed: dismissed members are excluded by default; True adds them
+    back carrying dismissed_at.
+
+    Each set carries key (the head branch), task, band and members. Members
+    carry repo, num, state, ci (green / red / pending) with ci_failing and
+    override (Mergebot Overrides), decision (GitHub review), r_plus, requested
+    people and teams, conflict, and mergebot_unknown when the Mergebot page could
+    not be read. Returns {cache_fetched_at, count, branch_sets}.
+    """
+    cfg = _get_cfg()
+    sets = query.load_mine(cfg, include_dismissed=include_dismissed)
+    if band is not None:
+        sets = [s for s in sets if s["band"] == band]
+    return {
+        "cache_fetched_at": query.cache_fetched_at(cfg),
+        "count": len(sets),
+        "branch_sets": sets,
+    }
+
+
+@mcp.tool()
+def get_mine(ref: str) -> dict:
+    """Full detail for the Branch set holding one of your Authored PRs: every
+    member with its body and merged discussion stream.
+
+    ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL,
+    naming any member of the set.
+
+    Discussion entries have the get_tracked shape: kind ('issue' | 'review' |
+    'thread'), review state, and thread path, thread_id and parent_id.
+    """
+    cfg = _get_cfg()
+    sets = query.load_mine(cfg, include_dismissed=True)
+    found = query.resolve_mine(sets, ref)
+    if found is None:
+        known = ", ".join(f"{m['repo'].split('/')[-1]}#{m['num']}"
+                          for s in sets[:20] for m in s["members"])
+        raise ValueError(f"No Authored PR matches {ref!r}. Authored: {known or '(none)'}")
+    return query.mine_detail(cfg, found)
 
 
 @mcp.tool()

@@ -1112,8 +1112,9 @@ def add_mine(conn: sqlite3.Connection, pr_id: str, repo: str, number: int, url: 
     ).rowcount > 0
 
 
-def list_mine(conn: sqlite3.Connection) -> list[dict]:
-    rows = [dict(r) for r in conn.execute("SELECT * FROM mine WHERE dismissed_at IS NULL")]
+def list_mine(conn: sqlite3.Connection, *, include_dismissed: bool = False) -> list[dict]:
+    where = "" if include_dismissed else " WHERE dismissed_at IS NULL"
+    rows = [dict(r) for r in conn.execute(f"SELECT * FROM mine{where}")]
     for row in rows:
         for col in _MINE_JSON_COLS:
             row[col] = json.loads(row[col])

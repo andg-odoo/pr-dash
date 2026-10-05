@@ -105,10 +105,7 @@ def _candidates(items: list[dict], limit: int = 20) -> str:
     return ", ".join(labels) if labels else "(cache is empty)"
 
 
-def resolve_item(items: list[dict], ref: str | int) -> dict:
-    """Resolve a PR reference to a single item, matching item id and every
-    member (so an enterprise number resolves to its odoo+enterprise pair).
-    Raises ValueError with candidates on no match or ambiguity."""
+def _matching_items(items: list[dict], ref: str | int) -> list[dict]:
     repo_full, repo_short, number = _parse_ref(ref)
     seen: set[str] = set()
     uniq: list[dict] = []
@@ -117,6 +114,15 @@ def resolve_item(items: list[dict], ref: str | int) -> dict:
             if it["id"] not in seen:
                 seen.add(it["id"])
                 uniq.append(it)
+    return uniq
+
+
+def resolve_item(items: list[dict], ref: str | int) -> dict:
+    """Resolve a PR reference to a single item, matching item id and every
+    member (so an enterprise number resolves to its odoo+enterprise pair).
+    Raises ValueError with candidates on no match or ambiguity."""
+    uniq = _matching_items(items, ref)
+    number = _parse_ref(ref)[2]
     if len(uniq) == 1:
         return uniq[0]
     if not uniq:
@@ -418,13 +424,54 @@ def stats(items: list[dict]) -> dict:
 
 # --- authored PRs ------------------------------------------------------------
 
-def load_mine(cfg: Config) -> list[dict]:
+def load_mine(cfg: Config, *, include_dismissed: bool = False) -> list[dict]:
     """Build the Branch sets from the cache, read-only, so no seen baseline moves."""
     conn = db.connect(cfg.db_path)
     try:
-        return derive.branch_sets(db.list_mine(conn), db.list_mine_mergebot(conn))
+        return derive.branch_sets(db.list_mine(conn, include_dismissed=include_dismissed),
+                                  db.list_mine_mergebot(conn))
     finally:
         conn.close()
+
+
+def resolve_mine(sets: list[dict], ref: str | int) -> dict | None:
+    """The Branch set holding the Authored PR `ref` names, None when no member matches."""
+    repo_full, repo_short, number = _parse_ref(ref)
+    found = {
+        s["key"]: s for s in sets for m in s["members"]
+        if m["num"] == number
+        and (repo_full is None or m["repo"] == repo_full)
+        and (repo_short is None or m["repo"].split("/")[-1] == repo_short)
+    }
+    if len(found) > 1:
+        opts = ", ".join(f"{m['repo']}#{m['num']}" for s in found.values()
+                         for m in s["members"] if m["num"] == number)
+        raise ValueError(f"{ref!r} is ambiguous - candidates: {opts}")
+    return next(iter(found.values()), None)
+
+
+def mine_detail(cfg: Config, branch_set: dict) -> dict:
+    """A Branch set with each member's body and merged discussion stream."""
+    conn = db.connect(cfg.db_path)
+    try:
+        bodies = {r["id"]: r["body"] for r in db.list_mine(conn, include_dismissed=True)}
+        comments = db.list_tab_comments(conn, "mine")
+    finally:
+        conn.close()
+    members = []
+    for m in branch_set["members"]:
+        pr_id = f"{m['repo']}#{m['num']}"
+        members.append({**m, "body": bodies.get(pr_id),
+                        "discussion": _discussion(comments.get(pr_id, []))})
+    return {**branch_set, "members": members}
+
+
+def resolve_authored(cfg: Config, items: list[dict], ref: str | int) -> dict | None:
+    """mine_detail of the Branch set `ref` names, None when it names a review-queue PR or none."""
+    if _matching_items(items, ref):
+        return None
+    found = resolve_mine(load_mine(cfg, include_dismissed=True), ref)
+    return found and mine_detail(cfg, found)
 
 
 # --- tracked PRs -------------------------------------------------------------
@@ -523,10 +570,14 @@ def tracked_detail(t: dict) -> dict:
     """
     out = summarize_tracked(t)
     out["body"] = t.get("body")
-    out["discussion"] = [
+    out["discussion"] = _discussion(t.get("comments") or [])
+    return out
+
+
+def _discussion(comments: list[dict]) -> list[dict]:
+    return [
         {**_comment_view(c), "kind": c.get("kind"),
          "thread_id": c.get("thread_id"), "parent_id": c.get("parent_id"),
          "path": c.get("path"), "state": c.get("state")}
-        for c in (t.get("comments") or [])
+        for c in comments
     ]
-    return out

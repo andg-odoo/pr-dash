@@ -357,10 +357,14 @@ Tools:
 - `stats()` - pending-queue and archived-history counts.
 - `list_tracked(state, include_dismissed)` - watched PRs (the `tracked` tab, not the review queue); `state` is `all` / `open` / `resolved`.
 - `get_tracked(ref)` - one watched PR in full, with its merged discussion stream (conversation comments, review submissions, inline threads).
+- `list_mine(band, include_dismissed)` - your Authored PRs as Branch sets (the `mine` tab); `band` is any band the tab shows (`open`, `done`, ...), all by default.
+- `get_mine(ref)` - the Branch set holding one Authored PR, every member with its body and merged discussion stream.
 - `refresh(force)` - re-fetch from GitHub (slow; network + AI), same as `pr-dash refresh`.
 
 `ref` accepts `12345`, `odoo#12345`, `odoo/odoo#12345`, or a PR URL; an
-enterprise number resolves to its odoo+enterprise pair. The same queries are
+enterprise number resolves to its odoo+enterprise pair. `get_pr` and
+`get_comments` fall back to your Authored PRs when no review-queue PR matches,
+returning what `get_mine` returns (`get_pr` without the discussion). The same queries are
 available as JSON from the shell for debugging: `pr-dash query list|show|diff|history|stats|tracked`.
 
 ## Notes

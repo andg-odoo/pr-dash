@@ -922,4 +922,5 @@ def _mine_member(row: dict, mergebot: dict | None) -> dict:
         "conflict": row["mergeable"] == "CONFLICTING",
         "updated_at": row["updated_at"],
         "mergebot_unknown": mergebot is None or mergebot["state"] == "unknown",
+        "dismissed_at": row["dismissed_at"],
     }

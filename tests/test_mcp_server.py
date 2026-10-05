@@ -467,3 +467,70 @@ def test_rerender_does_another_pass_for_a_write_that_lands_mid_render(
     mcp_server._rerender(cfg)
     assert len(rerenders) == 2
     assert mcp_server._covered(cfg) == 2
+
+
+# --- Authored PRs -------------------------------------------------------------
+
+def _seed_mine(conn, pr_id, branch, *, state="OPEN", comments=()):
+    from pr_dash import db
+
+    repo, number = pr_id.split("#")
+    db.add_mine(conn, pr_id, repo, int(number), f"https://github.com/{repo}/pull/{number}", "t")
+    db.update_tab_state(conn, "mine", pr_id, {
+        "title": f"PR {number}", "state": state, "head_branch": branch, "body": f"body {number}",
+        "updated_at": "2026-10-05T00:00:00Z",
+    })
+    db.replace_tab_comments(conn, "mine", pr_id, [
+        {"comment_id": f"c{i}", "kind": "issue", "author": author, "body": body,
+         "created_at": f"2026-10-0{i + 1}T00:00:00Z"}
+        for i, (author, body) in enumerate(comments)
+    ])
+
+
+def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, monkeypatch):
+    from pr_dash import db
+
+    ec = "master-l10n_ec-6396725-andg"
+
+    def seed(conn):
+        _seed_pr(conn, "odoo/odoo#1", "sha1")
+        _seed_mine(conn, "odoo/odoo#290109", ec, comments=[("jov-odoo", "Why here?")])
+        _seed_mine(conn, "odoo/enterprise#132695", ec)
+        _seed_mine(conn, "odoo/upgrade#11389", ec)
+        _seed_mine(conn, "odoo/enterprise#1", "master-other-andg", state="CLOSED")
+
+    cfg, mcp_server = _seeded_cfg(tmp_path, monkeypatch, seed)
+
+    listed = mcp_server.list_mine()
+    assert [(s["key"], s["band"], [(m["repo"], m["num"]) for m in s["members"]])
+            for s in listed["branch_sets"]] == [
+        (ec, "open",
+         [("odoo/enterprise", 132695), ("odoo/odoo", 290109), ("odoo/upgrade", 11389)]),
+        ("master-other-andg", "done", [("odoo/enterprise", 1)]),
+    ]
+    assert [s["key"] for s in mcp_server.list_mine(band="done")["branch_sets"]] == [
+        "master-other-andg"]
+
+    detail = mcp_server.get_mine("odoo#290109")
+    assert detail["task"] == "6396725"
+    odoo = next(m for m in detail["members"] if m["num"] == 290109)
+    assert odoo["body"] == "body 290109"
+    assert [(d["author"], d["kind"], d["body"]) for d in odoo["discussion"]] == [
+        ("jov-odoo", "issue", "Why here?")]
+    assert mcp_server.get_mine("https://github.com/odoo/upgrade/pull/11389")["key"] == ec
+
+    pr = mcp_server.get_pr("odoo/odoo#290109")
+    assert (pr["key"], ["discussion" in m for m in pr["members"]]) == (ec, [False] * 3)
+    assert mcp_server.get_comments("132695")["members"][1]["discussion"] == odoo["discussion"]
+    # A bare number in the review queue still resolves there, the Authored PR needs its repo.
+    assert mcp_server.get_pr("1")["id"] == "odoo/odoo#1"
+    assert mcp_server.get_comments("1")["id"] == "odoo/odoo#1"
+    assert mcp_server.get_pr("enterprise#1")["key"] == "master-other-andg"
+    with pytest.raises(ValueError, match="No PR matching"):
+        mcp_server.get_pr("99")
+
+    conn = db.connect(cfg.db_path)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM mine_seen").fetchone()[0] == 0
+    finally:
+        conn.close()
