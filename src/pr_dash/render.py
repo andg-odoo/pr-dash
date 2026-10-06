@@ -531,7 +531,7 @@ def build_tracked_payload(
     a successful render, so a render failure can't swallow the deltas.
     """
     rows = [dict(r) for r in db.list_tracked(conn, include_dismissed=include_dismissed)]
-    comments_by_pr = db.list_tab_comments(conn, "tracked")
+    comments_by_pr = db.list_discussions(conn, "tracked")
     seen_rows = db.list_tab_seen(conn, "tracked")
     first_run = not seen_rows
 
@@ -603,7 +603,7 @@ def build_mine_payload(
     """
     rows = db.list_mine(conn, include_dismissed=include_dismissed, dismissed_only=dismissed_only)
     by_id = {r["id"]: r for r in rows}
-    comments_by_pr = db.list_tab_comments(conn, "mine")
+    comments_by_pr = db.list_discussions(conn, "mine")
     sets = derive.branch_sets(
         rows, db.list_mine_mergebot(conn), streams=comments_by_pr, login=login,
         acks=db.list_mine_acks(conn), seen=db.list_tab_seen(conn, "mine"),

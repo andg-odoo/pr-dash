@@ -405,6 +405,30 @@ def test_tracking_by_hand_fills_rows_at_once_and_outlives_a_github_failure(w):
     assert db.get_tracked(w.conn, "odoo/odoo#1")["dismissed_at"] is None
 
 
+def test_a_pr_in_two_tabs_shares_one_discussion_swept_once_it_leaves_them_all(w):
+    mine = w.gh.add("odoo/odoo", 1, author="me", subscribed=True)
+    other = w.gh.add("odoo/odoo", 2, subscribed=True)
+    for pr in (mine, other):
+        w.gh.comment(pr.id, "jov-odoo", "Why here?")
+    w.refresh()
+
+    def stored():
+        return sorted(r["pr_id"] for r in w.conn.execute("SELECT pr_id FROM comment"))
+
+    tracked = {t["id"]: t for t in render.build_tracked_payload(w.conn)[0]}
+    [s] = w.mine()
+    assert stored() == [ODOO, "odoo/odoo#2"]
+    assert [g["entry"]["body"] for g in tracked[ODOO]["discussion"]] == [
+        g["entry"]["body"] for g in s["discussion"]] == ["Why here?"]
+
+    # Untracked, #2 is in no tab and #1 stays for Mine.
+    for pr in (mine, other):
+        pr.subscribed = False
+        db.remove_tracked(w.conn, pr.id)
+    w.refresh()
+    assert stored() == [ODOO]
+
+
 # --- diffs and the AI pass ---------------------------------------------------
 
 def test_an_oversized_file_is_stubbed_and_the_code_around_it_kept(w):

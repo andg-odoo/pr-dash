@@ -295,3 +295,21 @@ def test_migration_links_forward_ports_that_follow_their_source_dismissal(tmp_pa
     db.set_dismissed(conn, "mine", "odoo/odoo#2", "t")
     assert db.list_mine(conn) == []
     assert len(db.list_mine(conn, include_dismissed=True)) == 2
+
+
+def test_migration_stores_comments_once_and_refetches_a_v27_db(tmp_path):
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path, isolation_level=None)
+    conn.executescript(db.SCHEMA_SQL.replace(db.COMMENT_SCHEMA_SQL, "") + "".join(
+        f"CREATE TABLE {tab}_comment (pr_id TEXT REFERENCES {tab}(id), comment_id TEXT);"
+        f"INSERT INTO {tab} (id, repo, number, url, added_at, fetched_at) "
+        f"VALUES ('odoo/odoo#1', 'odoo/odoo', 1, 'u', 't', 't');"
+        f"INSERT INTO {tab}_comment VALUES ('odoo/odoo#1', 'c1');"
+        for tab in ("tracked", "mine")))
+    conn.execute("PRAGMA user_version = 27")
+    conn.close()
+
+    conn = db.connect(path)
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert "comment" in tables and {"tracked_comment", "mine_comment"}.isdisjoint(tables)
+    assert [r["fetched_at"] for r in [*db.list_tracked(conn), *db.list_mine(conn)]] == [None] * 2

@@ -457,7 +457,7 @@ def mine_detail(cfg: Config, branch_set: dict) -> dict:
     conn = db.connect(cfg.db_path)
     try:
         bodies = {r["id"]: r["body"] for r in db.list_mine(conn, include_dismissed=True)}
-        comments = db.list_tab_comments(conn, "mine")
+        comments = db.list_discussions(conn, "mine")
     finally:
         conn.close()
     members = []

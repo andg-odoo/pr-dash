@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 28
 
 # Cache-wide facts with nowhere better to live, such as when a refresh last reached GitHub.
 META_SCHEMA_SQL = """
@@ -92,21 +92,6 @@ CREATE TABLE tracked (
   fetched_at    TEXT
 );
 
-CREATE TABLE tracked_comment (
-  pr_id      TEXT NOT NULL REFERENCES tracked(id) ON DELETE CASCADE,
-  comment_id TEXT NOT NULL,
-  kind       TEXT NOT NULL,
-  thread_id  TEXT,
-  parent_id  TEXT,
-  author     TEXT,
-  created_at TEXT,
-  body       TEXT,
-  path       TEXT,
-  state      TEXT,
-  url        TEXT,
-  PRIMARY KEY (pr_id, comment_id)
-);
-
 CREATE TABLE tracked_seen (
   pr_id         TEXT PRIMARY KEY REFERENCES tracked(id) ON DELETE CASCADE,
   state          TEXT,
@@ -115,8 +100,6 @@ CREATE TABLE tracked_seen (
   activity_count INTEGER,
   seen_at        TEXT NOT NULL
 );
-
-CREATE INDEX idx_tracked_comment_pr ON tracked_comment(pr_id);
 """
 
 # Authored PRs, shaped like the tracked tables so the shared tab helpers work on both.
@@ -156,21 +139,6 @@ CREATE TABLE mine (
   fetched_at    TEXT
 );
 
-CREATE TABLE mine_comment (
-  pr_id      TEXT NOT NULL REFERENCES mine(id) ON DELETE CASCADE,
-  comment_id TEXT NOT NULL,
-  kind       TEXT NOT NULL,
-  thread_id  TEXT,
-  parent_id  TEXT,
-  author     TEXT,
-  created_at TEXT,
-  body       TEXT,
-  path       TEXT,
-  state      TEXT,
-  url        TEXT,
-  PRIMARY KEY (pr_id, comment_id)
-);
-
 CREATE TABLE mine_seen (
   pr_id          TEXT PRIMARY KEY REFERENCES mine(id) ON DELETE CASCADE,
   state          TEXT,
@@ -192,8 +160,24 @@ CREATE TABLE mine_mergebot (
   reason       TEXT,
   fetched_at   TEXT NOT NULL
 );
+"""
 
-CREATE INDEX idx_mine_comment_pr ON mine_comment(pr_id);
+# The Discussion of a PR in any tab, stored once, so no foreign key to a single tab.
+COMMENT_SCHEMA_SQL = """
+CREATE TABLE comment (
+  pr_id      TEXT NOT NULL,
+  comment_id TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  thread_id  TEXT,
+  parent_id  TEXT,
+  author     TEXT,
+  created_at TEXT,
+  body       TEXT,
+  path       TEXT,
+  state      TEXT,
+  url        TEXT,
+  PRIMARY KEY (pr_id, comment_id)
+);
 """
 
 # A Branch set is keyed by head branch, so its Acknowledge outlives any one member row.
@@ -337,7 +321,7 @@ CREATE INDEX idx_pr_reviewer_pr ON pr_reviewer(pr_id);
 CREATE INDEX idx_pr_thread_pr ON pr_thread(pr_id);
 CREATE INDEX idx_pr_comment_pr ON pr_comment(pr_id);
 """ + TRACKED_SCHEMA_SQL + COMPANION_SCHEMA_SQL + AI_ATTEMPT_SCHEMA_SQL + META_SCHEMA_SQL + MINE_SCHEMA_SQL \
-    + MINE_ACK_SCHEMA_SQL + MINE_FW_SCHEMA_SQL
+    + MINE_ACK_SCHEMA_SQL + MINE_FW_SCHEMA_SQL + COMMENT_SCHEMA_SQL
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
@@ -504,16 +488,6 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # Force a re-fetch of every tracked row so the new counts get populated
         # rather than sitting at 0 until each PR happens to go stale.
         conn.execute("UPDATE tracked SET fetched_at = NULL")
-    if current < 17:
-        # Thread comments now nest under the review that raised them, which
-        # needs the review id (parent_id) and the thread they belong to.
-        cols = {
-            r[1] for r in conn.execute("PRAGMA table_info(tracked_comment)").fetchall()
-        }
-        for col in ("thread_id", "parent_id"):
-            if col not in cols:
-                conn.execute(f"ALTER TABLE tracked_comment ADD COLUMN {col} TEXT")
-        conn.execute("UPDATE tracked SET fetched_at = NULL")
     if current < 18:
         # A single summed activity_count reads as a meaningless "91 discussion";
         # the row shows the parts, so they have to be stored separately.
@@ -608,6 +582,19 @@ def _migrate(conn: sqlite3.Connection) -> None:
             cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
             if "sibling_head_sha" in cols:
                 conn.execute(f"ALTER TABLE {table} RENAME COLUMN sibling_head_sha TO context_heads")
+    if current < 28:
+        conn.execute("DROP TABLE IF EXISTS tracked_comment")
+        conn.execute("DROP TABLE IF EXISTS mine_comment")
+        tables = {
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'",
+            ).fetchall()
+        }
+        if "comment" not in tables:
+            conn.executescript(COMMENT_SCHEMA_SQL)
+        # The dropped rows come back on the next sync, every tab refetching.
+        conn.execute("UPDATE tracked SET fetched_at = NULL")
+        conn.execute("UPDATE mine SET fetched_at = NULL")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -1133,29 +1120,35 @@ def list_tracked(conn: sqlite3.Connection, *,
     ).fetchall()
 
 
-_TAB_COMMENT_COLS = ["comment_id", "kind", "thread_id", "parent_id", "author",
-                     "created_at", "body", "path", "state", "url"]
+_DISCUSSION_COLS = ["comment_id", "kind", "thread_id", "parent_id", "author",
+                    "created_at", "body", "path", "state", "url"]
 
 
-def replace_tab_comments(conn: sqlite3.Connection, tab: str, pr_id: str,
-                         comments: list[dict]) -> None:
-    conn.execute(f"DELETE FROM {tab}_comment WHERE pr_id = ?", (pr_id,))
+def replace_discussion(conn: sqlite3.Connection, pr_id: str, stream: list[dict]) -> None:
+    conn.execute("DELETE FROM comment WHERE pr_id = ?", (pr_id,))
     conn.executemany(
-        f"INSERT INTO {tab}_comment (pr_id, {', '.join(_TAB_COMMENT_COLS)}) "
-        f"VALUES (?, {', '.join('?' for _ in _TAB_COMMENT_COLS)})",
-        [(pr_id, *(c.get(col) for col in _TAB_COMMENT_COLS)) for c in comments],
+        f"INSERT INTO comment (pr_id, {', '.join(_DISCUSSION_COLS)}) "
+        f"VALUES (?, {', '.join('?' for _ in _DISCUSSION_COLS)})",
+        [(pr_id, *(c.get(col) for col in _DISCUSSION_COLS)) for c in stream],
     )
 
 
-def list_tab_comments(conn: sqlite3.Connection, tab: str) -> dict[str, list[dict]]:
+def list_discussions(conn: sqlite3.Connection, tab: str) -> dict[str, list[dict]]:
+    """The Discussion stream of every PR in the `tab` table, keyed by PR id."""
     rows = conn.execute(
-        f"SELECT pr_id, {', '.join(_TAB_COMMENT_COLS)} "
-        f"FROM {tab}_comment ORDER BY pr_id, created_at",
+        f"SELECT pr_id, {', '.join(_DISCUSSION_COLS)} FROM comment "
+        f"WHERE pr_id IN (SELECT id FROM {tab}) ORDER BY pr_id, created_at",
     ).fetchall()
     out: dict[str, list[dict]] = {}
     for r in rows:
         out.setdefault(r["pr_id"], []).append(dict(r))
     return out
+
+
+def sweep_discussions(conn: sqlite3.Connection) -> None:
+    """Delete the comments of PRs in none of the Review queue, Tracked and Mine tabs."""
+    conn.execute("DELETE FROM comment WHERE pr_id NOT IN "
+                 "(SELECT id FROM pr UNION SELECT id FROM tracked UNION SELECT id FROM mine)")
 
 
 def add_mine(conn: sqlite3.Connection, pr_id: str, repo: str, number: int, url: str,

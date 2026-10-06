@@ -63,15 +63,10 @@ def test_explicit_track_revives_dismissed(tmp_path):
 def test_remove_tracked_cascades(tmp_path):
     conn = _conn(tmp_path)
     _add(conn, "odoo/odoo#1")
-    db.replace_tab_comments(conn, "tracked", "odoo/odoo#1", [
-        {"comment_id": "c1", "kind": "issue", "author": "a", "created_at": "t",
-         "body": "hi", "path": None, "state": None, "url": "u"},
-    ])
     db.upsert_tab_seen(conn, "tracked", {"pr_id": "odoo/odoo#1", "state": "OPEN", "head_sha": "sha",
                                          "activity_count": 1, "seen_at": "t"})
 
     assert db.remove_tracked(conn, "odoo/odoo#1") is True
-    assert db.list_tab_comments(conn, "tracked") == {}
     assert db.list_tab_seen(conn, "tracked") == {}
     assert db.remove_tracked(conn, "odoo/odoo#1") is False
 
@@ -322,7 +317,7 @@ def _mine(conn, pr_id, branch, updated, page=None, **node):
          "headRefOid": "s", "createdAt": "2026-09-01T00:00:00Z", "updatedAt": updated,
          **node}, updated)
     db.update_tab_state(conn, "mine", pr_id, row)
-    db.replace_tab_comments(conn, "mine", pr_id, comments)
+    db.replace_discussion(conn, pr_id, comments)
     if page:
         db.upsert_mine_mergebot(conn, pr_id, dataclasses.asdict(page), "t")
 
@@ -396,7 +391,7 @@ def test_tracked_and_mine_payloads_ship_one_discussion_tree(tmp_path):
                 said("clbr-odoo", "2026-10-01T00:00:00Z", "t3a", "R1")]}}]},
     }
     _add(conn, "odoo/odoo#1")
-    db.replace_tab_comments(conn, "tracked", "odoo/odoo#1", derive.discussion_stream(node))
+    db.replace_discussion(conn, "odoo/odoo#1", derive.discussion_stream(node))
     _mine(conn, "odoo/odoo#1", "master-x-andg", "2026-10-04T00:00:00Z", **node)
 
     def shape(tree):

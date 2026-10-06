@@ -94,6 +94,7 @@ class Sync:
             db.set_meta(self.conn, "last_queue_refresh", self._stamp())
         self._refresh_tracked(report, force=force)
         self._refresh_mine(report, force=force)
+        db.sweep_discussions(self.conn)
         # Stamped only on a run that reached GitHub, so the header dates the data.
         db.set_meta(self.conn, "last_refresh", self._stamp())
         log.debug("refresh: %s", report)
@@ -233,7 +234,7 @@ class Sync:
             for pr_id, node in nodes.items():
                 row, comments = derive.tracked_row_from_node(node, now)
                 db.update_tab_state(self.conn, "tracked", pr_id, row)
-                db.replace_tab_comments(self.conn, "tracked", pr_id, comments)
+                db.replace_discussion(self.conn, pr_id, comments)
         return len(nodes)
 
     def _refresh_mine(self, report: RefreshReport, *, force: bool) -> None:
@@ -381,7 +382,7 @@ class Sync:
             added += db.add_mine(self.conn, pr_id, repo, int(number), node["url"], now)
             row, comments = derive.mine_row_from_node(node, now)
             db.update_tab_state(self.conn, "mine", pr_id, row)
-            db.replace_tab_comments(self.conn, "mine", pr_id, comments)
+            db.replace_discussion(self.conn, pr_id, comments)
         for fw_id, source in links.items():
             db.link_mine_forward_port(self.conn, fw_id, source)
         return added

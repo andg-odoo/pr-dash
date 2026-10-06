@@ -499,7 +499,7 @@ def _seed_mine(conn, pr_id, branch, *, state="OPEN", comments=()):
         "title": f"PR {number}", "state": state, "head_branch": branch, "body": f"body {number}",
         "updated_at": "2026-10-05T00:00:00Z",
     })
-    db.replace_tab_comments(conn, "mine", pr_id, [
+    db.replace_discussion(conn, pr_id, [
         {"comment_id": f"c{i}", "kind": "issue", "author": author, "body": body,
          "created_at": f"2026-10-0{i + 1}T00:00:00Z"}
         for i, (author, body) in enumerate(comments)
