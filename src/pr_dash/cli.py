@@ -519,6 +519,55 @@ def _run_tracked_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
                       f"({len(rows)} total)", "dim")
 
 
+def _fetch_authored(refs: list[tuple[str, int]], known: list[dict], progress, task, *,
+                    chunk_size: int = 50) -> tuple[dict[str, dict], dict[str, str]]:
+    """Fetch Authored PR nodes and the Forward-ports confirmed against them, as (nodes, links)."""
+    nodes = github.fetch_nodes(refs, github.MINE_NODE_FRAGMENT, chunk_size=chunk_size)
+    # GitHub refuses author:fw-bot searches, so Forward-ports are found from their source.
+    candidates = {c for node in nodes.values() for c in derive.forward_port_candidates(node)}
+    candidates -= nodes.keys() | {r["id"] for r in known}
+    if candidates:
+        progress.update(task, description=f"Checking {len(candidates)} forward-ports...")
+        fw_refs = (c.rpartition("#") for c in sorted(candidates))
+        fw_nodes = github.fetch_nodes([(repo, int(n)) for repo, _, n in fw_refs],
+                                      github.MINE_NODE_FRAGMENT, chunk_size=chunk_size)
+    else:
+        fw_nodes = {}
+    sources = nodes.keys() - {r["id"] for r in known if r["source_id"]}
+    links = {}
+    for fw_id, node in fw_nodes.items():
+        # A Forward-port of a Forward-port names every ancestor, its Source PR among them.
+        source = next((a for a in derive.forward_port_ancestors(node["body"]) if a in sources),
+                      None)
+        if source:
+            links[fw_id] = source
+            nodes[fw_id] = node
+    return nodes, links
+
+
+def _store_authored(conn, nodes: dict[str, dict], links: dict[str, str], now: str) -> int:
+    """Write fetched Authored PRs and their Forward-port links, returning how many are new."""
+    added = 0
+    for pr_id, node in nodes.items():
+        repo, _, number = pr_id.rpartition("#")
+        added += db.add_mine(conn, pr_id, repo, int(number), node["url"], now)
+        row, comments = derive.mine_row_from_node(node, now)
+        db.update_tab_state(conn, "mine", pr_id, row)
+        db.replace_tab_comments(conn, "mine", pr_id, comments)
+    for fw_id, source in links.items():
+        db.link_mine_forward_port(conn, fw_id, source)
+    return added
+
+
+def _read_mergebot(pr_ids: list[str]) -> dict[str, mergebot.MergebotState]:
+    """Read the Mergebot page of each `owner/repo#n` id."""
+    refs = [pr_id.rpartition("#") for pr_id in pr_ids]
+    # A page takes about a second, a few in flight keep the tick short without loading the bot.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        pages = pool.map(lambda ref: mergebot.fetch(ref[0], int(ref[2])), refs)
+        return dict(zip(pr_ids, pages, strict=True))
+
+
 def _run_mine_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
     """Refresh the open and the undismissed Authored PRs, and their Mergebot pages."""
     known = db.list_mine(conn)
@@ -535,53 +584,22 @@ def _run_mine_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
             # Known PRs that left the open search are still fetched, so they can turn Done.
             refs = list(dict.fromkeys([*refs, *((r["repo"], r["number"]) for r in known)]))
             progress.update(task, description=f"Fetching {len(refs)} authored PRs...")
-            nodes = github.fetch_nodes(refs, github.MINE_NODE_FRAGMENT)
-            # GitHub refuses author:fw-bot searches, so Forward-ports are found from their source.
-            candidates = {c for node in nodes.values()
-                          for c in derive.forward_port_candidates(node)} - nodes.keys()
-            if candidates:
-                progress.update(task, description=f"Checking {len(candidates)} forward-ports...")
-                fw_refs = (c.rpartition("#") for c in sorted(candidates))
-                fw_nodes = github.fetch_nodes([(repo, int(n)) for repo, _, n in fw_refs],
-                                              github.MINE_NODE_FRAGMENT)
-            else:
-                fw_nodes = {}
+            nodes, links = _fetch_authored(refs, known, progress, task)
         except github.GithubError as e:
             _notify(cron, f"Authored PR refresh failed: {e}", "yellow")
             return
-        sources = nodes.keys() - {r["id"] for r in known if r["source_id"]}
-        links = {}
-        for fw_id, node in fw_nodes.items():
-            # A Forward-port of a Forward-port names every ancestor, its Source PR among them.
-            source = next((a for a in derive.forward_port_ancestors(node["body"]) if a in sources),
-                          None)
-            if source:
-                links[fw_id] = source
-                nodes[fw_id] = node
-        now = derive.now_utc()
-        added = 0
         with db.transaction(conn):
-            for pr_id, node in nodes.items():
-                repo, _, number = pr_id.rpartition("#")
-                added += db.add_mine(conn, pr_id, repo, int(number), node["url"], now)
-                row, comments = derive.mine_row_from_node(node, now)
-                db.update_tab_state(conn, "mine", pr_id, row)
-                db.replace_tab_comments(conn, "mine", pr_id, comments)
-            for fw_id, source in links.items():
-                db.link_mine_forward_port(conn, fw_id, source)
+            added = _store_authored(conn, nodes, links, derive.now_utc())
 
         stored = db.list_mine_mergebot(conn)
         # A resolved PR's final Mergebot read cannot change, so it is not fetched again.
         unread = [
-            r for r in db.list_mine(conn)
+            r["id"] for r in db.list_mine(conn)
             if r["state"] == "OPEN"
             or stored.get(r["id"], {}).get("state") not in ("merged", "closed", "unmanaged")
         ]
         progress.update(task, description=f"Reading {len(unread)} Mergebot pages...")
-        # A page takes about a second, a few in flight keep the tick short without loading the bot.
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            pages = pool.map(lambda r: mergebot.fetch(r["repo"], r["number"]), unread)
-            reads = {r["id"]: page for r, page in zip(unread, pages, strict=True)}
+        reads = _read_mergebot(unread)
         with db.transaction(conn):
             for pr_id, state in reads.items():
                 db.upsert_mine_mergebot(conn, pr_id, dataclasses.asdict(state), derive.now_utc())
@@ -590,6 +608,67 @@ def _run_mine_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
 
     _notify(cron, f"mine: +{added} new, {len(nodes)} refreshed, "
                   f"{len(reads)} Mergebot pages read", "dim")
+
+
+@cli.command("import-history")
+@click.option("--config", "config_path", type=click.Path(path_type=Path))
+def import_history(config_path):
+    """Import every closed Authored PR once, dismissing the Branch sets already resolved."""
+    cfg = _load_config_or_exit(config_path)
+    # Run by hand, as minutes of fetching on a timer tick would hold the lock over later ticks.
+    lock_fd = _acquire_refresh_lock(cfg, wait=True)
+    try:
+        conn = db.connect(cfg.db_path)
+        if db.get_meta(conn, "mine_history_imported"):
+            console.print("[yellow]History already imported; nothing to do.[/yellow]")
+            return
+        try:
+            _import_mine_history(conn, cfg)
+        except github.GithubError as e:
+            console.print(f"[red]GitHub error: {e}[/red]")
+            console.print("[yellow]Nothing was stored, run import-history again.[/yellow]")
+            sys.exit(1)
+        payload, _, _ = _render_from_cache(conn, cfg, offline=False)
+        console.print(f"[green]Re-rendered {len(payload)} PRs → {cfg.html_path}[/green]")
+    finally:
+        os.close(lock_fd)
+
+
+def _import_mine_history(conn, cfg) -> None:
+    """Fetch the closed Authored PRs not in Mine yet, then store them in one transaction."""
+    known = db.list_mine(conn, include_dismissed=True)
+    known_ids = {r["id"] for r in known}
+    with _progress(False) as progress:
+        task = progress.add_task("Searching for closed authored PRs...", total=None)
+        refs = [(repo, n) for repo, n in github.search_authored_closed(cfg.github_login)
+                if f"{repo}#{n}" not in known_ids]
+        progress.update(task, description=f"Fetching {len(refs)} closed authored PRs...")
+        # A closed PR carries its whole discussion, and 50 of them overran GitHub's 10 s limit.
+        nodes, links = _fetch_authored(refs, known, progress, task, chunk_size=10)
+        progress.update(task, description=f"Reading {len(nodes)} Mergebot pages...")
+        reads = _read_mergebot(list(nodes))
+
+    now = derive.now_utc()
+    with db.transaction(conn):
+        _store_authored(conn, nodes, links, now)
+        for pr_id, state in reads.items():
+            db.upsert_mine_mergebot(conn, pr_id, dataclasses.asdict(state), now)
+        sets, _ = render.build_mine_payload(conn, cfg.github_login)
+        imported = [s for s in sets if not any(m["id"] in known_ids for m in s["members"])]
+        # A Chain with an open Forward-port is not Done, so its set stays visible.
+        resolved = [s for s in imported if s["band"] == "done"]
+        for s in resolved:
+            for m in s["members"]:
+                db.set_dismissed(conn, "mine", m["id"], now)
+        db.set_meta(conn, "mine_history_imported", now)
+
+    unread = sum(state.state == "unknown" for state in reads.values())
+    console.print(
+        f"[green]Imported {len(nodes) - len(links)} closed PRs and {len(links)} "
+        f"Forward-ports.[/green] {len(resolved)} resolved Branch sets dismissed, "
+        f"{len(imported) - len(resolved)} left open"
+        + (f", {unread} Mergebot pages unread." if unread else "."),
+    )
 
 
 @cli.command()

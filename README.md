@@ -184,6 +184,7 @@ pr-dash --force          ignore the staleness window, re-fetch everything
 pr-dash --offline        render from cache only (no network)
 pr-dash backfill         one-time import of historical reviews (KPI history)
 pr-dash backfill --since 2025-01-01   limit backfill to a recent window
+pr-dash import-history   one-time import of your closed Authored PRs, resolved Branch sets dismissed
 pr-dash init             write a default config
 pr-dash track REF...     watch a PR in the tracked tab (owner/repo#123 or a PR URL)
 pr-dash untrack REF...   stop watching it

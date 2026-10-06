@@ -732,7 +732,7 @@ def test_mine_refresh_keeps_resolved_members_and_stops_reading_their_final_page(
     pages = {"odoo/odoo": "blocked", "odoo/upgrade": "unknown"}
     reads = []
     monkeypatch.setattr(github, "search_authored_open", lambda login: gh["open"])
-    monkeypatch.setattr(github, "fetch_nodes", lambda refs, fragment: {
+    monkeypatch.setattr(github, "fetch_nodes", lambda refs, fragment, **kw: {
         f"{r}#{n}": _mine_node(r, n, gh["state"]) for r, n in refs})
     monkeypatch.setattr(mergebot, "fetch", lambda repo, n: reads.append(repo)
                         or mergebot.MergebotState(pages[repo]))
@@ -789,7 +789,7 @@ def test_mine_refresh_hangs_confirmed_forward_ports_under_their_source(tmp_path,
     }
     fetched = []
     monkeypatch.setattr(github, "search_authored_open", lambda login: [("odoo/odoo", 290657)])
-    monkeypatch.setattr(github, "fetch_nodes", lambda refs, fragment: fetched.append(
+    monkeypatch.setattr(github, "fetch_nodes", lambda refs, fragment, **kw: fetched.append(
         sorted(n for _, n in refs)) or {f"{r}#{n}": nodes[f"{r}#{n}"] for r, n in refs})
     monkeypatch.setattr(mergebot, "fetch", lambda repo, n: mergebot.MergebotState(
         "blocked" if n == 291981 else "merged"))
@@ -810,3 +810,90 @@ def test_mine_refresh_hangs_confirmed_forward_ports_under_their_source(tmp_path,
     fetched.clear()
     cli._run_mine_refresh(conn, cfg, force=True)
     assert fetched[0] == [290657, 291857, 291981]
+
+
+def _history_cfg(tmp_path):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        '[user]\ngithub_login = "andg-odoo"\n\n[repos]\n"odoo/odoo" = "/tmp/odoo"\n'
+        f'\n[paths]\ncache_dir = "{tmp_path}"\n',
+    )
+    return config_path
+
+
+def test_import_history_dismisses_resolved_sets_once(tmp_path, monkeypatch):
+    config_path = _history_cfg(tmp_path)
+    nodes = {
+        "odoo/odoo#100": {**_mine_node("odoo/odoo", 100, "OPEN"), "headRefName": "master-live"},
+        "odoo/odoo#10": {**_mine_node("odoo/odoo", 10, "CLOSED"), "headRefName": "19.0-old"},
+        "odoo/odoo#290657": {**_mine_node("odoo/odoo", 290657, "CLOSED"),
+                             "headRefName": "saas-19.1-arca",
+                             "crossReferences": {"nodes": [_xref("odoo/odoo", 291981, "fw-bot")]}},
+        "odoo/odoo#291981": {**_mine_node("odoo/odoo", 291981, "OPEN"), "baseRefName": "master",
+                             "body": "Forward-Port-Of: odoo/odoo#290657"},
+    }
+    fetched = []
+    monkeypatch.setattr(github, "search_authored_open", lambda login: [("odoo/odoo", 100)])
+    monkeypatch.setattr(github, "search_authored_closed",
+                        lambda login: [("odoo/odoo", 10), ("odoo/odoo", 290657)])
+    monkeypatch.setattr(github, "fetch_nodes", lambda refs, fragment, **kw: fetched.extend(refs) or {
+        f"{r}#{n}": nodes[f"{r}#{n}"] for r, n in refs})
+    monkeypatch.setattr(mergebot, "fetch", lambda repo, n: mergebot.MergebotState(
+        "blocked" if nodes[f"{repo}#{n}"]["state"] == "OPEN" else "merged"))
+    conn = db.connect(config.load(config_path).db_path)
+    cli._run_mine_refresh(conn, config.load(config_path), force=True)
+
+    def run():
+        return CliRunner().invoke(cli.cli, ["import-history", "--config", str(config_path)])
+
+    def mine(*flags):
+        out = json.loads(CliRunner().invoke(
+            cli.cli, ["query", "mine", *flags, "--config", str(config_path)]).output)
+        return [(s["key"], s["band"]) for s in out["branch_sets"]]
+
+    def snapshot():
+        return [tuple(r) for r in conn.execute(
+            "SELECT id, dismissed_at, fetched_at FROM mine ORDER BY id")]
+
+    assert run().exit_code == 0
+    # The Chain with an open Forward-port stays visible, the pre-existing open set is untouched.
+    assert mine() == [("master-live", "needs"), ("saas-19.1-arca", "open")]
+    assert mine("--include-dismissed") == [
+        ("master-live", "needs"), ("saas-19.1-arca", "open"), ("19.0-old", "done")]
+
+    before, fetched[:] = snapshot(), []
+    result = run()
+    assert (result.exit_code, "already imported" in result.output) == (0, True)
+    assert (snapshot(), fetched) == (before, [])
+
+
+def test_import_history_failure_stores_nothing_and_can_rerun(tmp_path, monkeypatch):
+    config_path = _history_cfg(tmp_path)
+    monkeypatch.setattr(github, "search_authored_closed", lambda login: [("odoo/odoo", 10)])
+    monkeypatch.setattr(mergebot, "fetch", lambda repo, n: mergebot.MergebotState("merged"))
+
+    source = {**_mine_node("odoo/odoo", 10, "CLOSED"),
+              "crossReferences": {"nodes": [_xref("odoo/odoo", 11, "fw-bot")]}}
+    fw = {**_mine_node("odoo/odoo", 11, "CLOSED"), "body": "Forward-Port-Of: odoo/odoo#10"}
+
+    def fail_on_forward_ports(refs, fragment, **kw):
+        if refs == [("odoo/odoo", 11)]:
+            msg = "HTTP 502"
+            raise github.GithubError(msg)
+        return {"odoo/odoo#10": source}
+
+    # The source batch succeeds and the Forward-port batch fails, so a partial write would show.
+    monkeypatch.setattr(github, "fetch_nodes", fail_on_forward_ports)
+    result = CliRunner().invoke(cli.cli, ["import-history", "--config", str(config_path)])
+    conn = db.connect(config.load(config_path).db_path)
+    assert (result.exit_code, "run import-history again" in result.output) == (1, True)
+    assert (db.list_mine(conn, include_dismissed=True),
+            db.get_meta(conn, "mine_history_imported")) == ([], None)
+
+    monkeypatch.setattr(github, "fetch_nodes", lambda refs, fragment, **kw: {
+        f"{r}#{n}": {10: source, 11: fw}[n] for r, n in refs})
+    assert CliRunner().invoke(
+        cli.cli, ["import-history", "--config", str(config_path)]).exit_code == 0
+    assert [(r["id"], r["source_id"], r["dismissed_at"] is not None)
+            for r in db.list_mine(conn, include_dismissed=True)] == [
+        ("odoo/odoo#10", None, True), ("odoo/odoo#11", "odoo/odoo#10", False)]

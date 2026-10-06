@@ -213,7 +213,10 @@ def _gh_once(args: list[str], *, input: str | None = None, timeout: int = 60,
             capture_output=True, text=True, timeout=timeout,
             check=not allow_failure, input=input,
         )
-        if allow_failure and result.returncode != 0 and not result.stdout.strip():
+        # A gateway error comes back as an HTML body, which is no partial response to keep.
+        if allow_failure and result.returncode != 0 and (
+                not result.stdout.strip()
+                or any(p in result.stderr.lower() for p in RETRYABLE_ERRORS)):
             raise subprocess.CalledProcessError(
                 result.returncode, ["gh", *args], result.stdout, result.stderr,
             )
@@ -662,6 +665,7 @@ fragment MineFields on PullRequest {{
 AUTHORED_SEARCH_QUERY = """
 query($q: String!, $cursor: String) {
   search(query: $q, type: ISSUE, first: 50, after: $cursor) {
+    issueCount
     pageInfo { hasNextPage endCursor }
     nodes { ... on PullRequest { number repository { nameWithOwner } } }
   }
@@ -669,17 +673,30 @@ query($q: String!, $cursor: String) {
 """
 
 
-def search_authored_open(login: str) -> list[tuple[str, int]]:
-    """Return (repo, number) of every open PR `login` authored, across all repos."""
-    q = f"is:open is:pr author:{login} archived:false"
+def _search_authored(q: str) -> tuple[list[tuple[str, int]], int]:
+    """Return (repo, number) of every PR search `q` matches, and the total GitHub counted."""
     refs: list[tuple[str, int]] = []
     cursor = None
     while True:
         search = _graphql(AUTHORED_SEARCH_QUERY, {"q": q, "cursor": cursor})["search"]
         refs.extend((n["repository"]["nameWithOwner"], n["number"]) for n in search["nodes"] if n)
         if not search["pageInfo"]["hasNextPage"]:
-            return refs
+            return refs, search["issueCount"]
         cursor = search["pageInfo"]["endCursor"]
+
+
+def search_authored_open(login: str) -> list[tuple[str, int]]:
+    """Return (repo, number) of every open PR `login` authored, across all repos."""
+    return _search_authored(f"is:open is:pr author:{login} archived:false")[0]
+
+
+def search_authored_closed(login: str) -> list[tuple[str, int]]:
+    """Return (repo, number) of every closed or merged PR `login` authored, across all repos."""
+    refs, total = _search_authored(f"is:closed is:pr author:{login}")
+    if len(refs) < total:
+        # Search serves at most 1000 results, a longer history needs the query split by date.
+        raise GithubError(f"the search returned {len(refs)} of {total} closed PRs")
+    return refs
 
 
 def list_manual_subscriptions() -> list[dict]:
