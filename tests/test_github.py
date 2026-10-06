@@ -82,3 +82,26 @@ def test_graphql_partial_turns_a_truncated_body_into_a_github_error(monkeypatch)
 
     with pytest.raises(github.GithubError, match="non-JSON"):
         github._graphql_partial("query {}", {})
+
+
+def _page(nodes, cursor=None):
+    return {"totalCount": 0, "nodes": nodes,
+            "pageInfo": {"hasNextPage": cursor is not None, "endCursor": cursor}}
+
+
+def test_complete_pages_follows_threads_and_their_replies(monkeypatch):
+    def fake_graphql(query, variables):
+        if 'node(id: "PR")' in query:
+            return {"c0": {"reviewThreads": _page([{"id": "T2", "comments": _page([{"n": 3}], "r")}])}}
+        return {"c0": {"comments": _page([{"n": 4}])}}
+
+    monkeypatch.setattr(github, "_graphql", fake_graphql)
+    node = {"id": "PR", "reviews": _page([]), "comments": _page([]),
+            "reviewThreads": _page([{"id": "T1", "comments": _page([{"n": 1}])}], "t")}
+
+    github._complete_pages([node], github._TRACKED_PAGES)
+
+    # A thread from a later page must still get its own replies paged in.
+    threads = node["reviewThreads"]["nodes"]
+    assert [t["id"] for t in threads] == ["T1", "T2"]
+    assert threads[1]["comments"]["nodes"] == [{"n": 3}, {"n": 4}]

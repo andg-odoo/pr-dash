@@ -9,11 +9,90 @@ from dataclasses import dataclass
 
 log = logging.getLogger("pr_dash.github")
 
+_PAGE_INFO = "pageInfo { hasNextPage endCursor }"
+
+
+@dataclass(frozen=True)
+class _Pages:
+    """Node fields of a fragment's discussion connections, shared with its follow-up pages."""
+    reviews: str
+    comments: str
+    threads: str
+    thread_comments: str
+
+
+_REVIEW_PAGES = _Pages(
+    reviews="id author { login } state submittedAt body url",
+    comments="author { login } createdAt body databaseId url",
+    threads="id isResolved",
+    thread_comments="author { login } createdAt body path databaseId url",
+)
+
+_TRACKED_PAGES = _Pages(
+    reviews="id author { login } state submittedAt body url",
+    comments="author { login } createdAt body url",
+    threads="id isResolved path",
+    thread_comments="author { login } createdAt body url pullRequestReview { id }",
+)
+
+
+def _connection(name: str, args: str, fields: str) -> str:
+    return f"{name}({args}) {{ totalCount {_PAGE_INFO} nodes {{ {fields} }} }}"
+
+
+def _thread_fields(pages: _Pages, replies: int) -> str:
+    return f"{pages.threads} " + _connection("comments", f"first: {replies}", pages.thread_comments)
+
+
+def _connections(pages: _Pages, size: int, replies: int) -> str:
+    return "\n  ".join([
+        _connection("reviews", f"first: {size}", pages.reviews),
+        _connection("comments", f"first: {size}", pages.comments),
+        _connection("reviewThreads", f"first: {size}", _thread_fields(pages, replies)),
+    ])
+
+
+def _complete_pages(nodes: list[dict], pages: _Pages, *, chunk_size: int = 25) -> None:
+    """Fetch in place the later pages of every discussion connection, one aliased request per round."""
+    def _overflowing(conns):
+        return [c for c in conns if c[3] and (c[3].get("pageInfo") or {}).get("hasNextPage")]
+
+    pending = _overflowing(
+        [(n["id"], "PullRequest", name, n.get(name), fields) for n in nodes if n.get("id")
+         for name, fields in (("reviews", pages.reviews), ("comments", pages.comments),
+                              ("reviewThreads", _thread_fields(pages, 100)))]
+        + [(t["id"], "PullRequestReviewThread", "comments", t.get("comments"), pages.thread_comments)
+           for n in nodes for t in (n.get("reviewThreads") or {}).get("nodes") or []]
+    )
+    while pending:
+        new_threads = []
+        for start in range(0, len(pending), chunk_size):
+            chunk = pending[start:start + chunk_size]
+            parts = [
+                f'c{i}: node(id: {json.dumps(owner)}) {{ ... on {typename} {{ ' + _connection(
+                    name, f"first: 100, after: {json.dumps(conn['pageInfo']['endCursor'])}", fields,
+                ) + " } }"
+                for i, (owner, typename, name, conn, fields) in enumerate(chunk)
+            ]
+            data = _graphql("query {\n" + "\n".join(parts) + "\n}", {})
+            for i, (_, _, name, conn, _) in enumerate(chunk):
+                page = (data.get(f"c{i}") or {}).get(name) or {"nodes": [], "pageInfo": {}}
+                conn["nodes"].extend(page["nodes"])
+                conn["pageInfo"] = page["pageInfo"]
+                if name == "reviewThreads":
+                    new_threads.extend(page["nodes"])
+        pending = _overflowing(pending) + _overflowing([
+            (t["id"], "PullRequestReviewThread", "comments", t.get("comments"), pages.thread_comments)
+            for t in new_threads
+        ])
+
+
 # The full PR field selection, as a named GraphQL fragment so the review-request
 # search and the by-number sibling fetch (fetch_pr_nodes) share one definition
 # and can never drift out of sync.
 PR_NODE_FRAGMENT = """
 fragment PRFields on PullRequest {
+  id
   url
   number
   title
@@ -43,21 +122,7 @@ fragment PRFields on PullRequest {
   latestReviews(first: 30) {
     nodes { author { login } state commit { oid } }
   }
-  reviews(first: 30) {
-    nodes { id author { login } state submittedAt body url }
-  }
-  comments(first: 30) {
-    nodes { author { login } createdAt body databaseId url }
-  }
-  reviewThreads(first: 30) {
-    nodes {
-      id
-      isResolved
-      comments(first: 30) {
-        nodes { author { login } createdAt body path databaseId url }
-      }
-    }
-  }
+  """ + _connections(_REVIEW_PAGES, 30, 30) + """
   commits(last: 1) {
     nodes {
       commit {
@@ -111,7 +176,7 @@ query($q: String!, $cursor: String) {
 """ + PR_NODE_FRAGMENT
 
 REVIEWED_BY_QUERY = """
-query($q: String!, $cursor: String) {
+query($q: String!, $login: String!, $cursor: String) {
   search(query: $q, type: ISSUE, first: 50, after: $cursor) {
     pageInfo { hasNextPage endCursor }
     nodes {
@@ -131,7 +196,7 @@ query($q: String!, $cursor: String) {
         headRefOid
         author { login }
         repository { nameWithOwner }
-        reviews(first: 50) {
+        reviews(last: 50, author: $login) {
           nodes { author { login } submittedAt state }
         }
       }
@@ -295,6 +360,7 @@ def search_personal_review_requested(login: str) -> tuple[list[dict], RateLimit 
         if not search["pageInfo"]["hasNextPage"]:
             break
         cursor = search["pageInfo"]["endCursor"]
+    _complete_pages(nodes, _REVIEW_PAGES)
     return nodes, rl
 
 
@@ -318,7 +384,7 @@ def search_reviewed_by(
     cursor = None
     rl: RateLimit | None = None
     while len(nodes) < limit:
-        data = _graphql(REVIEWED_BY_QUERY, {"q": q, "cursor": cursor})
+        data = _graphql(REVIEWED_BY_QUERY, {"q": q, "login": login, "cursor": cursor})
         search = data["search"]
         for n in search["nodes"]:
             if not n:
@@ -356,7 +422,7 @@ def fetch_reviewed_prs(
             parts.append(
                 f'p{i}: repository(owner: "{owner}", name: "{name}") {{ '
                 f'pullRequest(number: {number}) {{ '
-                f'reviews(first: 50) {{ nodes {{ author {{ login }} }} }} }} }}'
+                f'reviews(first: 1, author: "{login}") {{ nodes {{ author {{ login }} }} }} }} }}'
             )
         query = "query {\n" + "\n".join(parts) + "\n}"
         data = _graphql(query, {})
@@ -573,6 +639,7 @@ def fetch_pr_nodes(
             pr = (data.get(f"p{i}") or {}).get("pullRequest")
             if pr:
                 nodes.append(pr)
+    _complete_pages(nodes, _REVIEW_PAGES)
     return nodes
 
 
@@ -581,6 +648,7 @@ def fetch_pr_nodes(
 # what was said" - which keeps the batched fetch cheap even for a long list.
 TRACKED_NODE_FRAGMENT = """
 fragment TrackedFields on PullRequest {
+  id
   url
   number
   title
@@ -595,25 +663,7 @@ fragment TrackedFields on PullRequest {
   baseRefName
   author { login }
   repository { nameWithOwner }
-  comments(last: 10) {
-    totalCount
-    nodes { author { login } createdAt body url }
-  }
-  reviews(last: 10) {
-    totalCount
-    nodes { id author { login } state submittedAt body url }
-  }
-  reviewThreads(last: 15) {
-    totalCount
-    nodes {
-      id
-      isResolved
-      path
-      comments(last: 5) {
-        nodes { author { login } createdAt body url pullRequestReview { id } }
-      }
-    }
-  }
+  """ + _connections(_TRACKED_PAGES, 15, 5) + """
   commits(last: 1) {
     nodes {
       commit {
@@ -785,6 +835,8 @@ def fetch_nodes(
             pr = (data.get(f"p{i}") or {}).get("pullRequest")
             if pr:
                 out[f"{repo}#{number}"] = pr
+    # Both fragments fetch_nodes serves spread TrackedFields.
+    _complete_pages(list(out.values()), _TRACKED_PAGES)
     return out
 
 
