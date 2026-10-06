@@ -20,16 +20,19 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture(autouse=True)
-def _cancel_rerender_timer():
+def _cancel_rerender_timer(monkeypatch):
     """A daemon timer left armed by one test must not fire into the next one,
     where the stub is gone and the real subprocess would run."""
-    yield
     from pr_dash import mcp_server
 
+    # Requesting monkeypatch keeps this stub in place until the timer below is joined.
+    monkeypatch.setattr(mcp_server, "_run_rerender", lambda: True)
+    yield
     with mcp_server._rerender_timer_lock:
-        if mcp_server._rerender_timer is not None:
-            mcp_server._rerender_timer.cancel()
-            mcp_server._rerender_timer = None
+        timer, mcp_server._rerender_timer = mcp_server._rerender_timer, None
+    if timer is not None:
+        timer.cancel()
+        timer.join(5)
 
 
 def _wait_for(pred, timeout=2.0):
