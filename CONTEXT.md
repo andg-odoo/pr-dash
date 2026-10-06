@@ -21,8 +21,12 @@ _Avoid_: my PR, own PR
 ### Attention
 
 **Branch set**:
-The authored PRs across repos that share one branch name, shown as a single row.
+PRs across repos that share one author and branch name, shown as a single row.
 _Avoid_: pair, bundle, group
+
+**Companion**:
+The odoo/upgrade PR of a Branch set, carrying its migration.
+_Avoid_: third half, sibling, migration PR
 
 **Needs you**:
 The band at the top of the Mine tab holding authored PRs with at least one Action item.

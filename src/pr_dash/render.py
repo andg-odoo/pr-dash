@@ -8,7 +8,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from pr_dash import db, derive
+from pr_dash import branch_set, db, derive
 from pr_dash.config import RepoSpec
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -208,19 +208,14 @@ def _build_pr_record(
     }
 
 
-def _make_item(members: list[dict], my_login: str,
+def _make_item(bset: branch_set.BranchSet, my_login: str,
                repos: dict[str, RepoSpec],
                command_templates: dict[str, str] | None = None) -> dict:
-    """Build one renderable item from one or two PR records.
-
-    For pairs, members are ordered with odoo/odoo first when possible.
-    """
+    """Build one renderable item from a Branch set of PR records."""
     from pr_dash.commands import PRForCommands, build as build_cmds
 
-    # Sort so odoo/odoo is primary when paired
-    members = sorted(members, key=lambda m: 0 if m["repo"] == "odoo/odoo" else 1)
-    primary = members[0]
-    is_pair = len(members) == 2
+    members = bset.members
+    primary = bset.primary
 
     # Aggregate sums
     additions = sum(m["additions"] for m in members)
@@ -304,20 +299,21 @@ def _make_item(members: list[dict], my_login: str,
     # has one - a pair whose odoo half was never cached still shows it.
     companion = next((m["companion"] for m in members if m.get("companion")), None)
 
-    # Runbot / task: prefer primary, fall back to other
-    runbot_url = primary["runbot_url"] or (members[1]["runbot_url"] if is_pair else None)
-    linked_task = primary["linked_task"] or (members[1]["linked_task"] if is_pair else None)
-    linked_task_kind = primary["linked_task_kind"] or (members[1]["linked_task_kind"] if is_pair else None)
+    runbot_url = next((m["runbot_url"] for m in members if m["runbot_url"]), None)
+    task_member = next((m for m in members if m["linked_task"]), None)
+    linked_task = task_member and task_member["linked_task"]
+    linked_task_kind = task_member and task_member["linked_task_kind"]
 
-    # Commands: derived once for the item using primary repo/number and pair info
+    # Commands keep their two-repo shape: the primary and the first other code half.
+    paired = next((m for m in bset.halves if m is not primary), None)
     cmds = build_cmds(
         PRForCommands(
             repo=primary["repo"],
             number=primary["number"],
             target_branch=primary["target_branch"],
             modules=installable,
-            paired_repo=members[1]["repo"] if is_pair else None,
-            paired_number=members[1]["number"] if is_pair else None,
+            paired_repo=paired and paired["repo"],
+            paired_number=paired and paired["number"],
         ),
         repos,
         command_templates,
@@ -348,7 +344,7 @@ def _make_item(members: list[dict], my_login: str,
     # next live run, and showing stale pair-blind output is misleading.
     ai_reviews = []
     ai_failed = None
-    for idx, m in enumerate(members):
+    for m in members:
         # Demand sibling context exactly when _build_review_queue would have
         # recorded it: when the partner's diff was cached, since that is the only
         # case where there was a companion diff to put in the prompt. Keying on
@@ -356,7 +352,8 @@ def _make_item(members: list[dict], my_login: str,
         # correctly - an active partner whose diff blew the size gates (stored
         # pair-blind, expected a sha) and an archived-but-primed partner whose
         # diff was cached (stored with context, expected pair-blind).
-        sib = members[1 - idx] if is_pair else None
+        sib = (next(h for h in bset.halves if h is not m)
+               if len(bset.halves) == 2 and m in bset.halves else None)
         expected_sibling = sib["head_sha"] if sib and sib["diff"] else ""
         # The companion needs no such diff condition: it goes in the prompt on
         # existence alone, so its presence is what the review was written under.
@@ -409,7 +406,7 @@ def _make_item(members: list[dict], my_login: str,
 
     return {
         "id": primary["id"],
-        "is_pair": is_pair,
+        "is_pair": len(members) > 1,
         "head_sha": primary["head_sha"],
         "members": [
             {"repo": m["repo"], "repo_short": m["repo_short"], "number": m["number"],
@@ -497,7 +494,6 @@ def build_payload(
     comments_by_pr = db.list_comments(conn)
 
     pr_dicts = [dict(r) for r in pr_rows]
-    pairs = derive.detect_pairs(pr_dicts)
 
     # "Since last look": diff each active PR's current state against what it was
     # at the previous render, then record the new state. First run (no baseline)
@@ -529,19 +525,8 @@ def build_payload(
         )
         records[pr["id"]]["since_last_look"] = delta_map.get(pr["id"], [])
 
-    items: list[dict] = []
-    seen: set[str] = set()
-    for pr_id in records:
-        if pr_id in seen:
-            continue
-        seen.add(pr_id)
-        paired_id = pairs.get(pr_id)
-        if paired_id and paired_id in records:
-            seen.add(paired_id)
-            items.append(_make_item([records[pr_id], records[paired_id]], my_login,
-                                     repos, command_templates))
-        else:
-            items.append(_make_item([records[pr_id]], my_login, repos, command_templates))
+    items = [_make_item(s, my_login, repos, command_templates)
+             for s in branch_set.group(records.values())]
 
     items.sort(key=lambda p: (
         BUCKET_RANK.get(p["bucket"], 1),

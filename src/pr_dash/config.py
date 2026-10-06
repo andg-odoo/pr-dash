@@ -6,7 +6,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from pr_dash import derive
+from pr_dash import branch_set
 
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "pr-dash" / "config.toml"
 
@@ -71,7 +71,7 @@ class CompanionConfig:
     clone onto every PR's target branch.
     """
     enabled: bool = True
-    repo: str = derive.COMPANION_REPO
+    repo: str = branch_set.COMPANION_REPO
 
 
 @dataclass
@@ -315,7 +315,7 @@ cron_max_reviews = 5
 # The repo is private: no access (or no network) means no companions, never a
 # failed refresh. Set enabled = false to skip the lookup entirely.
 enabled = true
-repo = "{derive.COMPANION_REPO}"
+repo = "{branch_set.COMPANION_REPO}"
 
 [commands]
 # Shell snippets for the per-PR action buttons. Placeholders:

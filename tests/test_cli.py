@@ -7,8 +7,9 @@ from pr_dash import cli, config, db, github, mergebot
 # --- _reviewed_open_siblings -------------------------------------------------
 
 def _row(pr_id, *, author="a", head_branch="feat", state="OPEN", archived_at=None):
-    return {"id": pr_id, "author": author, "head_branch": head_branch,
-            "state": state, "archived_at": archived_at}
+    repo, _, number = pr_id.rpartition("#")
+    return {"id": pr_id, "repo": repo, "number": int(number), "author": author,
+            "head_branch": head_branch, "state": state, "archived_at": archived_at}
 
 
 def test_reviewed_open_siblings_selects_open_reviewed_half():

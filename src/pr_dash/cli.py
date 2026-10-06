@@ -17,7 +17,7 @@ import click
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from pr_dash import ai, config, db, derive, github, hidden, mergebot, render
+from pr_dash import ai, branch_set, config, db, derive, github, hidden, mergebot, render
 from pr_dash import query as prquery
 
 console = Console()
@@ -1221,20 +1221,13 @@ def _reconcile_sibling_states(conn, cfg, kept_ids: set[str]) -> None:
         node = activity.get(p["id"]) or {}
         return node.get("headRefOid") or p["head_sha"]
 
-    # A hide is keyed on every member's sha (hidden.item_sha), so the pseudo
-    # items handed to prune must carry the whole pair - a one-member stand-in
-    # would never match a pair's stored value and would silently un-hide it.
-    pairs = derive.detect_pairs(prs)
-    by_id = {p["id"]: p for p in prs}
+    # A hide is keyed on every member's sha (hidden.item_sha), so pseudo items carry the whole set.
+    set_of = {m["id"]: s for s in branch_set.group(prs) for m in s.members}
     hidden_ids = set(hidden.prune(hidden.load(cfg), [
         {
             "id": p["id"],
             "head_sha": _live_sha(p),
-            "members": [
-                {"head_sha": _live_sha(m)}
-                for m in (p, by_id.get(pairs.get(p["id"]) or ""))
-                if m is not None
-            ],
+            "members": [{"head_sha": _live_sha(m)} for m in set_of[p["id"]].members],
         }
         for p in stale
     ]))
@@ -1289,21 +1282,16 @@ def _reconcile_sibling_states(conn, cfg, kept_ids: set[str]) -> None:
 
 
 def _reviewed_open_siblings(cached: list[dict], active_ids: set[str]) -> list[dict]:
-    """Cached rows that are open (GitHub state) and the pair-sibling of a PR in
+    """Cached rows that are open (GitHub state) and in the Branch set of a PR in
     this run's active set, yet absent from it themselves - the halves I already
     reviewed, which the review-requested search no longer returns. No other
     refresh path fetches their threads/reviews/comments. Local archived_at is
     deliberately ignored: the sweep archives a reviewed half on the very next
     refresh, so requiring non-archived would exclude nearly every real case."""
-    pairs = derive.detect_pairs(cached)
-    out = []
-    for row in cached:
-        pid = row["id"]
-        sib = pairs.get(pid)
-        if (sib in active_ids and pid not in active_ids
-                and row.get("state") == "OPEN"):
-            out.append(row)
-    return out
+    return [
+        row for s in branch_set.group(cached) if any(m["id"] in active_ids for m in s.members)
+        for row in s.members if row["id"] not in active_ids and row.get("state") == "OPEN"
+    ]
 
 
 def _sibling_needs_refresh(cached_row, node: dict, has_comments: bool, *,
@@ -1488,7 +1476,11 @@ def _build_review_queue(
     now = datetime.now(timezone.utc)
     pr_rows = {pr_id: db.get_cached_pr(conn, pr_id) for pr_id in kept_ids}
     pr_rows = {k: v for k, v in pr_rows.items() if v is not None}
-    pair_map = derive.detect_pairs([dict(r) for r in pr_rows.values()])
+    sibling_of = {}
+    for s in branch_set.group(pr_rows.values()):
+        if len(s.halves) == 2:
+            a, b = s.halves
+            sibling_of[a["id"]], sibling_of[b["id"]] = b, a
     modules_by_pr = db.list_modules(conn)
 
     # (size, head_sha, request), sorted so a capped run takes the cheapest, in a fixed order.
@@ -1512,9 +1504,7 @@ def _build_review_queue(
 
         sibling_head_sha = ""
         sibling_kwargs: dict = {}
-        sibling_id = pair_map.get(pr_id)
-        if sibling_id and sibling_id in pr_rows:
-            sib = pr_rows[sibling_id]
+        if sib := sibling_of.get(pr_id):
             sib_diff_row = db.get_diff(conn, sib["head_sha"])
             sib_diff = (sib_diff_row["patch_text"] if sib_diff_row else None) or ""
             if sib_diff:
