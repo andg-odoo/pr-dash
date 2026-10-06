@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import fcntl
 import json
@@ -78,20 +79,36 @@ def _sync(conn, cfg, progress) -> sync.Sync:
                      on_phase=lambda text: progress.update(task, description=text))
 
 
-def _acquire_refresh_lock(cfg, *, wait: bool) -> int | None:
-    """Take the refresh lock, which every refresh holds, or None if someone else has it."""
+@contextlib.contextmanager
+def _refresh_lock(cfg, *, wait: bool):
+    """Hold the refresh lock every cache writer takes, yielding False when another holds it."""
     lock_path = cfg.cache_dir / "refresh.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        if not wait:
-            os.close(fd)
-            return None
-        console.print("[yellow]Another refresh is running; waiting for it...[/yellow]")
-        fcntl.flock(fd, fcntl.LOCK_EX)
-    return fd
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            if not wait:
+                yield False
+                return
+            console.print("[yellow]Another refresh is running; waiting for it...[/yellow]")
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        yield True
+    finally:
+        os.close(fd)
+
+
+def _run_sync(conn, cfg, operation):
+    """Run one Sync operation under a progress bar, exiting 1 when GitHub fails it."""
+    try:
+        with _progress(False) as progress:
+            return operation(_sync(conn, cfg, progress))
+    except github.GithubError as e:
+        console.print(f"[red]GitHub error: {e}[/red]")
+        command = click.get_current_context().info_name
+        console.print(f"[yellow]Nothing was stored, run {command} again.[/yellow]")
+        sys.exit(1)
 
 
 def _render_from_cache(conn, cfg, *, offline=False):
@@ -117,6 +134,12 @@ def _render_from_cache(conn, cfg, *, offline=False):
                   hidden_map=hidden_map, hidden_sync_port=cfg.hidden_sync_port,
                   tracked=tracked, mine=mine + dismissed_mine)
     return payload, seen_updates, {"tracked": tracked_seen, "mine": mine_seen}
+
+
+def _rerender(conn, cfg) -> None:
+    """Write the dashboard from cache without moving the since-last-look baseline."""
+    payload, _, _ = _render_from_cache(conn, cfg, offline=False)
+    console.print(f"[green]Re-rendered {len(payload)} PRs → {cfg.html_path}[/green]")
 
 
 def _load_config_or_exit(config_path):
@@ -159,126 +182,24 @@ def cli(ctx, no_open, force, offline, config_path, verbose):
                    "you've reviewed more than 1000 PRs and only want a recent window.")
 @click.option("--config", "config_path", type=click.Path(path_type=Path))
 def backfill(limit, since, config_path):
-    """One-shot backfill of historical reviews for accurate KPI counts.
-
-    Fetches PRs where you've submitted a review (regardless of current request
-    state) and inserts minimal archived rows keyed by your latest review
-    submission. Skips already-cached IDs. No AI analysis, no diff fetch -
-    if a PR ever re-enters the active set, the normal refresh path handles it.
-
-    Results are capped at --limit (GitHub's own ceiling is 1000), newest-updated
-    first. If you've reviewed more than that, narrow the window with --since.
-    """
+    """Store the PRs you reviewed before pr-dash as archived rows, for accurate review counts."""
     if since is not None:
         try:
             datetime.strptime(since, "%Y-%m-%d")
         except ValueError:
             console.print(f"[red]--since must be a YYYY-MM-DD date, got {since!r}[/red]")
             sys.exit(1)
-
     cfg = _load_config_or_exit(config_path)
-
-    conn = db.connect(cfg.db_path)
-
-    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
-                  console=console, transient=True) as progress:
-        task = progress.add_task("Fetching historical reviews from GitHub...", total=None)
-        try:
-            nodes, rate = github.search_reviewed_by(cfg.github_login, limit=limit, since=since)
-        except github.GithubError as e:
-            console.print(f"[red]GitHub error: {e}[/red]")
-            sys.exit(1)
-        if rate:
-            log.debug("GraphQL rate limit: %d remaining (cost %d)",
-                      rate.remaining, rate.cost)
-
-        progress.update(task, description=f"Backfilling {len(nodes)} PRs...")
-        added = skipped = no_review = self_authored = updated = 0
-        now = derive.now_utc()
-        with db.transaction(conn):
-            for node in nodes:
-                # Skip PRs the user authored - `reviewed-by:me` also matches
-                # comment-only "reviews" you submit on your own PRs, which
-                # aren't reviews of other people's work and shouldn't count
-                # toward the reviewer KPI.
-                author = (node.get("author") or {}).get("login")
-                if author == cfg.github_login:
-                    self_authored += 1
-                    continue
-
-                pr_id = f"{node['repository']['nameWithOwner']}#{node['number']}"
-
-                review_nodes = (node.get("reviews") or {}).get("nodes") or []
-                my_reviews = [
-                    r for r in review_nodes
-                    if r.get("submittedAt")
-                    and (r.get("author") or {}).get("login") == cfg.github_login
-                ]
-                if not my_reviews:
-                    no_review += 1
-                    continue
-                latest = max(my_reviews, key=lambda r: r["submittedAt"])
-                latest_review_at = latest["submittedAt"]
-                my_state = latest.get("state") or "COMMENTED"
-
-                cached = db.get_cached_pr(conn, pr_id)
-                if cached:
-                    # An active PR's reviewer data from the live refresh is more
-                    # current, so only fill the verdict on already-archived rows
-                    # (earlier backfills that predate verdict capture).
-                    if cached["archived_at"]:
-                        db.set_my_review_state(conn, pr_id, cfg.github_login, my_state)
-                        if node.get("state"):
-                            db.set_pr_state(conn, pr_id, node["state"])
-                        updated += 1
-                    else:
-                        skipped += 1
-                    continue
-
-                pr_row = {
-                    "id": pr_id,
-                    "repo": node["repository"]["nameWithOwner"],
-                    "number": node["number"],
-                    "title": node["title"] or "(no title)",
-                    "url": node["url"],
-                    "author": (node.get("author") or {}).get("login") or "(unknown)",
-                    "target_branch": node["baseRefName"],
-                    "head_branch": node["headRefName"],
-                    "head_sha": node["headRefOid"],
-                    "created_at": node["createdAt"],
-                    "updated_at": node["updatedAt"],
-                    "review_requested_at": latest_review_at,
-                    "previously_reviewed": 1,
-                    "mergeable": node.get("mergeable"),
-                    "ci_state": None,
-                    "runbot_url": None,
-                    "additions": node.get("additions") or 0,
-                    "deletions": node.get("deletions") or 0,
-                    "changed_files": node.get("changedFiles") or 0,
-                    "unresolved_threads": 0,
-                    "awaiting_my_reply": 0,
-                    "linked_task": None,
-                    "linked_task_kind": None,
-                    "body": None,
-                    "archived_at": latest_review_at,
-                    "state": node.get("state") or "OPEN",
-                    "fetched_at": now,
-                }
-                db.upsert_pr(conn, pr_row)
-                db.set_my_review_state(conn, pr_id, cfg.github_login, my_state)
-                added += 1
-
-    console.print(
-        f"[green]Backfilled {added} historical reviews.[/green] "
-        f"({updated} verdicts filled, {skipped} already in cache, "
-        f"{self_authored} self-authored skipped, "
-        f"{no_review} with no detectable review by you)"
-    )
-
-    # Re-render from cache (no network, no browser) so the dashboard reflects the
-    # freshly backfilled verdicts instead of a stale render.
-    payload, _, _ = _render_from_cache(conn, cfg, offline=False)
-    console.print(f"[green]Re-rendered {len(payload)} PRs → {cfg.html_path}[/green]")
+    with _refresh_lock(cfg, wait=True):
+        conn = db.connect(cfg.db_path)
+        report = _run_sync(conn, cfg, lambda s: s.backfill(since=since, limit=limit))
+        console.print(
+            f"[green]Backfilled {report.added} historical reviews.[/green] "
+            f"({report.updated} verdicts filled, {report.skipped} already in cache, "
+            f"{report.self_authored} self-authored skipped, "
+            f"{report.no_review} with no detectable review by you)",
+        )
+        _rerender(conn, cfg)
 
 
 @cli.command()
@@ -310,14 +231,11 @@ def refresh(no_open, force, offline, cron, config_path):
     cfg = _load_config_or_exit(config_path)
     if cron:
         _setup_cron_logging(cfg)
-    lock_fd = _acquire_refresh_lock(cfg, wait=not cron)
-    if lock_fd is None:
-        log.info("another refresh holds the lock; skipping this tick")
-        return
-    try:
+    with _refresh_lock(cfg, wait=not cron) as held:
+        if not held:
+            log.info("another refresh holds the lock; skipping this tick")
+            return
         _refresh(cfg, no_open=no_open, force=force, offline=offline, cron=cron)
-    finally:
-        os.close(lock_fd)
 
 
 def _refresh(cfg, *, no_open: bool, force: bool, offline: bool, cron: bool) -> None:
@@ -382,20 +300,8 @@ def _parse_pr_ref(ref: str) -> tuple[str, int]:
 @click.option("--skip-invalid", is_flag=True,
               help="Warn and continue on unparseable refs instead of exiting.")
 def track(refs, config_path, skip_invalid):
-    """Track PRs in the dashboard's `tracked` tab.
-
-    Takes `owner/repo#123` or a github.com pull URL. With no arguments (or a
-    literal `-`) it reads refs from stdin, one per line, which is how the
-    subscriptions-page import works - see `docs: tracked tab` in the README.
-
-    This is the primary way to populate the tracked tab. The notification seed
-    only finds PRs that have *generated* a notification, so a custom
-    "notify on close only" subscription stays invisible until it resolves.
-    """
+    """Track PRs in the Tracked tab, given as owner/repo#123 or pull URLs, or on stdin."""
     cfg = _load_config_or_exit(config_path)
-    conn = db.connect(cfg.db_path)
-    now = derive.now_utc()
-
     if not refs or "-" in refs:
         piped = [ln.strip() for ln in sys.stdin.read().splitlines()]
         refs = [*(r for r in refs if r != "-"), *(ln for ln in piped if ln)]
@@ -413,28 +319,18 @@ def track(refs, config_path, skip_invalid):
                 continue
             console.print(f"[red]{e}[/red]")
             sys.exit(1)
+    if not parsed:
+        return
 
-    added = 0
-    with db.transaction(conn):
-        for repo, number in parsed:
-            pr_id = f"{repo}#{number}"
-            if db.add_tracked(conn, pr_id, repo, number,
-                              f"https://github.com/{repo}/pull/{number}", "manual", now):
-                added += 1
-                console.print(f"[green]Tracking {pr_id}[/green]")
-            else:
-                console.print(f"[dim]{pr_id} already tracked[/dim]")
-
-    # Fill in title/state right away so `pr-dash rerender` shows real rows
-    # instead of blank placeholders until the next full refresh. Covers revived
-    # rows too, whose cached state is as old as the day they were dismissed.
-    if parsed:
-        try:
-            fetched = sync.Sync(conn, cfg, github.GhGitHub()).fetch_tracked(parsed)
-        except github.GithubError as e:
-            console.print(f"[yellow]Tracked, but could not fetch state yet: {e}[/yellow]")
-        else:
-            console.print(f"[dim]{added} new, {fetched} fetched[/dim]")
+    added, fetched = sync.Sync(db.connect(cfg.db_path), cfg, github.GhGitHub()).track(parsed)
+    for repo, number in parsed:
+        pr_id = f"{repo}#{number}"
+        console.print(f"[green]Tracking {pr_id}[/green]" if pr_id in added
+                      else f"[dim]{pr_id} already tracked[/dim]")
+    if fetched is None:
+        console.print("[yellow]Tracked, but could not fetch state yet.[/yellow]")
+    else:
+        console.print(f"[dim]{len(added)} new, {fetched} fetched[/dim]")
 
 
 @cli.command()
@@ -464,16 +360,9 @@ def import_history(config_path):
     """Import every closed Authored PR once, dismissing the Branch sets already resolved."""
     cfg = _load_config_or_exit(config_path)
     # Run by hand, as minutes of fetching on a timer tick would hold the lock over later ticks.
-    lock_fd = _acquire_refresh_lock(cfg, wait=True)
-    try:
+    with _refresh_lock(cfg, wait=True):
         conn = db.connect(cfg.db_path)
-        try:
-            with _progress(False) as progress:
-                report = _sync(conn, cfg, progress).import_history()
-        except github.GithubError as e:
-            console.print(f"[red]GitHub error: {e}[/red]")
-            console.print("[yellow]Nothing was stored, run import-history again.[/yellow]")
-            sys.exit(1)
+        report = _run_sync(conn, cfg, lambda s: s.import_history())
         if report is None:
             console.print("[yellow]History already imported; nothing to do.[/yellow]")
             return
@@ -483,10 +372,7 @@ def import_history(config_path):
             f"{report.left_open} left open"
             + (f", {report.unread} Mergebot pages unread." if report.unread else "."),
         )
-        payload, _, _ = _render_from_cache(conn, cfg, offline=False)
-        console.print(f"[green]Re-rendered {len(payload)} PRs → {cfg.html_path}[/green]")
-    finally:
-        os.close(lock_fd)
+        _rerender(conn, cfg)
 
 
 @cli.command()
@@ -501,11 +387,7 @@ def rerender(no_open, config_path):
     since no new data was fetched.
     """
     cfg = _load_config_or_exit(config_path)
-    conn = db.connect(cfg.db_path)
-
-    payload, _, _ = _render_from_cache(conn, cfg, offline=False)
-    console.print(f"[green]Re-rendered {len(payload)} PRs → {cfg.html_path}[/green]")
-
+    _rerender(db.connect(cfg.db_path), cfg)
     if not no_open:
         _open_html(cfg.html_path)
 

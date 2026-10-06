@@ -362,6 +362,45 @@ def test_a_failed_history_import_stores_nothing_and_can_rerun(w):
         ("odoo/odoo#10", None, True), ("odoo/odoo#11", "odoo/odoo#10", False)]
 
 
+# --- backfill and tracking by hand ------------------------------------------
+
+def test_backfill_archives_past_reviews_and_leaves_live_rows_to_the_refresh(w):
+    def reviewed(state, at="2026-06-01T00:00:00Z"):
+        return [{"author": "me", "state": state, "at": at, "commit": "sha1"}]
+
+    w.gh.add("odoo/odoo", 1, reviews=reviewed("COMMENTED") + reviewed("APPROVED", T0))
+    w.gh.add("odoo/odoo", 2, author="me", reviews=reviewed("COMMENTED"))
+    w.gh.add("odoo/odoo", 3, requested=["me"])
+    w.gh.add("odoo/odoo", 4, state="MERGED", reviews=reviewed("CHANGES_REQUESTED"))
+    w.refresh()
+    w.gh.review("odoo/odoo#3", "me")
+    insert_pr(w.conn, "odoo/odoo#4", archived_at=T0)
+
+    report = w.sync.backfill(since=None, limit=1000)
+    assert (report.added, report.updated, report.skipped, report.self_authored,
+            report.no_review) == (1, 1, 1, 1, 0)
+    # Keyed by my latest review, which stands for when the PR left my queue.
+    row = w.row("odoo/odoo#1")
+    assert (row["archived_at"], row["previously_reviewed"], row["state"]) == (T0, 1, "OPEN")
+    assert (w.row("odoo/odoo#3")["archived_at"], w.row("odoo/odoo#4")["state"]) == (None, "MERGED")
+    assert {pr_id: [r["state"] for r in rows if r["name"] == "me"]
+            for pr_id, rows in db.list_reviewers(w.conn).items()} == {
+        "odoo/odoo#1": ["APPROVED"], "odoo/odoo#3": ["PENDING"],
+        "odoo/odoo#4": ["CHANGES_REQUESTED"]}
+    assert w.row("odoo/odoo#2") is None
+
+
+def test_tracking_by_hand_fills_rows_at_once_and_outlives_a_github_failure(w):
+    w.gh.add("odoo/odoo", 1, title="[FIX] x")
+    assert w.sync.track([("odoo/odoo", 1), ("odoo/odoo", 9)]) == (["odoo/odoo#1", "odoo/odoo#9"], 1)
+    assert db.get_tracked(w.conn, "odoo/odoo#1")["title"] == "[FIX] x"
+
+    db.set_dismissed(w.conn, "tracked", "odoo/odoo#1", T0)
+    w.gh.fail("nodes")
+    assert w.sync.track([("odoo/odoo", 1)]) == ([], None)
+    assert db.get_tracked(w.conn, "odoo/odoo#1")["dismissed_at"] is None
+
+
 # --- diffs and the AI pass ---------------------------------------------------
 
 def test_an_oversized_file_is_stubbed_and_the_code_around_it_kept(w):

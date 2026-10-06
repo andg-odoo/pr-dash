@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pr_dash import cli, db, derive, github, mcp_server, mergebot, render
+from pr_dash import cli, db, derive, mcp_server, mergebot, render
 from pr_dash import query as prquery
 from tests.fakes import FakePR, pr_node
 
@@ -450,29 +450,6 @@ def test_parse_pr_ref_accepts_both_forms(ref):
 def test_parse_pr_ref_rejects_junk(ref):
     with pytest.raises(ValueError):
         cli._parse_pr_ref(ref)
-
-
-# --- github.list_manual_subscriptions ----------------------------------------
-
-def test_list_manual_subscriptions_parses_and_dedupes(monkeypatch):
-    # gh --jq streams one JSON object per line; the same PR can appear twice
-    # when several notifications for it are still retained.
-    lines = "\n".join([
-        '{"url":"https://api.github.com/repos/odoo/odoo/pulls/264068",'
-        '"title":"[ADD] x","updated_at":"2026-08-01T00:00:00Z","repo":"odoo/odoo"}',
-        '{"url":"https://api.github.com/repos/odoo/odoo/pulls/264068",'
-        '"title":"[ADD] x","updated_at":"2026-08-02T00:00:00Z","repo":"odoo/odoo"}',
-        '{"url":"https://api.github.com/repos/odoo/enterprise/issues/99",'
-        '"title":"an issue","updated_at":"2026-08-01T00:00:00Z","repo":"odoo/enterprise"}',
-        "",
-        "not json",
-    ])
-    monkeypatch.setattr(github, "_gh", lambda *a, **k: lines)
-
-    out = github.list_manual_subscriptions()
-    assert [s["id"] for s in out] == ["odoo/odoo#264068"]
-    assert out[0]["url"] == "https://github.com/odoo/odoo/pull/264068"
-    assert out[0]["number"] == 264068
 
 
 # --- query surface -----------------------------------------------------------

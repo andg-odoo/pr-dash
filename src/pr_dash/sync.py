@@ -50,6 +50,16 @@ class ImportReport:
     unread: int
 
 
+@dataclass
+class BackfillReport:
+    """What the backfill added, filled in and passed over."""
+    added: int = 0
+    updated: int = 0
+    skipped: int = 0
+    self_authored: int = 0
+    no_review: int = 0
+
+
 def _node_id(node: dict) -> str:
     return f"{node['repository']['nameWithOwner']}#{node['number']}"
 
@@ -203,15 +213,28 @@ class Sync:
         if stale:
             self._phase(f"Refreshing {len(stale)} tracked PRs...")
             try:
-                report.tracked_refreshed = self.fetch_tracked(stale)
+                report.tracked_refreshed = self._fetch_tracked(stale)
             except github.GithubError as e:
                 report.warnings.append(f"Tracked PR refresh failed: {e}")
 
-    def fetch_tracked(self, refs: list[tuple[str, int]]) -> int:
-        """Refresh the cached GitHub state of the given Tracked PRs.
+    def track(self, refs: list[tuple[str, int]]) -> tuple[list[str], int | None]:
+        """Track PRs by hand and fetch their state, so a render shows them before a refresh.
 
-        :return: the number of rows updated
+        :return: the ids not tracked before, and the rows fetched or None when GitHub failed
         """
+        now = self._stamp()
+        with db.transaction(self.conn):
+            added = [f"{repo}#{n}" for repo, n in refs if db.add_tracked(
+                self.conn, f"{repo}#{n}", repo, n, f"https://github.com/{repo}/pull/{n}", "manual",
+                now)]
+        try:
+            return added, self._fetch_tracked(refs)
+        except github.GithubError as e:
+            log.warning("tracked PR fetch failed (%s); state fills in on the next refresh", e)
+            return added, None
+
+    def _fetch_tracked(self, refs: list[tuple[str, int]]) -> int:
+        """Refresh the cached GitHub state of the given Tracked PRs, returning how many."""
         nodes = self.gh.nodes(refs, "tracked")
         now = self._stamp()
         with db.transaction(self.conn):
@@ -295,6 +318,45 @@ class Sync:
             left_open=len(imported) - len(resolved),
             unread=sum(state.state == "unknown" for state in reads.values()),
         )
+
+    def backfill(self, *, since: str | None, limit: int) -> BackfillReport:
+        """Store the PRs I reviewed outside the cache as archived rows, for the review counts."""
+        login, report = self.cfg.github_login, BackfillReport()
+        self._phase("Fetching historical reviews from GitHub...")
+        nodes, rate = self.gh.reviewed_by(login, limit=limit, since=since)
+        if rate:
+            log.debug("GraphQL rate limit: %d remaining (cost %d)", rate.remaining, rate.cost)
+        self._phase(f"Backfilling {len(nodes)} PRs...")
+        with db.transaction(self.conn):
+            for node in nodes:
+                # reviewed-by: also matches comments on my own PRs, which review nobody's work.
+                if (node.get("author") or {}).get("login") == login:
+                    report.self_authored += 1
+                    continue
+                pr_id = _node_id(node)
+                mine = [r for r in (node.get("reviews") or {}).get("nodes") or []
+                        if r.get("submittedAt") and (r.get("author") or {}).get("login") == login]
+                if not mine:
+                    report.no_review += 1
+                    continue
+                latest = max(mine, key=lambda r: r["submittedAt"])
+                verdict = latest.get("state") or "COMMENTED"
+                cached = db.get_cached_pr(self.conn, pr_id)
+                if cached and not cached["archived_at"]:
+                    # The live refresh holds an active row's reviewer data, which is more current.
+                    report.skipped += 1
+                    continue
+                if cached:
+                    db.set_pr_state(self.conn, pr_id, node.get("state") or cached["state"])
+                    report.updated += 1
+                else:
+                    pr_row = self._node_to_rows(node)[0]
+                    pr_row.update(review_requested_at=latest["submittedAt"], previously_reviewed=1,
+                                  archived_at=latest["submittedAt"])
+                    db.upsert_pr(self.conn, pr_row)
+                    report.added += 1
+                db.set_my_review_state(self.conn, pr_id, login, verdict)
+        return report
 
     def _fetch_authored(self, refs: list[tuple[str, int]], known: list, view: github.View,
                         ) -> tuple[dict[str, dict], dict[str, str]]:

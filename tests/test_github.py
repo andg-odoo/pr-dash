@@ -1,3 +1,4 @@
+import json
 import subprocess
 import time
 
@@ -51,6 +52,15 @@ def test_gives_up_after_max_attempts(monkeypatch, slept):
     assert len(calls) == github.MAX_ATTEMPTS
 
 
+def _gh_answers(monkeypatch, answer):
+    """Make every `gh` call print `answer(args, stdin)`, JSON-encoded unless it is a string."""
+    def run(args, *, input=None, **kwargs):
+        out = answer(args, input)
+        return subprocess.CompletedProcess(
+            args, 0, out if isinstance(out, str) else json.dumps(out), "")
+    monkeypatch.setattr(subprocess, "run", run)
+
+
 def _search_hit(number, ref):
     return {"number": number, "title": "t", "state": "OPEN", "isDraft": False,
             "url": f"u{number}", "headRefName": ref, "headRefOid": f"sha{number}",
@@ -58,30 +68,26 @@ def _search_hit(number, ref):
 
 
 def test_branch_search_keeps_only_exact_head_matches(monkeypatch):
-    sent = {}
+    sent = []
+    _gh_answers(monkeypatch, lambda args, stdin: sent.append(stdin) or {"data": {
+        "b0": {"nodes": [_search_hit(2, "feat-x-followup"), _search_hit(1, "feat-x")]},
+        "b1": {"nodes": [_search_hit(3, "feat-y-2")]}}})
 
-    def fake_graphql(query, variables):
-        sent["query"] = query
-        return {"b0": {"nodes": [_search_hit(2, "feat-x-followup"), _search_hit(1, "feat-x")]},
-                "b1": {"nodes": [_search_hit(3, "feat-y-2")]}}
-
-    monkeypatch.setattr(github, "_graphql", fake_graphql)
-
-    out = github.search_open_prs_by_head_branch("odoo/upgrade", ["feat-x", "feat-y"])
+    out = github.GhGitHub().open_prs_by_head_branch("odoo/upgrade", ["feat-x", "feat-y"])
 
     # `head:` is a filter, so a PR whose branch merely starts the same is a different bundle.
     assert out == {"feat-x": {"number": 1, "title": "t", "state": "OPEN", "draft": False,
                               "url": "u1", "head_branch": "feat-x", "head_sha": "sha1",
                               "author": "a"}}
     # Newest-first is the server's job, which is what keeps the tie-break the listing had.
-    assert "sort:created-desc" in sent["query"]
+    assert "sort:created-desc" in sent[0]
 
 
-def test_graphql_partial_turns_a_truncated_body_into_a_github_error(monkeypatch):
-    monkeypatch.setattr(github, "_gh", lambda *a, **k: '{"data":{"p0"')
+def test_a_truncated_partial_body_is_a_github_error(monkeypatch):
+    _gh_answers(monkeypatch, lambda args, stdin: '{"data":{"p0"')
 
     with pytest.raises(github.GithubError, match="non-JSON"):
-        github._graphql_partial("query {}", {})
+        github.GhGitHub().nodes([("odoo/odoo", 1)], "tracked")
 
 
 def _page(nodes, cursor=None):
@@ -90,12 +96,13 @@ def _page(nodes, cursor=None):
 
 
 def test_complete_pages_follows_threads_and_their_replies(monkeypatch):
-    def fake_graphql(query, variables):
-        if 'node(id: "PR")' in query:
-            return {"c0": {"reviewThreads": _page([{"id": "T2", "comments": _page([{"n": 3}], "r")}])}}
-        return {"c0": {"comments": _page([{"n": 4}])}}
+    def answer(args, stdin):
+        if 'node(id: \\"PR\\")' in stdin:
+            return {"data": {"c0": {"reviewThreads": _page(
+                [{"id": "T2", "comments": _page([{"n": 3}], "r")}])}}}
+        return {"data": {"c0": {"comments": _page([{"n": 4}])}}}
 
-    monkeypatch.setattr(github, "_graphql", fake_graphql)
+    _gh_answers(monkeypatch, answer)
     node = {"id": "PR", "reviews": _page([]), "comments": _page([]),
             "reviewThreads": _page([{"id": "T1", "comments": _page([{"n": 1}])}], "t")}
 
@@ -105,3 +112,23 @@ def test_complete_pages_follows_threads_and_their_replies(monkeypatch):
     threads = node["reviewThreads"]["nodes"]
     assert [t["id"] for t in threads] == ["T1", "T2"]
     assert threads[1]["comments"]["nodes"] == [{"n": 3}, {"n": 4}]
+
+
+def test_manual_subscriptions_keep_each_pr_once(monkeypatch):
+    # gh --jq streams one object per line, and a PR with several retained notifications repeats.
+    def entry(path, updated):
+        return json.dumps({"url": f"https://api.github.com/repos/{path}", "title": "[ADD] x",
+                           "updated_at": updated, "repo": path.split("/pulls")[0]})
+
+    _gh_answers(monkeypatch, lambda args, stdin: "\n".join([
+        entry("odoo/odoo/pulls/264068", "2026-08-01T00:00:00Z"),
+        entry("odoo/odoo/pulls/264068", "2026-08-02T00:00:00Z"),
+        entry("odoo/enterprise/issues/99", "2026-08-01T00:00:00Z"),
+        "",
+        "not json",
+    ]))
+
+    assert github.GhGitHub().manual_subscriptions() == [{
+        "id": "odoo/odoo#264068", "repo": "odoo/odoo", "number": 264068,
+        "url": "https://github.com/odoo/odoo/pull/264068", "title": "[ADD] x",
+        "updated_at": "2026-08-01T00:00:00Z"}]

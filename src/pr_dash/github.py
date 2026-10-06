@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import subprocess
 import time
 from dataclasses import dataclass
@@ -91,9 +90,7 @@ def _complete_pages(nodes: list[dict], pages: _Pages, *, chunk_size: int = 25) -
         ])
 
 
-# The full PR field selection, as a named GraphQL fragment so the review-request
-# search and the by-number sibling fetch (fetch_pr_nodes) share one definition
-# and can never drift out of sync.
+# The full PR field selection, shared by the review-request search and the queue nodes fetch.
 PR_NODE_FRAGMENT = """
 fragment PRFields on PullRequest {
   id
@@ -336,86 +333,41 @@ def _search_pages(query: str, variables: dict):
         cursor = page["endCursor"]
 
 
-def search_personal_review_requested(login: str) -> tuple[list[dict], RateLimit | None]:
-    """Return PRs where `login` is personally requested as a reviewer.
-
-    `user-review-requested:` is the server-side form of is_personally_requested:
-    a direct User request, team requests excluded, and a PR requested from both
-    the user and their teams still matches. `review-requested:` also returned the
-    team ones, so the whole field fragment was fetched for 148 PRs to keep 13 -
-    39s and 1.5MB a refresh, against 2.8s and 122KB. Callers still filter.
-    """
-    q = f"is:open is:pr user-review-requested:{login} archived:false"
+def _search_nodes(query: str, variables: dict, limit: int | None = None,
+                  ) -> tuple[list[dict], RateLimit | None]:
+    """Collect the PR nodes of every page of a `search`, up to `limit`, with the last rate limit."""
     nodes: list[dict] = []
     rl: RateLimit | None = None
-    for data in _search_pages(SEARCH_QUERY, {"q": q}):
+    for data in _search_pages(query, variables):
         nodes.extend(n for n in data["search"]["nodes"] if n)
-        rate = data.get("rateLimit")
-        if rate:
+        if rate := data.get("rateLimit"):
             rl = RateLimit(rate["remaining"], rate["cost"], rate["resetAt"])
-    _complete_pages(nodes, _REVIEW_PAGES)
-    return nodes, rl
-
-
-def search_reviewed_by(
-    login: str, *, limit: int = 1000, since: str | None = None,
-) -> tuple[list[dict], RateLimit | None]:
-    """Return PRs where `login` has submitted at least one review.
-
-    Used for backfilling historical review data into the cache for KPI counts.
-    Caps at `limit` results. GitHub search itself caps at 1000, so for a
-    long-tenured reviewer the results are sorted updated-newest-first to keep
-    the most recent reviews when that ceiling is hit. `since` (a YYYY-MM-DD
-    date) bounds the window via the PR's `updated:` field - the review's own
-    date isn't directly queryable, but PR update time is a close proxy.
-    """
-    q = f"is:pr reviewed-by:{login}"
-    if since:
-        q += f" updated:>={since}"
-    q += " sort:updated-desc"
-    nodes: list[dict] = []
-    rl: RateLimit | None = None
-    for data in _search_pages(REVIEWED_BY_QUERY, {"q": q, "login": login}):
-        nodes.extend(n for n in data["search"]["nodes"] if n)
-        rate = data.get("rateLimit")
-        if rate:
-            rl = RateLimit(rate["remaining"], rate["cost"], rate["resetAt"])
-        if len(nodes) >= limit:
+        if limit is not None and len(nodes) >= limit:
             break
     return nodes[:limit], rl
 
 
-def fetch_reviewed_prs(
-    refs: list[tuple[str, int, str]], login: str, *, chunk_size: int = 25,
-) -> set[str]:
-    """Given (repo, number, pr_id) triples, return the pr_ids that `login` has
-    submitted at least one review on.
+def _pull_requests(refs: list[tuple[str, int]], fields: str, *, chunk_size: int = 25,
+                   partial: bool = False, fragment: str = "") -> dict[str, dict]:
+    """Map each `(repo, number)` that resolves to its `pullRequest { fields }`, batched by alias.
 
-    Used at sweep time to verify delete-candidates: a PR that left the active
-    request set because it was just approved/changes-requested has a stale
-    cached `previously_reviewed=0` (it was last fetched before the review), so
-    we re-check it here before deciding to delete vs. archive. Batched via
-    GraphQL field aliases to keep this to a few requests.
+    :param partial: keep what resolved when some aliases errored, for user-curated ref lists
     """
-    reviewed: set[str] = set()
+    out: dict[str, dict] = {}
     for start in range(0, len(refs), chunk_size):
         chunk = refs[start:start + chunk_size]
         parts = []
-        for i, (repo, number, _) in enumerate(chunk):
+        for i, (repo, number) in enumerate(chunk):
             owner, name = repo.split("/", 1)
-            parts.append(
-                f'p{i}: repository(owner: "{owner}", name: "{name}") {{ '
-                f'pullRequest(number: {number}) {{ '
-                f'reviews(first: 1, author: "{login}") {{ nodes {{ author {{ login }} }} }} }} }}'
-            )
-        query = "query {\n" + "\n".join(parts) + "\n}"
-        data = _graphql(query, {})
-        for i, (_, _, pr_id) in enumerate(chunk):
-            pr = (data.get(f"p{i}") or {}).get("pullRequest") or {}
-            nodes = (pr.get("reviews") or {}).get("nodes") or []
-            if any((n.get("author") or {}).get("login") == login for n in nodes):
-                reviewed.add(pr_id)
-    return reviewed
+            parts.append(f'p{i}: repository(owner: "{owner}", name: "{name}") {{ '
+                         f'pullRequest(number: {number}) {{ {fields} }} }}')
+        query = "query {\n" + "\n".join(parts) + "\n}\n" + fragment
+        data = (_graphql_partial if partial else _graphql)(query, {})
+        for i, (repo, number) in enumerate(chunk):
+            pr = (data.get(f"p{i}") or {}).get("pullRequest")
+            if pr:
+                out[f"{repo}#{number}"] = pr
+    return out
 
 
 _ARCHIVED_ACTIVITY_FIELDS = """
@@ -448,57 +400,6 @@ _ARCHIVED_ACTIVITY_FIELDS = """
 """
 
 
-def fetch_archived_activity(
-    refs: list[tuple[str, int, str]], *, chunk_size: int = 25,
-) -> dict[str, dict]:
-    """Given (repo, number, pr_id) triples, return pr_id -> a node with the
-    current state plus the recent comment/review/request activity needed to
-    detect an informal re-review ping (see derive.detect_review_ping) and a push
-    landed after my review (see derive.detect_push_since_review).
-
-    One batched request over the whole set (GraphQL field aliases). Used to
-    re-check archived-but-still-OPEN PRs: they left the `review-requested:`
-    search, so their state goes stale the moment robodoo closes them, and any
-    "please re-review" ping from the author is invisible to all tooling.
-
-    `updatedAt` / `headRefOid` are the staleness signals the caller uses to
-    decide which of these rows need a full re-fetch: a push moves the head, and
-    any review or comment (mine included) moves updatedAt.
-    """
-    out: dict[str, dict] = {}
-    for start in range(0, len(refs), chunk_size):
-        chunk = refs[start:start + chunk_size]
-        parts = []
-        for i, (repo, number, _) in enumerate(chunk):
-            owner, name = repo.split("/", 1)
-            parts.append(
-                f'p{i}: repository(owner: "{owner}", name: "{name}") {{ '
-                f'pullRequest(number: {number}) {{{_ARCHIVED_ACTIVITY_FIELDS}}} }}'
-            )
-        query = "query {\n" + "\n".join(parts) + "\n}"
-        data = _graphql(query, {})
-        for i, (_, _, pr_id) in enumerate(chunk):
-            pr = (data.get(f"p{i}") or {}).get("pullRequest")
-            if pr:
-                out[pr_id] = pr
-    return out
-
-
-def fetch_head_sha(repo: str, number: int) -> str | None:
-    """Live head sha of one PR. Hides store the head_sha they were made at so a
-    later push auto-unhides; an archived row's cached sha can be long stale, so
-    a hide taken from the cache would expire against the live sha immediately."""
-    owner, name = repo.split("/", 1)
-    data = _graphql(
-        'query($owner: String!, $name: String!, $number: Int!) { '
-        'repository(owner: $owner, name: $name) { '
-        'pullRequest(number: $number) { headRefOid } } }',
-        {"owner": owner, "name": name, "number": number},
-    )
-    pr = (data.get("repository") or {}).get("pullRequest") or {}
-    return pr.get("headRefOid")
-
-
 _BRANCH_SEARCH_FIELDS = """
       ... on PullRequest {
         number
@@ -511,120 +412,6 @@ _BRANCH_SEARCH_FIELDS = """
         author { login }
       }
 """
-
-
-def search_open_prs_by_head_branch(
-    repo: str, branches: list[str], *, chunk_size: int = 25,
-) -> dict[str, dict]:
-    """Given head branch names, return branch -> that branch's open PR in `repo`.
-
-    Answers "does this bundle have a companion migration" for a handful of
-    branches. Listing every open PR in the repo instead answered it for all of
-    them at once, but its cost tracks the repo rather than the question:
-    odoo/upgrade runs ~750 open PRs, 8 REST pages, 5.2s a refresh. Aliasing one
-    `search` per branch into a single GraphQL request asks only what is being
-    asked - 13 branches in 1.6s, for a rate-limit cost of 1.
-
-    `head:` is a search filter, not an exact match, so a hit whose headRefName
-    merely resembles the branch has to be dropped here. `sort:created-desc`
-    keeps the newest of several exact hits, which is what the REST listing did
-    when two open PRs shared a head branch - a bundle robodoo could not resolve
-    either.
-
-    Strict rather than partial (unlike the by-ref fetchers): a missing branch
-    here means "this bundle has no migration", which is an answer the AI pass
-    acts on, so a half-resolved response has to raise rather than read as a
-    batch of negatives.
-    """
-    out: dict[str, dict] = {}
-    for start in range(0, len(branches), chunk_size):
-        chunk = branches[start:start + chunk_size]
-        parts = []
-        for i, branch in enumerate(chunk):
-            q = json.dumps(f"repo:{repo} is:pr is:open sort:created-desc head:{branch}")
-            parts.append(
-                f'b{i}: search(query: {q}, type: ISSUE, first: 5) {{ '
-                f'nodes {{{_BRANCH_SEARCH_FIELDS}}} }}'
-            )
-        query = "query {\n" + "\n".join(parts) + "\n}"
-        data = _graphql(query, {})
-        for i, branch in enumerate(chunk):
-            nodes = (data.get(f"b{i}") or {}).get("nodes") or []
-            for node in nodes:
-                if not node or node.get("headRefName") != branch:
-                    continue
-                out[branch] = {
-                    "number": node["number"],
-                    "title": node.get("title") or "",
-                    "state": node.get("state") or "",
-                    "draft": bool(node.get("isDraft")),
-                    "url": node.get("url") or "",
-                    "head_branch": branch,
-                    "head_sha": node.get("headRefOid") or "",
-                    "author": (node.get("author") or {}).get("login") or "",
-                }
-                break
-    return out
-
-
-def fetch_pr_states(repo: str, numbers: list[int], *,
-                    chunk_size: int = 25) -> dict[int, str]:
-    """Given PR numbers in one repo, return number -> OPEN / CLOSED / MERGED.
-
-    For companions the branch search above no longer returns. An upgrade PR has
-    its own review flow and is regularly merged ahead of the addons halves it
-    migrates, so treating "no longer open" as "no migration" would resurrect the
-    exact false positive the companion exists to kill.
-
-    Batched via GraphQL field aliases and tolerant of a partial response: a
-    number that no longer resolves is simply absent from the result.
-    """
-    owner, name = repo.split("/", 1)
-    out: dict[int, str] = {}
-    for start in range(0, len(numbers), chunk_size):
-        chunk = numbers[start:start + chunk_size]
-        parts = [
-            f'p{i}: repository(owner: "{owner}", name: "{name}") {{ '
-            f'pullRequest(number: {n}) {{ state }} }}'
-            for i, n in enumerate(chunk)
-        ]
-        data = _graphql_partial("query {\n" + "\n".join(parts) + "\n}", {})
-        for i, n in enumerate(chunk):
-            state = ((data.get(f"p{i}") or {}).get("pullRequest") or {}).get("state")
-            if state:
-                out[n] = state
-    return out
-
-
-def fetch_pr_nodes(
-    refs: list[tuple[str, int, str]], *, chunk_size: int = 10,
-) -> list[dict]:
-    """Fetch full PR nodes by (repo, number, pr_id), shaped exactly like the
-    review-request search nodes (same PRFields fragment), so they can flow
-    through the normal _node_to_rows path.
-
-    Used to prime open pair-siblings the user already reviewed: those left the
-    review-requested search, so their threads/reviews/comments would otherwise
-    never be cached. Batched via GraphQL field aliases (typically 0-3 at a time).
-    """
-    nodes: list[dict] = []
-    for start in range(0, len(refs), chunk_size):
-        chunk = refs[start:start + chunk_size]
-        parts = []
-        for i, (repo, number, _) in enumerate(chunk):
-            owner, name = repo.split("/", 1)
-            parts.append(
-                f'p{i}: repository(owner: "{owner}", name: "{name}") {{ '
-                f'pullRequest(number: {number}) {{ ...PRFields }} }}'
-            )
-        query = "query {\n" + "\n".join(parts) + "\n}\n" + PR_NODE_FRAGMENT
-        data = _graphql(query, {})
-        for i in range(len(chunk)):
-            pr = (data.get(f"p{i}") or {}).get("pullRequest")
-            if pr:
-                nodes.append(pr)
-    _complete_pages(nodes, _REVIEW_PAGES)
-    return nodes
 
 
 # Tracked PRs are read-only watch targets, not review work: no diff, no files,
@@ -716,134 +503,6 @@ def _search_authored(q: str) -> tuple[list[tuple[str, int]], int]:
     return refs, search["issueCount"]
 
 
-def search_authored_open(login: str) -> list[tuple[str, int]]:
-    """Return (repo, number) of every open PR `login` authored, across all repos."""
-    return _search_authored(f"is:open is:pr author:{login} archived:false")[0]
-
-
-def search_authored_closed(login: str) -> list[tuple[str, int]]:
-    """Return (repo, number) of every closed or merged PR `login` authored, across all repos."""
-    refs, total = _search_authored(f"is:closed is:pr author:{login}")
-    if len(refs) < total:
-        # Search serves at most 1000 results, a longer history needs the query split by date.
-        raise GithubError(f"the search returned {len(refs)} of {total} closed PRs")
-    return refs
-
-
-def list_manual_subscriptions() -> list[dict]:
-    """Return the PR threads the user subscribed to *themselves*.
-
-    GitHub exposes no endpoint for the /notifications/subscriptions page, so the
-    notification list is the only handle on it - and its `reason` field is what
-    separates a deliberate Subscribe ("manual") from the auto-subscription that
-    a review request or a mention creates. `all=true` includes already-read
-    threads, without which only unread ones would ever seed.
-
-    This is inherently activity-bounded: GitHub prunes old notifications, so a
-    subscribed-but-quiet PR eventually stops appearing here. That is exactly why
-    the caller stores the result in a sticky table instead of mirroring it.
-
-    Each entry is {repo, number, url, title, updated_at}.
-    """
-    out: list[dict] = []
-    seen: set[str] = set()
-    raw = _gh([
-        "api", "/notifications?all=true&per_page=100", "--paginate",
-        "--jq", ".[] | select(.reason == \"manual\") "
-                "| select(.subject.type == \"PullRequest\") "
-                "| {url: .subject.url, title: .subject.title, "
-                "updated_at: .updated_at, repo: .repository.full_name}",
-    ], timeout=120)
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        # subject.url is the REST pulls URL: .../repos/{owner}/{repo}/pulls/{n}
-        api_url = entry.get("url") or ""
-        _, sep, tail = api_url.partition("/repos/")
-        if not sep or "/pulls/" not in tail:
-            continue
-        repo, _, number_s = tail.partition("/pulls/")
-        try:
-            number = int(number_s)
-        except ValueError:
-            continue
-        pr_id = f"{repo}#{number}"
-        if pr_id in seen:
-            continue
-        seen.add(pr_id)
-        out.append({
-            "id": pr_id,
-            "repo": repo,
-            "number": number,
-            "url": f"https://github.com/{repo}/pull/{number}",
-            "title": entry.get("title") or "",
-            "updated_at": entry.get("updated_at"),
-        })
-    return out
-
-
-def fetch_nodes(
-    refs: list[tuple[str, int]], fragment: str, *, chunk_size: int = 50,
-) -> dict[str, dict]:
-    """Given (repo, number) pairs, return pr_id -> the PR node `fragment` selects.
-
-    Batched via GraphQL field aliases. A ref that no longer resolves (deleted
-    repo, or a number that was never a PR) is simply absent from the result
-    rather than raising, so one bad entry can't sink the whole refresh.
-
-    The chunk is wide because each one is a round trip and the node is slim: 43
-    tracked PRs took 10.5s in fives and 6.4s in one go.
-    """
-    spread = re.search(r"fragment (\w+) on PullRequest", fragment).group(1)
-    out: dict[str, dict] = {}
-    for start in range(0, len(refs), chunk_size):
-        chunk = refs[start:start + chunk_size]
-        parts = []
-        for i, (repo, number) in enumerate(chunk):
-            owner, name = repo.split("/", 1)
-            parts.append(
-                f'p{i}: repository(owner: "{owner}", name: "{name}") {{ '
-                f'pullRequest(number: {number}) {{ ...{spread} }} }}'
-            )
-        query = "query {\n" + "\n".join(parts) + "\n}\n" + fragment
-        data = _graphql_partial(query, {})
-        for i, (repo, number) in enumerate(chunk):
-            pr = (data.get(f"p{i}") or {}).get("pullRequest")
-            if pr:
-                out[f"{repo}#{number}"] = pr
-    # Both fragments fetch_nodes serves spread TrackedFields.
-    _complete_pages(list(out.values()), _TRACKED_PAGES)
-    return out
-
-
-def fetch_patch(repo: str, number: int) -> str | None:
-    """Fetch the combined unified diff via gh REST. Returns None on failure.
-
-    Uses `.diff` (one `diff --git` per file, net change) rather than `.patch`
-    (mbox/format-patch with per-commit duplication and commit-message preamble)
-    so the frontend can split it reliably into per-file sections.
-
-    Returns the full diff; the caller is responsible for size-based truncation
-    so it can flag a truncated diff rather than store a corrupt half-file one.
-    """
-    try:
-        return _gh(
-            [
-                "api",
-                f"repos/{repo}/pulls/{number}",
-                "-H", "Accept: application/vnd.github.diff",
-            ],
-            timeout=60,
-        )
-    except GithubError:
-        return None
-
-
 View = Literal["queue", "tracked", "mine", "history"]
 
 
@@ -876,51 +535,136 @@ class GitHub(Protocol):
     def patch(self, repo: str, number: int) -> str | None: ...
 
 
-def _with_ids(refs: list[tuple[str, int]]) -> list[tuple[str, int, str]]:
-    return [(repo, number, f"{repo}#{number}") for repo, number in refs]
-
-
 class GhGitHub:
-    """`GitHub` over the `gh` CLI, through the module functions above."""
+    """`GitHub` over the `gh` CLI."""
 
     def review_requested(self, login):
-        return search_personal_review_requested(login)
+        # user-review-requested: drops team requests server-side, 2.8s a refresh instead of 39s.
+        nodes, rl = _search_nodes(
+            SEARCH_QUERY, {"q": f"is:open is:pr user-review-requested:{login} archived:false"})
+        _complete_pages(nodes, _REVIEW_PAGES)
+        return nodes, rl
 
     def reviewed_by(self, login, *, limit=1000, since=None):
-        return search_reviewed_by(login, limit=limit, since=since)
+        # Search caps at 1000, so newest-updated first keeps the recent reviews past that.
+        q = f"is:pr reviewed-by:{login}" + (f" updated:>={since}" if since else "")
+        return _search_nodes(REVIEWED_BY_QUERY, {"q": f"{q} sort:updated-desc", "login": login},
+                             limit)
 
     def reviewed_among(self, refs, login):
-        return fetch_reviewed_prs(_with_ids(refs), login)
+        prs = _pull_requests(refs, f'reviews(first: 1, author: "{login}") '
+                                   "{ nodes { author { login } } }")
+        return {pr_id for pr_id, pr in prs.items()
+                if any((n.get("author") or {}).get("login") == login
+                       for n in (pr.get("reviews") or {}).get("nodes") or [])}
 
     def archived_activity(self, refs):
-        return fetch_archived_activity(_with_ids(refs))
+        return _pull_requests(refs, _ARCHIVED_ACTIVITY_FIELDS)
 
     def head_sha(self, repo, number):
-        return fetch_head_sha(repo, number)
+        owner, name = repo.split("/", 1)
+        data = _graphql(
+            'query($owner: String!, $name: String!, $number: Int!) { '
+            'repository(owner: $owner, name: $name) { '
+            'pullRequest(number: $number) { headRefOid } } }',
+            {"owner": owner, "name": name, "number": number},
+        )
+        return ((data.get("repository") or {}).get("pullRequest") or {}).get("headRefOid")
 
-    def open_prs_by_head_branch(self, repo, branches):
-        return search_open_prs_by_head_branch(repo, branches)
+    def open_prs_by_head_branch(self, repo, branches, chunk_size=25):
+        # Strict, as a branch missing from a half-resolved response would read as no migration.
+        out: dict[str, dict] = {}
+        for start in range(0, len(branches), chunk_size):
+            chunk = branches[start:start + chunk_size]
+            parts = []
+            for i, branch in enumerate(chunk):
+                q = json.dumps(f"repo:{repo} is:pr is:open sort:created-desc head:{branch}")
+                parts.append(
+                    f'b{i}: search(query: {q}, type: ISSUE, first: 5) {{ '
+                    f'nodes {{{_BRANCH_SEARCH_FIELDS}}} }}',
+                )
+            data = _graphql("query {\n" + "\n".join(parts) + "\n}", {})
+            for i, branch in enumerate(chunk):
+                # `head:` is a filter, so a hit on a branch merely resembling this one is dropped.
+                node = next((n for n in (data.get(f"b{i}") or {}).get("nodes") or []
+                             if n and n.get("headRefName") == branch), None)
+                if node:
+                    out[branch] = {
+                        "number": node["number"],
+                        "title": node.get("title") or "",
+                        "state": node.get("state") or "",
+                        "draft": bool(node.get("isDraft")),
+                        "url": node.get("url") or "",
+                        "head_branch": branch,
+                        "head_sha": node.get("headRefOid") or "",
+                        "author": (node.get("author") or {}).get("login") or "",
+                    }
+        return out
 
     def pr_states(self, repo, numbers):
-        return fetch_pr_states(repo, numbers)
+        prs = _pull_requests([(repo, n) for n in numbers], "state", partial=True)
+        return {int(pr_id.rpartition("#")[2]): pr["state"]
+                for pr_id, pr in prs.items() if pr.get("state")}
 
     def nodes(self, refs, view):
         if view == "queue":
-            return {f"{n['repository']['nameWithOwner']}#{n['number']}": n
-                    for n in fetch_pr_nodes(_with_ids(refs))}
-        if view == "tracked":
-            return fetch_nodes(refs, TRACKED_NODE_FRAGMENT)
+            nodes = _pull_requests(refs, "...PRFields", chunk_size=10, fragment=PR_NODE_FRAGMENT)
+            _complete_pages(list(nodes.values()), _REVIEW_PAGES)
+            return nodes
+        fragment, spread = ((TRACKED_NODE_FRAGMENT, "...TrackedFields") if view == "tracked"
+                            else (MINE_NODE_FRAGMENT, "...MineFields"))
         # A closed PR carries its whole discussion, and 50 of them overran GitHub's 10 s limit.
-        return fetch_nodes(refs, MINE_NODE_FRAGMENT, chunk_size=10 if view == "history" else 50)
+        nodes = _pull_requests(refs, spread, chunk_size=10 if view == "history" else 50,
+                               partial=True, fragment=fragment)
+        # Both fragments spread TrackedFields.
+        _complete_pages(list(nodes.values()), _TRACKED_PAGES)
+        return nodes
 
     def authored_open(self, login):
-        return search_authored_open(login)
+        return _search_authored(f"is:open is:pr author:{login} archived:false")[0]
 
     def authored_closed(self, login):
-        return search_authored_closed(login)
+        refs, total = _search_authored(f"is:closed is:pr author:{login}")
+        if len(refs) < total:
+            # Search serves at most 1000 results, a longer history needs the query split by date.
+            raise GithubError(f"the search returned {len(refs)} of {total} closed PRs")
+        return refs
 
     def manual_subscriptions(self):
-        return list_manual_subscriptions()
+        # Only the notification reason tells a manual Subscribe apart, and `all` adds read threads.
+        raw = _gh([
+            "api", "/notifications?all=true&per_page=100", "--paginate",
+            "--jq", (".[] | select(.reason == \"manual\") "
+                     "| select(.subject.type == \"PullRequest\") "
+                     "| {url: .subject.url, title: .subject.title, "
+                     "updated_at: .updated_at, repo: .repository.full_name}"),
+        ], timeout=120)
+        out: dict[str, dict] = {}
+        for line in raw.splitlines():
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            # subject.url is the REST pulls URL: .../repos/{owner}/{repo}/pulls/{n}
+            _, sep, tail = (entry.get("url") or "").partition("/repos/")
+            repo, _, number_s = tail.partition("/pulls/")
+            if not sep or not number_s.isdecimal():
+                continue
+            number = int(number_s)
+            out.setdefault(f"{repo}#{number}", {
+                "id": f"{repo}#{number}",
+                "repo": repo,
+                "number": number,
+                "url": f"https://github.com/{repo}/pull/{number}",
+                "title": entry.get("title") or "",
+                "updated_at": entry.get("updated_at"),
+            })
+        return list(out.values())
 
     def patch(self, repo, number):
-        return fetch_patch(repo, number)
+        # `.diff` gives one section per file and net change, the caller truncates.
+        try:
+            return _gh(["api", f"repos/{repo}/pulls/{number}",
+                        "-H", "Accept: application/vnd.github.diff"], timeout=60)
+        except GithubError:
+            return None
