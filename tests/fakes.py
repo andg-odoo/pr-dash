@@ -305,3 +305,17 @@ class FakeReviewer:
                                                               "looks-good"))
             for r in reqs
         ]
+
+
+def insert_pr(conn, pr_id: str, *, author="a", head_branch="feat", state="OPEN",
+              archived_at=None, previously_reviewed=1, head_sha="sha1", updated=T0) -> None:
+    """Write a bare Review queue row straight into the cache."""
+    repo, number = pr_id.split("#")
+    conn.execute(
+        "INSERT INTO pr (id, repo, number, title, url, author, target_branch, "
+        "head_branch, head_sha, created_at, updated_at, review_requested_at, "
+        "previously_reviewed, additions, deletions, changed_files, state, "
+        "archived_at, fetched_at) VALUES (?,?,?,'','',?,?,?,?,?,?,?,?,0,0,0,?,?,?)",
+        (pr_id, repo, int(number), author, "18.0", head_branch, head_sha,
+         T0, updated, T0, previously_reviewed, state, archived_at, T0),
+    )
