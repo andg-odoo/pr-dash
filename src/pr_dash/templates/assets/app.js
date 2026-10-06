@@ -1397,7 +1397,9 @@
               <span class="tr-onpath" title="${escapeHTML(t.path || "")}">${escapeHTML((t.path || "?").split("/").pop())}</span>
               ${t.state === "UNRESOLVED" ? '<span class="tr-unresolved">unresolved</span>' : ""}
             </div>
-            ${t.comments.map(c => commentHTML(c)).join("")}
+            ${commentHTML(t.comments[0])}
+            ${t.comments.length > 1 ? `<div class="tr-replies">${
+              t.comments.slice(1).map(c => commentHTML(c)).join("")}</div>` : ""}
           </div>`).join("")}
       </details>`;
   }

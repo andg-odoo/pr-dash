@@ -1470,8 +1470,14 @@ body {
 
 .tr-thread {
   border-left: 2px solid var(--border);
-  margin: 6px 0 0 4px;
+  margin: 16px 0 0 4px;
   padding-left: 10px;
+}
+
+.tr-replies {
+  border-left: 1px solid var(--border);
+  margin: 8px 0 0 14px;
+  padding-left: 12px;
 }
 
 .tr-thread-open { border-left-color: var(--yellow); }
