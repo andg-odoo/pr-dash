@@ -740,7 +740,6 @@
     const archivedBadge = pr.is_archived
       ? `<span class="archived-badge" title="No longer requested for review${pr.archived_at ? " · archived " + pr.archived_at.slice(0, 10) : ""}">archived</span>`
       : "";
-    const unresolvedThreads = pr.threads.filter(t => !t.is_resolved && t.snippet);
 
     detailEl.innerHTML = `
       <div class="detail">
@@ -871,38 +870,10 @@
           `).join("")}
         </section>
 
-        ${pr.awaiting_my_reply ? `
         <section class="section">
-          <h3>Threads awaiting your attention</h3>
-          ${pr.threads.filter(t => t.i_participated && !t.is_resolved && t.last_reply_author !== window.MY_LOGIN).map(t => `
-            <div class="thread">
-              <span>
-                ${pr.is_pair ? `<span class="thread-where">${escapeHTML(t.member_repo_short || "")}</span> ` : ""}
-                last reply by <span class="who">@${escapeHTML(t.last_reply_author)}</span>
-              </span>
-              <span>${escapeHTML(t.last_reply_at)}</span>
-            </div>
-          `).join("")}
-          <div style="margin-top:6px;display:flex;gap:10px;">
-            ${pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent);">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")}
-          </div>
+          <h3>Discussion ${pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent);text-transform:none;letter-spacing:0;margin-left:10px;">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")}</h3>
+          ${discussionHTML(pr.discussion, pr.is_pair)}
         </section>
-        ` : ""}
-
-        ${unresolvedThreads.length ? `
-        <section class="section">
-          <h3>Unresolved threads <span class="thread-count">${unresolvedThreads.length}</span></h3>
-          <div class="thread-snippets">
-            ${unresolvedThreads.map(t => `
-              <a class="thread-snippet" href="${escapeHTML(t.url || pr.url)}" target="_blank" rel="noopener">
-                ${pr.is_pair && t.member_repo_short ? `<span class="thread-where">${escapeHTML(t.member_repo_short)}</span> ` : ""}
-                <span class="who">@${escapeHTML(t.snippet_author || "?")}</span>
-                <span class="snippet-text">${escapeHTML(t.snippet)}</span>
-              </a>
-            `).join("")}
-          </div>
-        </section>
-        ` : ""}
 
         ${pr.diffs.map((d, i) => `
         <section class="diff-section${(d.closed || (d.reviewed && !pr.is_archived)) ? " diff-section-closed" : ""}">

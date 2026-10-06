@@ -296,9 +296,9 @@ def get_comments(ref: str) -> dict:
     """The Discussion of any cached PR, whichever tab holds it.
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
-    A Review queue PR returns {id, members: [{repo_short, number, discussion}]}, one
-    member per half of a pair. An Authored PR returns its Branch set as get_mine does,
-    a Tracked PR its detail as get_tracked does. Every discussion has the get_tracked
+    A Review queue PR returns {id, discussion}, both halves of a pair merged with each
+    entry's member set. An Authored PR returns its Branch set as get_mine does, a
+    Tracked PR its detail as get_tracked does. Every discussion has the get_tracked
     Discussion tree shape, bots included with is_bot: true.
     """
     return query.get_comments(_get_cfg(), ref)

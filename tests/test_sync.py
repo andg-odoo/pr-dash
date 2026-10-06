@@ -220,11 +220,13 @@ def test_a_queue_rows_thread_signals_follow_its_discussion(w):
     def look():
         w.clock.advance(minutes=1)
         w.refresh()
-        items, seen = render.build_payload(w.conn, "me", {}, 30)
+        items[:], seen = render.build_payload(w.conn, "me", {}, 30)
         render.commit_seen_baseline(w.conn, seen, w.clock().isoformat())
         row = w.row(ODOO)
         return (row["unresolved_threads"], row["awaiting_my_reply"], row["my_pending_review"],
                 items[0]["since_last_look"])
+
+    items = []
 
     assert look() == (1, 0, 1, [])
     w.gh.reply(ODOO, "T1", "jov", "still why?")
@@ -235,9 +237,11 @@ def test_a_queue_rows_thread_signals_follow_its_discussion(w):
     assert look()[:2] == (0, 0)
 
     # The envelope review is dropped, the bodiless approval kept, the bot flagged.
-    [member] = query.get_comments(w.cfg, "odoo#1")["members"]
+    discussion = query.get_comments(w.cfg, "odoo#1")["discussion"]
+    assert discussion == items[0]["discussion"]
+    assert discussion[0]["entry"]["member"] == "odoo"
     assert [(g["kind"], g["entry"] and (g["entry"]["author"], g["entry"]["is_bot"]))
-            for g in member["discussion"]] == [
+            for g in discussion] == [
         ("issue", ("robodoo", True)), ("review", ("clbr", False)), ("review", ("me", False)),
         ("orphan", None)]
 

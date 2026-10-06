@@ -37,20 +37,12 @@ def _json_for_script(payload: object) -> str:
     )
 
 
-def _latest_thread_comment(comments: list[dict], thread_id: str) -> dict | None:
-    cs = [c for c in comments if c["kind"] == "thread" and c["thread_id"] == thread_id]
-    if not cs:
-        return None
-    return max(cs, key=lambda c: c.get("created_at") or "")
-
-
 def _build_pr_record(
     conn: sqlite3.Connection,
     pr: dict,
     modules: list[str],
     reviewers: list[dict],
-    threads: list[dict],
-    comments: list[dict],
+    stream: list[dict],
     my_login: str,
     stale_review_days: int,
     ai_max_attempts: int = 3,
@@ -129,17 +121,6 @@ def _build_pr_record(
     if pr.get("my_pending_review"):
         flags.append("PEND!")
 
-    # One-line preview of each unresolved thread's latest comment, so the detail
-    # pane can surface discussion without baking full bodies into the payload.
-    for t in threads:
-        if t.get("is_resolved"):
-            continue
-        latest = _latest_thread_comment(comments, t["thread_id"])
-        if latest:
-            t["snippet"] = derive.comment_snippet(latest.get("body"))
-            t["snippet_author"] = latest.get("author")
-            t["url"] = latest.get("url")
-
     return {
         "id": pr["id"],
         "repo": pr["repo"],
@@ -177,7 +158,7 @@ def _build_pr_record(
         "bucket": complexity["bucket"] if complexity else "M",
         "bucket_score": complexity["score"] if complexity else 0,
         "reviewers": reviewers,
-        "threads": threads,
+        "stream": stream,
         "diff_available": diff is not None and diff["patch_text"] is not None,
         "diff_truncated": bool(diff and diff["truncated"]),
         "diff": diff["patch_text"] if diff and diff["patch_text"] else None,
@@ -244,11 +225,8 @@ def _make_item(bset: branch_set.BranchSet, my_login: str,
                        {"kind": "user", "name": my_login, "state": "PENDING"})
     other_reviewers = [r for r in reviewers if not (r["kind"] == "user" and r["name"] == my_login)]
 
-    # Threads: tag each with member repo for display
-    threads = []
-    for m in members:
-        for t in m["threads"]:
-            threads.append({**t, "member_repo_short": m["repo_short"], "member_url": m["url"]})
+    discussion = derive.group_discussion(
+        [{**c, "member": m["repo_short"]} for m in members for c in m["stream"]])
 
     # Aggregated derived fields
     # A pair counts as draft if either half is - neither is ready to review.
@@ -435,7 +413,7 @@ def _make_item(bset: branch_set.BranchSet, my_login: str,
         "reviewers": reviewers,
         "my_review_state": my_reviewer["state"],
         "other_reviewers": other_reviewers,
-        "threads": threads,
+        "discussion": discussion,
         "commands": [{"label": c.label, "command": c.command} for c in cmds],
         "diffs": diffs,
         "state": primary["state"],
@@ -498,7 +476,6 @@ def build_payload(
             conn, pr,
             modules_by_pr.get(pr["id"], []),
             reviewers_by_pr.get(pr["id"], []),
-            facts_by_pr.get(pr["id"], []),
             streams.get(pr["id"], []),
             my_login, stale_review_days, ai_max_attempts,
         )

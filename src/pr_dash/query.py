@@ -202,7 +202,7 @@ def get_diff_text(
 # --- projections -------------------------------------------------------------
 
 def summarize(item: dict) -> dict:
-    """Compact triage row: no body, threads, diffs, or commands."""
+    """Compact triage row: no body, Discussion, diffs, or commands."""
     return {
         "id": item["id"],
         "url": item.get("url"),
@@ -264,7 +264,7 @@ def _diff_meta(d: dict) -> dict:
 
 def detail(item: dict) -> dict:
     """Full item minus diff text: each diff entry is replaced by metadata plus a
-    parsed `files` list. Body, threads, reviewers, ci_failures, ai_reviews,
+    parsed `files` list. Body, Discussion, reviewers, ci_failures, ai_reviews,
     commands and task links are kept."""
     out = copy.deepcopy(item)
     out["diffs"] = [_diff_meta(d) for d in item.get("diffs", [])]
@@ -282,15 +282,7 @@ def get_comments(cfg: Config, ref: str | int) -> dict:
         if any(t["number"] == _parse_ref(ref)[2] for t in tracked):
             return tracked_detail(resolve_tracked(tracked, ref))
     item = resolve_item(items, ref)
-    conn = db.connect(cfg.db_path)
-    try:
-        streams = db.list_discussions(conn, "pr")
-    finally:
-        conn.close()
-    return {"id": item["id"], "members": [
-        {"repo_short": m.get("repo_short"), "number": m.get("number"),
-         "discussion": derive.group_discussion(streams.get(f"{m.get('repo')}#{m.get('number')}", []))}
-        for m in _members(item)]}
+    return {"id": item["id"], "discussion": item["discussion"]}
 
 
 def review_history(
