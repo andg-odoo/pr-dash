@@ -1322,43 +1322,6 @@
     renderTrackedDetail(TRACKED.find(t => t.id === id) || null);
   }
 
-  /** Group the flat discussion stream into review-rooted trees.
-   *
-   *  GitHub models an inline conversation as a thread hanging off the review
-   *  that opened it, and reading them interleaved by timestamp - which is what
-   *  a flat list does - scrambles that: a five-comment argument about one file
-   *  ends up split across half the page. Threads nest under their review and
-   *  fold away, so the top level stays the shape of the actual conversation.
-   *
-   *  Threads whose parent review fell outside the fetched window are kept as
-   *  their own top-level group rather than dropped. */
-  function groupDiscussion(entries) {
-    const threads = new Map();   // thread_id -> {path, state, comments[]}
-    const tops = [];
-    for (const c of entries) {
-      if (c.kind !== "thread") { tops.push({ kind: c.kind, entry: c, threads: [] }); continue; }
-      let t = threads.get(c.thread_id);
-      if (!t) {
-        t = { id: c.thread_id, path: c.path, state: c.state,
-              parent: c.parent_id, comments: [] };
-        threads.set(c.thread_id, t);
-      }
-      t.comments.push(c);
-    }
-    const byReview = new Map(
-      tops.filter(t => t.kind === "review").map(t => [t.entry.thread_id, t]));
-    for (const t of threads.values()) {
-      const parent = byReview.get(t.parent);
-      if (parent) parent.threads.push(t);
-      else tops.push({ kind: "orphan-threads", entry: t.comments[0], threads: [t] });
-    }
-    // Newest first, and each review's threads oldest-first inside it.
-    tops.sort((a, b) => (b.entry.created_at || "").localeCompare(a.entry.created_at || ""));
-    tops.forEach(t => t.threads.sort(
-      (a, b) => (a.comments[0].created_at || "").localeCompare(b.comments[0].created_at || "")));
-    return tops;
-  }
-
   const VERDICT = {
     APPROVED: ["approved", "tr-verdict-ok"],
     CHANGES_REQUESTED: ["requested changes", "tr-verdict-no"],
@@ -1409,12 +1372,16 @@
     return `<span class="tr-onpath">${escapeHTML(c.member || "")}</span>`;
   }
 
-  // The merged discussion stream, newest review-rooted group first.
-  function discussionHTML(comments, showMember = false, empty = "No discussion cached.") {
-    const groups = groupDiscussion(comments);
+  // The Discussion tree with bot entries hidden, newest group first.
+  function discussionHTML(discussion, showMember = false, empty = "No discussion cached.") {
+    const groups = discussion.flatMap(g => {
+      const threads = g.threads.map(t => ({ ...t, comments: t.comments.filter(c => !c.is_bot) }))
+        .filter(t => t.comments.length);
+      return (g.entry ? g.entry.is_bot : !threads.length) ? [] : [{ ...g, threads }];
+    });
     if (!groups.length) return `<div class="tr-none">${empty}</div>`;
     return groups.map(g => {
-      if (g.kind === "orphan-threads") {
+      if (g.kind === "orphan") {
         return `<article class="tr-entry tr-entry-orphan">${threadsHTML(g.threads, showMember)}</article>`;
       }
       const c = g.entry;
@@ -1478,7 +1445,7 @@
 
         <section class="section">
           <h3>Discussion</h3>
-          ${discussionHTML(t.comments || [])}
+          ${discussionHTML(t.discussion)}
         </section>
       </div>`;
     const btn = detailEl.querySelector(".tr-dismiss");
@@ -1765,7 +1732,7 @@
 
         <section class="section">
           <h3>Discussion</h3>
-          ${discussionHTML(s.comments, s.members.length > 1 || s.members.some(m => m.fw.length),
+          ${discussionHTML(s.discussion, s.members.length > 1 || s.members.some(m => m.fw.length),
                            "No discussion yet.")}
         </section>
       </div>`;

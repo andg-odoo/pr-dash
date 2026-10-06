@@ -341,6 +341,34 @@ def discussion_stream(node: dict) -> list[dict]:
     return comments
 
 
+def group_discussion(stream: list[dict]) -> list[dict]:
+    """Nest a Discussion stream into groups holding their threads, newest group first."""
+    groups, threads = [], {}
+    for c in stream:
+        c = {**c, "is_bot": is_bot(c["author"])}
+        if c["kind"] != "thread":
+            groups.append({"kind": c["kind"], "entry": c, "threads": []})
+            continue
+        thread = threads.setdefault(c["thread_id"], {
+            "thread_id": c["thread_id"], "path": c["path"], "state": c["state"],
+            "parent_id": c["parent_id"], "comments": []})
+        thread["comments"].append(c)
+    # A bot review is hidden, so its threads stand alone as orphans.
+    by_review = {g["entry"]["thread_id"]: g for g in groups
+                 if g["kind"] == "review" and not g["entry"]["is_bot"]}
+    for thread in threads.values():
+        parent = by_review.get(thread.pop("parent_id"))
+        if parent:
+            parent["threads"].append(thread)
+        else:
+            groups.append({"kind": "orphan", "entry": None, "threads": [thread]})
+    groups.sort(key=lambda g: (g["entry"] or g["threads"][0]["comments"][0])["created_at"] or "",
+                reverse=True)
+    for g in groups:
+        g["threads"].sort(key=lambda t: t["comments"][0]["created_at"] or "")
+    return groups
+
+
 def tracked_since_last_look(
     prev: tuple[str | None, str | None, int | None] | None,
     state: str, head_sha: str | None, comment_count: int, *, first_run: bool,

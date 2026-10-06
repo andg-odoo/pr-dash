@@ -568,10 +568,7 @@ def build_tracked_payload(
             "thread_count": row["thread_count"] or 0,
             "unresolved_threads": row["unresolved_threads"] or 0,
             "body": row["body"],
-            "comments": [
-                c for c in comments_by_pr.get(row["id"], [])
-                if not derive.is_bot(c.get("author"))
-            ],
+            "discussion": derive.group_discussion(comments_by_pr.get(row["id"], [])),
             "source": row["source"],
             "added_at": row["added_at"],
             "updated_at": row["updated_at"],
@@ -625,11 +622,10 @@ def build_mine_payload(
             runbot = {c["name"]: c["url"] for c in row["checks"]
                       if "runbot.odoo.com" in (c.get("url") or "")}
             m["runbot_url"] = runbot.get("ci/runbot") or next(iter(runbot.values()), None)
-        s["comments"] = [
+        s["discussion"] = derive.group_discussion([
             {**c, "member": pr["ref"]}
             for m in s["members"] for pr in [m, *m["fw"]] for c in comments_by_pr.get(pr["id"], [])
-            if not derive.is_bot(c["author"])
-        ]
+        ])
     return sets, seen_updates
 
 

@@ -536,14 +536,14 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
     assert detail["task"] == "6396725"
     odoo = next(m for m in detail["members"] if m["num"] == 290109)
     assert odoo["body"] == "body 290109"
-    assert [(d["author"], d["kind"], d["body"]) for d in odoo["discussion"]] == [
-        ("jov-odoo", "issue", "Why here?")]
+    assert [(g["kind"], g["entry"]["author"], g["entry"]["body"]) for g in odoo["discussion"]] == [
+        ("issue", "jov-odoo", "Why here?")]
     assert mcp_server.get_mine("https://github.com/odoo/upgrade/pull/11389")["key"] == ec
 
     # A Forward-port ref resolves to its Source PR's set, carrying its own discussion.
     by_fw = mcp_server.get_mine("odoo#291981")
     [fw] = next(m for m in by_fw["members"] if m["num"] == 290109)["fw"]
-    assert (by_fw["key"], fw["ref"], [d["body"] for d in fw["discussion"]]) == (
+    assert (by_fw["key"], fw["ref"], [g["entry"]["body"] for g in fw["discussion"]]) == (
         ec, "odoo#291981", ["Rebased."])
 
     pr = mcp_server.get_pr("odoo/odoo#291981")

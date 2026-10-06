@@ -18,6 +18,10 @@ _Avoid_: subscription, watched PR
 An open or recently resolved PR the user opened, shown in the Mine tab.
 _Avoid_: my PR, own PR
 
+**Discussion**:
+Every review, conversation comment and review thread on a PR, as one stream.
+_Avoid_: comments, conversation, timeline
+
 ### Attention
 
 **Branch set**:

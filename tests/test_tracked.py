@@ -252,7 +252,7 @@ def test_tracked_row_from_node_tolerates_missing_ci_and_author():
 
 # --- render.build_tracked_payload --------------------------------------------
 
-def test_build_tracked_payload_sorts_active_first_and_drops_bots(tmp_path):
+def test_build_tracked_payload_sorts_active_first(tmp_path):
     conn = _conn(tmp_path)
     for pr_id, state, updated in [
         ("odoo/odoo#1", "OPEN", "2026-08-01T00:00:00Z"),
@@ -264,12 +264,6 @@ def test_build_tracked_payload_sorts_active_first_and_drops_bots(tmp_path):
             "state": state, "updated_at": updated, "created_at": updated,
             "head_sha": "s", "fetched_at": "t",
         })
-    db.replace_tab_comments(conn, "tracked", "odoo/odoo#1", [
-        {"comment_id": "c1", "kind": "issue", "author": "robodoo",
-         "created_at": "t", "body": "ci", "path": None, "state": None, "url": None},
-        {"comment_id": "c2", "kind": "issue", "author": "human",
-         "created_at": "t", "body": "hi", "path": None, "state": None, "url": None},
-    ])
 
     items, seen_updates = render.build_tracked_payload(conn)
 
@@ -277,9 +271,7 @@ def test_build_tracked_payload_sorts_active_first_and_drops_bots(tmp_path):
     # tail of months-old closures can't bury the PRs still in flight.
     assert [i["id"] for i in items] == ["odoo/odoo#3", "odoo/odoo#1", "odoo/odoo#2"]
     assert len(seen_updates) == 3
-    by_id = {i["id"]: i for i in items}
-    assert [c["author"] for c in by_id["odoo/odoo#1"]["comments"]] == ["human"]
-    assert by_id["odoo/odoo#1"]["repo_short"] == "odoo"
+    assert items[1]["repo_short"] == "odoo"
 
 
 def test_build_tracked_payload_dismissed_rows(tmp_path):
@@ -373,11 +365,56 @@ def test_mine_payload_bands_members_and_discussion(tmp_path):
     odoo = next(m for m in sets[0]["members"] if m["ref"] == "odoo#290109")
     assert (odoo["ci"], odoo["override"], odoo["review"], odoo["runbot_url"]) == (
         "green", [{"check": "ci/style", "by": "kmagusiak"}], "approved · r+ missing", runbot)
-    # Bot comments stay out of the human stream, each comment names its member.
-    assert [(c["author"], c["member"]) for c in sets[0]["comments"]] == [
-        ("clbr-odoo", "enterprise#132695")]
+    # Bot comments are flagged for the browser to hide, each comment names its member.
+    assert [(g["entry"]["author"], g["entry"]["is_bot"], g["entry"]["member"])
+            for g in sets[0]["discussion"]] == [
+        ("clbr-odoo", False, "enterprise#132695"), ("robodoo", True, "enterprise#132695")]
     [mp] = sets[1]["members"]
     assert (mp["draft"], mp["mergebot_unknown"], mp["review"]) == (True, True, "")
+
+
+def test_tracked_and_mine_payloads_ship_one_discussion_tree(tmp_path):
+    conn = _conn(tmp_path)
+
+    def said(login, at, url, review=None, **extra):
+        return {"author": {"login": login}, "createdAt": at, "submittedAt": at, "url": url,
+                "body": url, "pullRequestReview": review and {"id": review}, **extra}
+
+    node = {
+        "comments": {"nodes": [said("fw-bot", "2026-10-04T00:00:00Z", "c1")]},
+        "reviews": {"nodes": [
+            said("jov-odoo", "2026-10-01T00:00:00Z", "r1", id="R1", state="CHANGES_REQUESTED"),
+            said("robodoo", "2026-10-02T00:00:00Z", "r2", id="R2", state="COMMENTED"),
+            said("andg", "2026-10-03T00:00:00Z", "", id="R3", state="COMMENTED")]},
+        "reviewThreads": {"nodes": [
+            {"id": "T1", "path": "a.py", "isResolved": False, "comments": {"nodes": [
+                said("jov-odoo", "2026-10-01T00:00:01Z", "t1a", "R1"),
+                said("andg", "2026-10-03T00:00:00Z", "t1b", "R3")]}},
+            {"id": "T2", "path": "b.py", "isResolved": True, "comments": {"nodes": [
+                said("clbr-odoo", "2026-10-02T01:00:00Z", "t2a", "R2")]}},
+            {"id": "T3", "path": "c.py", "isResolved": True, "comments": {"nodes": [
+                said("clbr-odoo", "2026-10-01T00:00:00Z", "t3a", "R1")]}}]},
+    }
+    _add(conn, "odoo/odoo#1")
+    db.replace_tab_comments(conn, "tracked", "odoo/odoo#1", derive.discussion_stream(node))
+    _mine(conn, "odoo/odoo#1", "master-x-andg", "2026-10-04T00:00:00Z", **node)
+
+    def shape(tree):
+        return [(g["kind"], g["entry"] and (g["entry"]["url"], g["entry"]["is_bot"]),
+                 [(t["thread_id"], [c["url"] for c in t["comments"]]) for t in g["threads"]])
+                for g in tree]
+
+    [tracked], _ = render.build_tracked_payload(conn)
+    [mine], _ = render.build_mine_payload(conn, "andg")
+    # Newest first, threads under their review oldest first, a bot review's thread orphaned.
+    assert shape(tracked["discussion"]) == shape(mine["discussion"]) == [
+        ("issue", ("c1", True), []),
+        ("orphan", None, [("T2", ["t2a"])]),
+        ("review", ("r2", True), []),
+        ("review", ("r1", False), [("T3", ["t3a"]), ("T1", ["t1a", "t1b"])]),
+    ]
+    assert {c["member"] for g in mine["discussion"] for t in g["threads"]
+            for c in t["comments"]} == {"odoo#1"}
 
 
 def test_acknowledge_through_the_listener_and_fyi_clearing_on_a_look(tmp_path):
@@ -460,7 +497,7 @@ def _tracked_item(**over):
         "number": 1, "url": "u", "title": "t", "author": "a", "state": "OPEN",
         "is_draft": False, "target_branch": "master", "ci_state": "SUCCESS",
         "body": "desc", "comment_count": 1, "review_count": 2, "thread_count": 3,
-        "activity_count": 6, "unresolved_threads": 1, "comments": [],
+        "activity_count": 6, "unresolved_threads": 1, "discussion": [],
         "source": "notif", "added_at": "t", "updated_at": "t",
         "merged_at": None, "closed_at": None, "age_days": 5, "idle_days": 1,
         "since_last_look": [],
@@ -490,27 +527,10 @@ def test_resolve_tracked_rejects_ambiguous_number():
 
 
 def test_summarize_tracked_omits_body_and_discussion():
-    row = prquery.summarize_tracked(_tracked_item(comments=[{"body": "x"}]))
+    row = prquery.summarize_tracked(_tracked_item(discussion=[{"kind": "issue"}]))
     assert "body" not in row and "discussion" not in row
     assert row["review_count"] == 2 and row["unresolved_threads"] == 1
 
-
-def test_tracked_detail_exposes_nesting_keys():
-    item = _tracked_item(comments=[
-        {"kind": "review", "thread_id": "REV_1", "parent_id": None,
-         "author": "r", "created_at": "t", "body": "LGTM", "url": "u",
-         "path": None, "state": "APPROVED"},
-        {"kind": "thread", "thread_id": "THR_1", "parent_id": "REV_1",
-         "author": "r", "created_at": "t", "body": "why", "url": "u2",
-         "path": "a/b.py", "state": "UNRESOLVED"},
-    ])
-    out = prquery.tracked_detail(item)
-    assert out["body"] == "desc"
-    assert [d["kind"] for d in out["discussion"]] == ["review", "thread"]
-    # parent_id is what lets a consumer rebuild the dashboard's nesting.
-    assert out["discussion"][1]["parent_id"] == "REV_1"
-    assert out["discussion"][1]["path"] == "a/b.py"
-    assert out["discussion"][0]["state"] == "APPROVED"
 
 
 def test_load_tracked_include_dismissed_flags_them(tmp_path):

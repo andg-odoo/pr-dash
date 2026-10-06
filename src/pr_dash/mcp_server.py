@@ -351,15 +351,17 @@ def list_tracked(state: str = "all", include_dismissed: bool = False) -> dict:
 
 @mcp.tool()
 def get_tracked(ref: str) -> dict:
-    """Full detail for one tracked PR: body plus its merged discussion stream.
+    """Full detail for one tracked PR: body plus its Discussion tree.
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
 
-    Discussion merges conversation comments, review submissions and inline
-    review threads, oldest first. Each entry carries kind ('issue' | 'review' |
-    'thread'); review entries carry state (APPROVED / CHANGES_REQUESTED /
-    COMMENTED / DISMISSED) and thread entries carry path plus thread_id and
-    parent_id, so threads can be regrouped under the review that opened them.
+    The Discussion is a list of groups, newest first, each {kind, entry, threads}:
+    kind 'review' or 'issue' (a conversation comment) with its entry, or 'orphan'
+    (entry null) for a thread whose opening review is not shown. threads hold
+    {thread_id, path, state (RESOLVED / UNRESOLVED), comments}, oldest first, nested
+    under the review that opened them. Entries carry author, created_at, body, url,
+    is_bot (robodoo, fw-bot, *[bot]) and, for reviews, state (APPROVED /
+    CHANGES_REQUESTED / COMMENTED / DISMISSED). A bot review's threads are orphans.
 
     Only a recent window is cached (last 10 reviews, last 15 threads), so
     review_count / thread_count can exceed what appears here on a busy PR.
@@ -408,13 +410,12 @@ def list_mine(band: str | None = None, include_dismissed: bool = False) -> dict:
 @mcp.tool()
 def get_mine(ref: str) -> dict:
     """Full detail for the Branch set holding one of your Authored PRs: every
-    member with its body and merged discussion stream, each Forward-port with its own stream.
+    member with its body and Discussion tree, each Forward-port with its own tree.
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL,
     naming any member of the set or one of their Forward-ports.
 
-    Discussion entries have the get_tracked shape: kind ('issue' | 'review' |
-    'thread'), review state, and thread path, thread_id and parent_id.
+    Each discussion has the get_tracked Discussion tree shape.
     """
     cfg = _get_cfg()
     sets = query.load_mine(cfg, include_dismissed=True)

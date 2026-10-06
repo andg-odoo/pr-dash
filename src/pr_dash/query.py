@@ -433,7 +433,7 @@ def load_mine(cfg: Config, *, include_dismissed: bool = False) -> list[dict]:
     finally:
         conn.close()
     # The discussion stays out of a listing, mine_detail serves it.
-    return [{k: v for k, v in s.items() if k != "comments"} for s in sets]
+    return [{k: v for k, v in s.items() if k != "discussion"} for s in sets]
 
 
 def resolve_mine(sets: list[dict], ref: str | int) -> dict | None:
@@ -453,7 +453,7 @@ def resolve_mine(sets: list[dict], ref: str | int) -> dict | None:
 
 
 def mine_detail(cfg: Config, branch_set: dict) -> dict:
-    """A Branch set with each member's body and merged discussion stream."""
+    """A Branch set with each member's body and Discussion tree."""
     conn = db.connect(cfg.db_path)
     try:
         bodies = {r["id"]: r["body"] for r in db.list_mine(conn, include_dismissed=True)}
@@ -463,9 +463,10 @@ def mine_detail(cfg: Config, branch_set: dict) -> dict:
     members = []
     for m in branch_set["members"]:
         pr_id = f"{m['repo']}#{m['num']}"
-        fw = [{**f, "discussion": _discussion(comments.get(f["id"], []))} for f in m["fw"]]
+        fw = [{**f, "discussion": derive.group_discussion(comments.get(f["id"], []))}
+              for f in m["fw"]]
         members.append({**m, "fw": fw, "body": bodies.get(pr_id),
-                        "discussion": _discussion(comments.get(pr_id, []))})
+                        "discussion": derive.group_discussion(comments.get(pr_id, []))})
     return {**branch_set, "members": members}
 
 
@@ -509,7 +510,7 @@ def load_tracked(cfg: Config, *, include_dismissed: bool = False) -> list[dict]:
                     "thread_count": row["thread_count"] or 0,
                     "activity_count": row["activity_count"] or 0,
                     "unresolved_threads": row["unresolved_threads"] or 0,
-                    "comments": [], "source": row["source"],
+                    "discussion": [], "source": row["source"],
                     "added_at": row["added_at"], "updated_at": row["updated_at"],
                     "merged_at": row["merged_at"], "closed_at": row["closed_at"],
                     "age_days": 0, "idle_days": 0, "since_last_look": [],
@@ -565,22 +566,8 @@ def summarize_tracked(t: dict) -> dict:
 
 
 def tracked_detail(t: dict) -> dict:
-    """Full tracked PR: summary plus body and the merged discussion stream.
-
-    Discussion entries carry kind ('issue' | 'review' | 'thread'), and thread
-    entries carry thread_id/parent_id so a consumer can rebuild the same nesting
-    the dashboard shows - threads hang off the review that opened them.
-    """
+    """Full tracked PR: summary plus body and its Discussion tree, bots flagged."""
     out = summarize_tracked(t)
     out["body"] = t.get("body")
-    out["discussion"] = _discussion(t.get("comments") or [])
+    out["discussion"] = t["discussion"]
     return out
-
-
-def _discussion(comments: list[dict]) -> list[dict]:
-    return [
-        {**_comment_view(c), "kind": c.get("kind"),
-         "thread_id": c.get("thread_id"), "parent_id": c.get("parent_id"),
-         "path": c.get("path"), "state": c.get("state")}
-        for c in comments
-    ]
