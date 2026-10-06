@@ -1,7 +1,8 @@
 """In-memory GitHub, AI reviewer and clock for tests, with the GraphQL node builders they share."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import re
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -12,15 +13,84 @@ if TYPE_CHECKING:
 
 T0 = "2026-07-01T00:00:00Z"
 
-# Timeline item types each fragment asks for, "activity" being the archived-row check.
-_TIMELINE = {
-    "queue": {"ReviewRequestedEvent", "PullRequestReview"},
-    "tracked": set(),
-    "mine": {"ReviewRequestedEvent", "ReviewRequestRemovedEvent"},
-    "history": {"ReviewRequestedEvent", "ReviewRequestRemovedEvent"},
-    "activity": {"ReviewRequestedEvent"},
-}
 _EVENT_TYPES = {"requested": "ReviewRequestedEvent", "removed": "ReviewRequestRemovedEvent"}
+_TOKEN = re.compile(r"\.\.\.|\$?\w+|[{}():]")
+
+
+def _selection(text: str, start: str) -> dict:
+    """Parse the GraphQL selection opening at `start` in `text`, as key -> (sub, types, cut).
+
+    :return: per selected key, its own selection, the item types it keeps and the nodes it cuts
+    """
+    toks = _TOKEN.findall(text[text.index(start) + len(start):])
+    sel: dict = {}
+
+    def merge(into: dict, other: dict) -> None:
+        for key, (sub, types, cut) in other.items():
+            if key in into and sub:
+                merge(into[key][0], sub)
+            else:
+                into[key] = (sub, types, cut)
+
+    def parse(into: dict) -> None:
+        while (tok := toks.pop(0)) != "}":
+            if tok == "...":
+                spread = toks.pop(0)
+                if spread == "on":
+                    toks[:2] = []
+                    parse(into)
+                else:
+                    merge(into, _selection(text, f"fragment {spread} on PullRequest {{"))
+                continue
+            if toks[0] == ":":
+                toks[:2] = []
+            args = []
+            if toks[0] == "(":
+                while (arg := toks.pop(0)) != ")":
+                    args.append(arg)
+            sub: dict = {}
+            if toks[0] == "{":
+                toks.pop(0)
+                parse(sub)
+            size = next((int(v) for k, v in zip(args, args[2:]) if k in ("first", "last")
+                         and v.isdecimal()), None)
+            # A connection selecting pageInfo is paged through to the end by the real adapter.
+            cut = (None if size is None or "nodes" not in sub or "pageInfo" in sub
+                   else slice(-size, None) if "last" in args else slice(size))
+            types = {t.title().replace("_", "") for t in args if t.isupper()}
+            merge(into, {tok: (sub or None, types, cut)})
+
+    parse(sel)
+    return sel
+
+
+def _project(value, shape: dict | None):
+    """Keep of `value` only what `shape` selects, as GitHub answers it."""
+    if isinstance(value, list):
+        return [_project(v, shape) for v in value]
+    if shape is None or not isinstance(value, dict):
+        return value
+    out = {}
+    for key, (sub, types, cut) in shape.items():
+        if key not in value:
+            continue
+        v = value[key]
+        if isinstance(v, dict) and "nodes" in v and (types or cut):
+            nodes = [n for n in v["nodes"] if not types or n.get("__typename") in types]
+            v = {**v, "nodes": nodes[cut or slice(None)]}
+        out[key] = _project(v, sub)
+    return out
+
+
+# Each view's node as the real adapter's query selects it.
+SHAPES = {
+    "queue": _selection(github.PR_NODE_FRAGMENT, "fragment PRFields on PullRequest {"),
+    "tracked": _selection(github.TRACKED_NODE_FRAGMENT, "fragment TrackedFields on PullRequest {"),
+    "mine": _selection(github.MINE_NODE_FRAGMENT, "fragment MineFields on PullRequest {"),
+    "activity": _selection("{" + github._ARCHIVED_ACTIVITY_FIELDS + "}", "{"),
+    "reviewed_by": _selection(github.REVIEWED_BY_QUERY, "... on PullRequest {"),
+}
+SHAPES["history"] = SHAPES["mine"]
 
 
 @dataclass
@@ -91,7 +161,7 @@ def _rollup(checks: dict[str, str]) -> dict | None:
 
 
 def pr_node(pr: FakePR, view: str = "queue", **over) -> dict:
-    """The node GitHub returns for `pr` under `view`'s fragment, `over` replacing top-level keys."""
+    """The node GitHub returns for `pr` under `view`'s query, `over` replacing top-level keys."""
     reviews = [
         {"id": r.get("id", f"R{i}"), "author": {"login": r["author"]}, "state": r["state"],
          "submittedAt": r["at"], "body": r.get("body", ""), "url": f"{pr.url}#review-{i}",
@@ -122,10 +192,10 @@ def pr_node(pr: FakePR, view: str = "queue", **over) -> dict:
         key=lambda e: e.get("createdAt") or e["submittedAt"],
     )
     node = {
-        "url": pr.url, "number": pr.number, "title": pr.title, "state": pr.state,
+        "id": f"PR_{pr.id}", "url": pr.url, "number": pr.number, "title": pr.title, "state": pr.state,
         "isDraft": pr.draft, "body": pr.body, "createdAt": pr.created_at,
         "updatedAt": pr.updated_at, "closedAt": pr.closed_at, "mergedAt": pr.merged_at,
-        "mergeable": pr.mergeable, "additions": 1, "deletions": 0, "changedFiles": len(pr.files),
+        "mergeable": pr.mergeable, "reviewDecision": None, "additions": 1, "deletions": 0, "changedFiles": len(pr.files),
         "baseRefName": pr.base, "headRefName": pr.head_branch, "headRefOid": pr.head_sha,
         "author": {"login": pr.author}, "repository": {"nameWithOwner": pr.repo},
         "reviewRequests": {"nodes": [{"requestedReviewer": _user(r)} for r in pr.requested]},
@@ -135,15 +205,14 @@ def pr_node(pr: FakePR, view: str = "queue", **over) -> dict:
         "reviewThreads": _page(threads),
         "commits": {"nodes": [{"commit": {"oid": pr.head_sha, "committedDate": pr.pushed_at,
                                           "statusCheckRollup": _rollup(pr.checks)}}]},
-        "timelineItems": {"nodes": [e for e in timeline if e["__typename"] in _TIMELINE[view]]},
+        "timelineItems": {"nodes": timeline},
         "files": _page([{"path": path} for path in pr.files]),
         "crossReferences": {"nodes": [
-            {"source": {"number": n, "author": {"login": a}, "repository": {"nameWithOwner": r}}}
+            {"__typename": "CrossReferencedEvent", "source": {"number": n, "author": {"login": a}, "repository": {"nameWithOwner": r}}}
             for r, n, a in pr.cross_refs
         ]},
     }
-    node.update(over)
-    return node
+    return _project({**node, **over}, SHAPES[view])
 
 
 def branch_hit(pr: FakePR) -> dict:
@@ -240,7 +309,9 @@ class FakeGitHub:
                        if any(r["author"] == login for r in pr.reviews)
                        and (not since or pr.updated_at >= since)),
                       key=lambda pr: pr.updated_at, reverse=True)
-        return [pr_node(pr) for pr in hits[:limit]], None
+        # The query asks only for `login`'s reviews.
+        return [pr_node(replace(pr, reviews=[r for r in pr.reviews if r["author"] == login]),
+                        "reviewed_by") for pr in hits[:limit]], None
 
     def reviewed_among(self, refs, login):
         self._call("reviewed_among", refs, login)

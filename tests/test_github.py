@@ -5,6 +5,7 @@ import time
 import pytest
 
 from pr_dash import github
+from tests.fakes import SHAPES, FakePR, pr_node
 
 
 def _fake_run(errors, *, calls, stdout="ok"):
@@ -132,3 +133,15 @@ def test_manual_subscriptions_keep_each_pr_once(monkeypatch):
         "id": "odoo/odoo#264068", "repo": "odoo/odoo", "number": 264068,
         "url": "https://github.com/odoo/odoo/pull/264068", "title": "[ADD] x",
         "updated_at": "2026-08-01T00:00:00Z"}]
+
+
+def test_each_fake_node_carries_exactly_what_its_real_query_selects():
+    pr = FakePR("odoo/odoo", 1, comments=[{"author": "a", "at": f"{i:02}", "body": str(i)}
+                                          for i in range(12)])
+    for view, shape in SHAPES.items():
+        assert set(pr_node(pr, view)) == set(shape), view
+    # The archived-row check reads the last ten comments, and backfill no discussion at all.
+    assert [c["body"] for c in pr_node(pr, "activity")["comments"]["nodes"]] == [
+        str(i) for i in range(2, 12)]
+    assert {"body", "comments", "reviewThreads", "files"}.isdisjoint(SHAPES["reviewed_by"])
+    assert "files" not in SHAPES["tracked"] and "closedAt" not in SHAPES["queue"]

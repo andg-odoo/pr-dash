@@ -392,12 +392,16 @@ def test_backfill_archives_past_reviews_and_leaves_live_rows_to_the_refresh(w):
 
 def test_tracking_by_hand_fills_rows_at_once_and_outlives_a_github_failure(w):
     w.gh.add("odoo/odoo", 1, title="[FIX] x")
-    assert w.sync.track([("odoo/odoo", 1), ("odoo/odoo", 9)]) == (["odoo/odoo#1", "odoo/odoo#9"], 1)
+    refs = [("odoo/odoo", 1), ("odoo/odoo", 9)]
+    assert w.sync.track(refs) == ["odoo/odoo#1", "odoo/odoo#9"]
+    assert w.sync.fetch_tracked(refs) == 1
     assert db.get_tracked(w.conn, "odoo/odoo#1")["title"] == "[FIX] x"
 
     db.set_dismissed(w.conn, "tracked", "odoo/odoo#1", T0)
     w.gh.fail("nodes")
-    assert w.sync.track([("odoo/odoo", 1)]) == ([], None)
+    assert w.sync.track([("odoo/odoo", 1)]) == []
+    with pytest.raises(github.GithubError):
+        w.sync.fetch_tracked([("odoo/odoo", 1)])
     assert db.get_tracked(w.conn, "odoo/odoo#1")["dismissed_at"] is None
 
 

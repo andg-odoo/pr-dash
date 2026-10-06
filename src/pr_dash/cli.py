@@ -22,6 +22,7 @@ from pr_dash import query as prquery
 
 console = Console()
 log = logging.getLogger("pr_dash")
+_github: github.GitHub = github.GhGitHub()
 
 # Room for many refreshes' worth of phase lines, without becoming a file to tidy by hand.
 _CRON_LOG_MAX_BYTES = 1_000_000
@@ -75,7 +76,7 @@ def _notify(cron: bool, message: str, style: str = "") -> None:
 def _sync(conn, cfg, progress) -> sync.Sync:
     """A Sync over the real GitHub, announcing its phases on `progress`."""
     task = progress.add_task("", total=None)
-    return sync.Sync(conn, cfg, github.GhGitHub(),
+    return sync.Sync(conn, cfg, _github,
                      on_phase=lambda text: progress.update(task, description=text))
 
 
@@ -322,13 +323,16 @@ def track(refs, config_path, skip_invalid):
     if not parsed:
         return
 
-    added, fetched = sync.Sync(db.connect(cfg.db_path), cfg, github.GhGitHub()).track(parsed)
+    tracker = sync.Sync(db.connect(cfg.db_path), cfg, _github)
+    added = tracker.track(parsed)
     for repo, number in parsed:
         pr_id = f"{repo}#{number}"
         console.print(f"[green]Tracking {pr_id}[/green]" if pr_id in added
                       else f"[dim]{pr_id} already tracked[/dim]")
-    if fetched is None:
-        console.print("[yellow]Tracked, but could not fetch state yet.[/yellow]")
+    try:
+        fetched = tracker.fetch_tracked(parsed)
+    except github.GithubError as e:
+        console.print(f"[yellow]Tracked, but could not fetch state yet: {e}[/yellow]")
     else:
         console.print(f"[dim]{len(added)} new, {fetched} fetched[/dim]")
 

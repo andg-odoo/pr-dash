@@ -213,27 +213,19 @@ class Sync:
         if stale:
             self._phase(f"Refreshing {len(stale)} tracked PRs...")
             try:
-                report.tracked_refreshed = self._fetch_tracked(stale)
+                report.tracked_refreshed = self.fetch_tracked(stale)
             except github.GithubError as e:
                 report.warnings.append(f"Tracked PR refresh failed: {e}")
 
-    def track(self, refs: list[tuple[str, int]]) -> tuple[list[str], int | None]:
-        """Track PRs by hand and fetch their state, so a render shows them before a refresh.
-
-        :return: the ids not tracked before, and the rows fetched or None when GitHub failed
-        """
+    def track(self, refs: list[tuple[str, int]]) -> list[str]:
+        """Track PRs by hand, reviving dismissed ones, returning the ids not tracked before."""
         now = self._stamp()
         with db.transaction(self.conn):
-            added = [f"{repo}#{n}" for repo, n in refs if db.add_tracked(
+            return [f"{repo}#{n}" for repo, n in refs if db.add_tracked(
                 self.conn, f"{repo}#{n}", repo, n, f"https://github.com/{repo}/pull/{n}", "manual",
                 now)]
-        try:
-            return added, self._fetch_tracked(refs)
-        except github.GithubError as e:
-            log.warning("tracked PR fetch failed (%s); state fills in on the next refresh", e)
-            return added, None
 
-    def _fetch_tracked(self, refs: list[tuple[str, int]]) -> int:
+    def fetch_tracked(self, refs: list[tuple[str, int]]) -> int:
         """Refresh the cached GitHub state of the given Tracked PRs, returning how many."""
         nodes = self.gh.nodes(refs, "tracked")
         now = self._stamp()
