@@ -14,7 +14,7 @@ _PAGE_INFO = "pageInfo { hasNextPage endCursor }"
 
 @dataclass(frozen=True)
 class _Pages:
-    """Node fields of a fragment's paged connections, shared with its follow-up pages."""
+    """Node fields of the paged connections, shared with their follow-up pages."""
     reviews: str
     comments: str
     threads: str
@@ -22,19 +22,13 @@ class _Pages:
     files: str = ""
 
 
-_REVIEW_PAGES = _Pages(
+# One field set for the Discussion in every view, so a field is added in one place.
+_PAGES = _Pages(
     reviews="id author { login } state submittedAt body url",
     comments="author { login } createdAt body databaseId url",
-    threads="id isResolved",
-    thread_comments="author { login } createdAt body path databaseId url",
-    files="path",
-)
-
-_TRACKED_PAGES = _Pages(
-    reviews="id author { login } state submittedAt body url",
-    comments="author { login } createdAt body url",
     threads="id isResolved path",
-    thread_comments="author { login } createdAt body url pullRequestReview { id }",
+    thread_comments="author { login } createdAt body path databaseId url pullRequestReview { id }",
+    files="path",
 )
 
 
@@ -123,7 +117,7 @@ fragment PRFields on PullRequest {
   latestReviews(first: 30) {
     nodes { author { login } state commit { oid } }
   }
-  """ + _connections(_REVIEW_PAGES, 30, 30) + """
+  """ + _connections(_PAGES, 30, 30) + """
   commits(last: 1) {
     nodes {
       commit {
@@ -157,7 +151,7 @@ fragment PRFields on PullRequest {
       }
     }
   }
-  """ + _connection("files", "first: 100", _REVIEW_PAGES.files) + """
+  """ + _connection("files", "first: 100", _PAGES.files) + """
 }
 """
 
@@ -434,7 +428,7 @@ fragment TrackedFields on PullRequest {
   baseRefName
   author { login }
   repository { nameWithOwner }
-  """ + _connections(_TRACKED_PAGES, 15, 5) + """
+  """ + _connections(_PAGES, 15, 5) + """
   commits(last: 1) {
     nodes {
       commit {
@@ -542,7 +536,7 @@ class GhGitHub:
         # user-review-requested: drops team requests server-side, 2.8s a refresh instead of 39s.
         nodes, rl = _search_nodes(
             SEARCH_QUERY, {"q": f"is:open is:pr user-review-requested:{login} archived:false"})
-        _complete_pages(nodes, _REVIEW_PAGES)
+        _complete_pages(nodes, _PAGES)
         return nodes, rl
 
     def reviewed_by(self, login, *, limit=1000, since=None):
@@ -609,7 +603,7 @@ class GhGitHub:
     def nodes(self, refs, view):
         if view == "queue":
             nodes = _pull_requests(refs, "...PRFields", chunk_size=10, fragment=PR_NODE_FRAGMENT)
-            _complete_pages(list(nodes.values()), _REVIEW_PAGES)
+            _complete_pages(list(nodes.values()), _PAGES)
             return nodes
         fragment, spread = ((TRACKED_NODE_FRAGMENT, "...TrackedFields") if view == "tracked"
                             else (MINE_NODE_FRAGMENT, "...MineFields"))
@@ -617,7 +611,7 @@ class GhGitHub:
         nodes = _pull_requests(refs, spread, chunk_size=10 if view == "history" else 50,
                                partial=True, fragment=fragment)
         # Both fragments spread TrackedFields.
-        _complete_pages(list(nodes.values()), _TRACKED_PAGES)
+        _complete_pages(list(nodes.values()), _PAGES)
         return nodes
 
     def authored_open(self, login):

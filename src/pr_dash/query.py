@@ -271,79 +271,26 @@ def detail(item: dict) -> dict:
     return out
 
 
-def _comment_view(row: dict) -> dict:
-    return {
-        "author": row["author"],
-        "bot": derive.is_bot(row["author"]),
-        "created_at": row["created_at"],
-        "body": row["body"],
-        "url": row["url"],
-    }
-
-
-def _shape_member_comments(member: dict, rows: list[dict],
-                           resolved: dict[str, bool]) -> dict:
-    """Group one member's pr_comment rows into threads / reviews / conversation.
-    `resolved` maps thread_id -> is_resolved (from pr_thread)."""
-    threads: dict[str, dict] = {}
-    reviews: list[dict] = []
-    conversation: list[dict] = []
-    for r in rows:
-        if r["kind"] == "thread":
-            tid = r["thread_id"]
-            th = threads.get(tid)
-            if th is None:
-                th = {"thread_id": tid, "is_resolved": resolved.get(tid, False),
-                      "path": r["path"], "comments": []}
-                threads[tid] = th
-            if not th["path"] and r["path"]:
-                th["path"] = r["path"]
-            th["comments"].append(_comment_view(r))
-        elif r["kind"] == "review":
-            reviews.append({
-                "author": r["author"],
-                "bot": derive.is_bot(r["author"]),
-                "state": r["state"],
-                "submitted_at": r["created_at"],
-                # A PENDING (or never-submitted) review is an unsent draft, only
-                # visible to its own author's token - the invisible-draft case.
-                "pending": r["state"] == "PENDING" or r["created_at"] is None,
-                "body": r["body"],
-                "url": r["url"],
-            })
-        elif r["kind"] == "issue":
-            conversation.append(_comment_view(r))
-    return {
-        "repo_short": member.get("repo_short"),
-        "number": member.get("number"),
-        "threads": list(threads.values()),
-        "reviews": reviews,
-        "conversation": conversation,
-    }
-
-
-def get_comments(cfg: Config, item: dict) -> dict:
-    """Full comment/review/thread data for one PR (both halves of a pair).
-
-    Per member: `threads` (grouped, each with is_resolved, path and its comments
-    in order, full bodies), `reviews` (submissions with author, state,
-    submitted_at, body; PENDING entries are unsent drafts flagged pending: true),
-    and `conversation` (top-level PR comments). Bot authors (robodoo, fw-bot,
-    `*[bot]`) carry bot: true so callers can filter automation noise."""
+def get_comments(cfg: Config, ref: str | int) -> dict:
+    """The Discussion of the cached PR `ref` names, in the Review queue, Mine or Tracked."""
+    items = load_items(cfg)
+    authored = resolve_authored(cfg, items, ref)
+    if authored is not None:
+        return authored
+    if not _matching_items(items, ref):
+        tracked = load_tracked(cfg, include_dismissed=True)
+        if any(t["number"] == _parse_ref(ref)[2] for t in tracked):
+            return tracked_detail(resolve_tracked(tracked, ref))
+    item = resolve_item(items, ref)
     conn = db.connect(cfg.db_path)
     try:
-        threads_by_pr = db.list_threads(conn)
-        members = []
-        for m in _members(item):
-            pr_id = f"{m.get('repo')}#{m.get('number')}"
-            resolved = {t["thread_id"]: bool(t["is_resolved"])
-                        for t in threads_by_pr.get(pr_id, [])}
-            members.append(_shape_member_comments(
-                m, db.comments_for(conn, pr_id), resolved,
-            ))
+        streams = db.list_discussions(conn, "pr")
     finally:
         conn.close()
-    return {"id": item["id"], "members": members}
+    return {"id": item["id"], "members": [
+        {"repo_short": m.get("repo_short"), "number": m.get("number"),
+         "discussion": derive.group_discussion(streams.get(f"{m.get('repo')}#{m.get('number')}", []))}
+        for m in _members(item)]}
 
 
 def review_history(

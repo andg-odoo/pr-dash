@@ -293,24 +293,15 @@ def get_pr(ref: str) -> dict:
 
 @mcp.tool()
 def get_comments(ref: str) -> dict:
-    """Full comment/review/thread data for one PR (both halves of a pair).
-
-    Per member: threads (grouped, each with is_resolved, path and its ordered
-    comments incl. full bodies), reviews (submissions with author, state,
-    submitted_at, body - PENDING entries are unsent drafts flagged pending: true,
-    visible only to their own author), and conversation (top-level PR comments).
-    Bot authors (robodoo, fw-bot, *[bot]) carry bot: true so you can filter them.
+    """The Discussion of any cached PR, whichever tab holds it.
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
-    A ref naming no review-queue PR but one of your Authored PRs returns its
-    Branch set instead, the same output as get_mine.
+    A Review queue PR returns {id, members: [{repo_short, number, discussion}]}, one
+    member per half of a pair. An Authored PR returns its Branch set as get_mine does,
+    a Tracked PR its detail as get_tracked does. Every discussion has the get_tracked
+    Discussion tree shape, bots included with is_bot: true.
     """
-    cfg = _get_cfg()
-    items = query.load_items(cfg)
-    authored = query.resolve_authored(cfg, items, ref)
-    if authored is not None:
-        return authored
-    return query.get_comments(cfg, query.resolve_item(items, ref))
+    return query.get_comments(_get_cfg(), ref)
 
 
 @mcp.tool()

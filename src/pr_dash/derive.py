@@ -441,38 +441,31 @@ def parse_linked_task(body: str | None) -> tuple[str, str] | None:
     return m.group(1).lower(), m.group(2)
 
 
-@dataclass
-class ThreadDerivation:
-    threads: list[dict]
-    unresolved: int
-    awaiting_my_reply: bool
+def thread_facts(stream: list[dict], login: str) -> list[dict]:
+    """Each review thread's resolution, my participation and last reply, from a Discussion."""
+    threads: dict[str, list[dict]] = {}
+    for c in stream:
+        if c["kind"] == "thread":
+            threads.setdefault(c["thread_id"], []).append(c)
+    return [{
+        "thread_id": thread_id,
+        "is_resolved": comments[0]["state"] == "RESOLVED",
+        "i_participated": any(c["author"] == login for c in comments),
+        "last_reply_at": comments[-1]["created_at"] or "",
+        "last_reply_author": comments[-1]["author"] or "",
+    } for thread_id, comments in threads.items()]
 
 
-def derive_threads(thread_nodes: list[dict], my_login: str) -> ThreadDerivation:
-    out: list[dict] = []
-    unresolved = 0
-    awaiting = False
-    for t in thread_nodes:
-        comments = (t.get("comments") or {}).get("nodes") or []
-        if not comments:
-            continue
-        i_participated = any((c.get("author") or {}).get("login") == my_login for c in comments)
-        last = comments[-1]
-        last_login = (last.get("author") or {}).get("login") or ""
-        last_at = last.get("createdAt") or ""
-        is_resolved = bool(t.get("isResolved"))
-        if not is_resolved:
-            unresolved += 1
-            if i_participated and last_login and last_login != my_login:
-                awaiting = True
-        out.append({
-            "thread_id": t["id"],
-            "is_resolved": int(is_resolved),
-            "i_participated": int(i_participated),
-            "last_reply_at": last_at,
-            "last_reply_author": last_login,
-        })
-    return ThreadDerivation(threads=out, unresolved=unresolved, awaiting_my_reply=awaiting)
+def awaiting_my_reply(facts: list[dict], login: str) -> bool:
+    """True when an unresolved thread I took part in ends on someone else's comment."""
+    return any(not t["is_resolved"] and t["i_participated"]
+               and t["last_reply_author"] not in ("", login) for t in facts)
+
+
+def has_pending_draft(node: dict, login: str) -> bool:
+    """True when the node holds my unsent review, which GitHub shows only to its author."""
+    return any(_login(r) == login and (r.get("state") == "PENDING" or r.get("submittedAt") is None)
+               for r in (node.get("reviews") or {}).get("nodes") or [])
 
 
 _BOT_LOGINS = {"robodoo", "fw-bot"}
@@ -500,75 +493,6 @@ def comment_snippet(body: str | None, limit: int = 100) -> str:
     if len(text) > limit:
         text = text[:limit].rstrip() + "…"
     return text
-
-
-def derive_comments(node: dict, my_login: str) -> tuple[list[dict], bool]:
-    """Flatten a PR node's review threads, review submissions and conversation
-    comments into pr_comment rows, and report whether the viewer has an unsent
-    (PENDING) review draft.
-
-    A PENDING review is only ever returned for the viewer's own token, which is
-    exactly the invisible-draft case we want to surface loudly.
-    """
-    out: list[dict] = []
-
-    for t in (node.get("reviewThreads") or {}).get("nodes") or []:
-        thread_id = t.get("id")
-        for c in (t.get("comments") or {}).get("nodes") or []:
-            cid = c.get("databaseId")
-            if cid is None:
-                continue
-            out.append({
-                "kind": "thread",
-                "thread_id": thread_id,
-                "comment_id": str(cid),
-                "author": (c.get("author") or {}).get("login"),
-                "created_at": c.get("createdAt"),
-                "body": c.get("body"),
-                "path": c.get("path"),
-                "state": None,
-                "url": c.get("url"),
-            })
-
-    my_pending = False
-    for r in (node.get("reviews") or {}).get("nodes") or []:
-        rid = r.get("id")
-        if rid is None:
-            continue
-        state = r.get("state")
-        author = (r.get("author") or {}).get("login")
-        pending = state == "PENDING" or r.get("submittedAt") is None
-        if pending and author == my_login:
-            my_pending = True
-        out.append({
-            "kind": "review",
-            "thread_id": None,
-            "comment_id": str(rid),
-            "author": author,
-            "created_at": r.get("submittedAt"),
-            "body": r.get("body"),
-            "path": None,
-            "state": state,
-            "url": r.get("url"),
-        })
-
-    for c in (node.get("comments") or {}).get("nodes") or []:
-        cid = c.get("databaseId")
-        if cid is None:
-            continue
-        out.append({
-            "kind": "issue",
-            "thread_id": None,
-            "comment_id": str(cid),
-            "author": (c.get("author") or {}).get("login"),
-            "created_at": c.get("createdAt"),
-            "body": c.get("body"),
-            "path": None,
-            "state": None,
-            "url": c.get("url"),
-        })
-
-    return out, my_pending
 
 
 def _login(node: dict | None) -> str | None:

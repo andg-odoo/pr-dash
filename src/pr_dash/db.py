@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 28
+SCHEMA_VERSION = 29
 
 # Cache-wide facts with nowhere better to live, such as when a refresh last reached GitHub.
 META_SCHEMA_SQL = """
@@ -250,30 +250,6 @@ CREATE TABLE pr_reviewer (
   PRIMARY KEY (pr_id, kind, name)
 );
 
-CREATE TABLE pr_thread (
-  pr_id             TEXT NOT NULL REFERENCES pr(id) ON DELETE CASCADE,
-  thread_id         TEXT NOT NULL,
-  is_resolved       INTEGER NOT NULL,
-  i_participated    INTEGER NOT NULL,
-  last_reply_at     TEXT NOT NULL,
-  last_reply_author TEXT NOT NULL,
-  PRIMARY KEY (pr_id, thread_id)
-);
-
-CREATE TABLE pr_comment (
-  pr_id      TEXT NOT NULL REFERENCES pr(id) ON DELETE CASCADE,
-  kind       TEXT NOT NULL,
-  thread_id  TEXT,
-  comment_id TEXT NOT NULL,
-  author     TEXT,
-  created_at TEXT,
-  body       TEXT,
-  path       TEXT,
-  state      TEXT,
-  url        TEXT,
-  PRIMARY KEY (pr_id, kind, comment_id)
-);
-
 CREATE TABLE complexity (
   head_sha    TEXT PRIMARY KEY,
   bucket      TEXT NOT NULL,
@@ -318,8 +294,6 @@ CREATE TABLE seen (
 
 CREATE INDEX idx_pr_module_pr ON pr_module(pr_id);
 CREATE INDEX idx_pr_reviewer_pr ON pr_reviewer(pr_id);
-CREATE INDEX idx_pr_thread_pr ON pr_thread(pr_id);
-CREATE INDEX idx_pr_comment_pr ON pr_comment(pr_id);
 """ + TRACKED_SCHEMA_SQL + COMPANION_SCHEMA_SQL + AI_ATTEMPT_SCHEMA_SQL + META_SCHEMA_SQL + MINE_SCHEMA_SQL \
     + MINE_ACK_SCHEMA_SQL + MINE_FW_SCHEMA_SQL + COMMENT_SCHEMA_SQL
 
@@ -431,28 +405,6 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "ALTER TABLE pr ADD COLUMN my_pending_review INTEGER NOT NULL DEFAULT 0"
             )
-        tables = {
-            r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
-            ).fetchall()
-        }
-        if "pr_comment" not in tables:
-            conn.execute(
-                "CREATE TABLE pr_comment ("
-                "  pr_id      TEXT NOT NULL REFERENCES pr(id) ON DELETE CASCADE,"
-                "  kind       TEXT NOT NULL,"
-                "  thread_id  TEXT,"
-                "  comment_id TEXT NOT NULL,"
-                "  author     TEXT,"
-                "  created_at TEXT,"
-                "  body       TEXT,"
-                "  path       TEXT,"
-                "  state      TEXT,"
-                "  url        TEXT,"
-                "  PRIMARY KEY (pr_id, kind, comment_id)"
-                ")"
-            )
-            conn.execute("CREATE INDEX idx_pr_comment_pr ON pr_comment(pr_id)")
     if current < 13:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(pr)").fetchall()}
         for col in ("ping_at", "ping_author", "ping_snippet"):
@@ -595,6 +547,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # The dropped rows come back on the next sync, every tab refetching.
         conn.execute("UPDATE tracked SET fetched_at = NULL")
         conn.execute("UPDATE mine SET fetched_at = NULL")
+    if current < 29:
+        conn.execute("DROP TABLE IF EXISTS pr_comment")
+        conn.execute("DROP TABLE IF EXISTS pr_thread")
+        # Queue rows refetch on the next refresh, the hourly gate lifted, to refill their Discussion.
+        conn.execute("UPDATE pr SET fetched_at = '1970-01-01T00:00:00+00:00'")
+        conn.execute("DELETE FROM meta WHERE key = 'last_queue_refresh'")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -687,25 +645,6 @@ def set_my_review_state(conn: sqlite3.Connection, pr_id: str, login: str, state:
         "INSERT INTO pr_reviewer (pr_id, kind, name, state) VALUES (?, 'user', ?, ?) "
         "ON CONFLICT(pr_id, kind, name) DO UPDATE SET state = excluded.state",
         (pr_id, login, state),
-    )
-
-
-def replace_threads(conn: sqlite3.Connection, pr_id: str, threads: list[dict]) -> None:
-    conn.execute("DELETE FROM pr_thread WHERE pr_id = ?", (pr_id,))
-    conn.executemany(
-        "INSERT INTO pr_thread (pr_id, thread_id, is_resolved, i_participated, "
-        "last_reply_at, last_reply_author) VALUES (?, ?, ?, ?, ?, ?)",
-        [
-            (
-                pr_id,
-                t["thread_id"],
-                t["is_resolved"],
-                t["i_participated"],
-                t["last_reply_at"],
-                t["last_reply_author"],
-            )
-            for t in threads
-        ],
     )
 
 
@@ -1004,48 +943,6 @@ def list_reviewers(conn: sqlite3.Connection) -> dict[str, list[dict]]:
     return out
 
 
-def list_threads(conn: sqlite3.Connection) -> dict[str, list[dict]]:
-    rows = conn.execute(
-        "SELECT pr_id, thread_id, is_resolved, i_participated, last_reply_at, last_reply_author "
-        "FROM pr_thread ORDER BY pr_id, last_reply_at DESC"
-    ).fetchall()
-    out: dict[str, list[dict]] = {}
-    for r in rows:
-        out.setdefault(r["pr_id"], []).append(dict(r))
-    return out
-
-
-_COMMENT_COLS = ["kind", "thread_id", "comment_id", "author",
-                 "created_at", "body", "path", "state", "url"]
-
-
-def replace_comments(conn: sqlite3.Connection, pr_id: str, comments: list[dict]) -> None:
-    conn.execute("DELETE FROM pr_comment WHERE pr_id = ?", (pr_id,))
-    conn.executemany(
-        f"INSERT INTO pr_comment (pr_id, {', '.join(_COMMENT_COLS)}) "
-        f"VALUES (?, {', '.join('?' for _ in _COMMENT_COLS)})",
-        [(pr_id, *(c.get(col) for col in _COMMENT_COLS)) for c in comments],
-    )
-
-
-def list_comments(conn: sqlite3.Connection) -> dict[str, list[dict]]:
-    rows = conn.execute(
-        "SELECT pr_id, kind, thread_id, comment_id, author, created_at, body, path, state, url "
-        "FROM pr_comment ORDER BY pr_id, created_at"
-    ).fetchall()
-    out: dict[str, list[dict]] = {}
-    for r in rows:
-        out.setdefault(r["pr_id"], []).append(dict(r))
-    return out
-
-
-def has_comments(conn: sqlite3.Connection, pr_id: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM pr_comment WHERE pr_id = ? LIMIT 1", (pr_id,)
-    ).fetchone()
-    return row is not None
-
-
 TRACKED_STATE_COLS = [
     "title", "author", "state", "is_draft", "target_branch", "head_sha", "body",
     "ci_state", "comment_count", "created_at", "updated_at", "closed_at",
@@ -1145,6 +1042,11 @@ def list_discussions(conn: sqlite3.Connection, tab: str) -> dict[str, list[dict]
     return out
 
 
+def has_discussion(conn: sqlite3.Connection, pr_id: str) -> bool:
+    row = conn.execute("SELECT 1 FROM comment WHERE pr_id = ? LIMIT 1", (pr_id,)).fetchone()
+    return row is not None
+
+
 def sweep_discussions(conn: sqlite3.Connection) -> None:
     """Delete the comments of PRs in none of the Review queue, Tracked and Mine tabs."""
     conn.execute("DELETE FROM comment WHERE pr_id NOT IN "
@@ -1236,12 +1138,3 @@ def list_tab_seen(conn: sqlite3.Connection, tab: str) -> dict[str, sqlite3.Row]:
 
 def upsert_tab_seen(conn: sqlite3.Connection, tab: str, row: dict) -> None:
     _upsert(conn, f"{tab}_seen", row, ["pr_id"])
-
-
-def comments_for(conn: sqlite3.Connection, pr_id: str) -> list[dict]:
-    rows = conn.execute(
-        "SELECT pr_id, kind, thread_id, comment_id, author, created_at, body, path, state, url "
-        "FROM pr_comment WHERE pr_id = ? ORDER BY created_at",
-        (pr_id,),
-    ).fetchall()
-    return [dict(r) for r in rows]

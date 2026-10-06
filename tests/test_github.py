@@ -107,7 +107,7 @@ def test_complete_pages_follows_threads_and_their_replies(monkeypatch):
     node = {"id": "PR", "reviews": _page([]), "comments": _page([]),
             "reviewThreads": _page([{"id": "T1", "comments": _page([{"n": 1}])}], "t")}
 
-    github._complete_pages([node], github._TRACKED_PAGES)
+    github._complete_pages([node], github._PAGES)
 
     # A thread from a later page must still get its own replies paged in.
     threads = node["reviewThreads"]["nodes"]

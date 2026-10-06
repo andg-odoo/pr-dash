@@ -283,6 +283,16 @@ class FakeGitHub:
         pr = self._touch(pr_id)
         pr.comments.append({"author": login, "at": pr.updated_at, "body": body})
 
+    def reply(self, pr_id: str, thread_id: str, login: str, body: str) -> None:
+        pr = self._touch(pr_id)
+        [thread] = [t for j, t in enumerate(pr.threads) if t.get("id", f"T{j}") == thread_id]
+        thread["comments"].append({"author": login, "at": pr.updated_at, "body": body})
+
+    def resolve(self, pr_id: str, thread_id: str) -> None:
+        pr = self._touch(pr_id)
+        [thread] = [t for j, t in enumerate(pr.threads) if t.get("id", f"T{j}") == thread_id]
+        thread["resolved"] = True
+
     def close(self, pr_id: str, state: str = "CLOSED") -> None:
         pr = self._touch(pr_id)
         pr.state, pr.closed_at = state, pr.updated_at

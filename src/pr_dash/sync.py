@@ -399,7 +399,7 @@ class Sync:
     def _store_node(self, node: dict, *, force: bool, cached=None) -> None:
         """Persist a queue node, its diff and complexity, keeping `cached`'s review state."""
         conn, cfg = self.conn, self.cfg
-        pr_row, modules, reviewers, threads, comments = self._node_to_rows(node)
+        pr_row, modules, reviewers, stream = self._node_to_rows(node)
         if cached:
             # The timeline window can drop my review, and refreshing content never unarchives.
             pr_row["previously_reviewed"] = (
@@ -411,8 +411,7 @@ class Sync:
             db.upsert_pr(conn, pr_row)
             db.replace_modules(conn, pr_id, modules)
             db.replace_reviewers(conn, pr_id, reviewers)
-            db.replace_threads(conn, pr_id, threads)
-            db.replace_comments(conn, pr_id, comments)
+            db.replace_discussion(conn, pr_id, stream)
         self._store_patch(pr_row, force=force)
         score = derive.heuristic_score(
             additions=pr_row["additions"],
@@ -496,7 +495,7 @@ class Sync:
             if kept_ids is not None:
                 kept_ids.add(pr_id)
             # A row with no comment rows yet predates their caching, so it is primed once.
-            if not (force or cached is None or not db.has_comments(self.conn, pr_id)
+            if not (force or cached is None or not db.has_discussion(self.conn, pr_id)
                     or cached["head_sha"] != node["headRefOid"]
                     or cached["updated_at"] != node["updatedAt"]):
                 continue
@@ -766,7 +765,7 @@ class Sync:
 
     def _node_to_rows(
         self, node: dict,
-    ) -> tuple[dict, list[str], list[dict], list[dict], list[dict]]:
+    ) -> tuple[dict, list[str], list[dict], list[dict]]:
         login = self.cfg.github_login
         repo = node["repository"]["nameWithOwner"]
         paths = [f["path"] for f in (node.get("files") or {}).get("nodes", [])]
@@ -779,9 +778,8 @@ class Sync:
         )
         prev_reviewed = derive.previously_reviewed(timeline, login)
 
-        thread_nodes = (node.get("reviewThreads") or {}).get("nodes") or []
-        th = derive.derive_threads(thread_nodes, login)
-        comments, my_pending_review = derive.derive_comments(node, login)
+        stream = derive.discussion_stream(node)
+        threads = derive.thread_facts(stream, login)
 
         latest_reviews = (node.get("latestReviews") or {}).get("nodes") or []
         review_requests = (node.get("reviewRequests") or {}).get("nodes") or []
@@ -817,14 +815,14 @@ class Sync:
             "additions": node["additions"],
             "deletions": node["deletions"],
             "changed_files": node["changedFiles"],
-            "unresolved_threads": th.unresolved,
-            "awaiting_my_reply": int(th.awaiting_my_reply),
+            "unresolved_threads": sum(not t["is_resolved"] for t in threads),
+            "awaiting_my_reply": int(derive.awaiting_my_reply(threads, login)),
             "linked_task": task_id,
             "linked_task_kind": task_kind,
             "body": node.get("body"),
             "archived_at": None,
             "state": node.get("state") or "OPEN",
-            "my_pending_review": int(my_pending_review),
+            "my_pending_review": int(derive.has_pending_draft(node, login)),
             "fetched_at": self._stamp(),
         }
-        return pr_row, modules, reviewers, th.threads, comments
+        return pr_row, modules, reviewers, stream

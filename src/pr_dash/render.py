@@ -468,8 +468,9 @@ def build_payload(
     pr_rows = db.list_prs(conn)
     modules_by_pr = db.list_modules(conn)
     reviewers_by_pr = db.list_reviewers(conn)
-    threads_by_pr = db.list_threads(conn)
-    comments_by_pr = db.list_comments(conn)
+    streams = db.list_discussions(conn, "pr")
+    facts_by_pr = {pr_id: derive.thread_facts(stream, my_login)
+                   for pr_id, stream in streams.items()}
 
     pr_dicts = [dict(r) for r in pr_rows]
 
@@ -483,7 +484,7 @@ def build_payload(
     for pr in pr_dicts:
         if pr["archived_at"]:
             continue
-        thread_sig = derive.thread_signature(threads_by_pr.get(pr["id"], []))
+        thread_sig = derive.thread_signature(facts_by_pr.get(pr["id"], []))
         prev = seen_rows.get(pr["id"])
         prev_tuple = (prev["head_sha"], prev["ci_state"], prev["thread_sig"]) if prev else None
         delta_map[pr["id"]] = derive.since_last_look_tags(
@@ -497,8 +498,8 @@ def build_payload(
             conn, pr,
             modules_by_pr.get(pr["id"], []),
             reviewers_by_pr.get(pr["id"], []),
-            threads_by_pr.get(pr["id"], []),
-            comments_by_pr.get(pr["id"], []),
+            facts_by_pr.get(pr["id"], []),
+            streams.get(pr["id"], []),
             my_login, stale_review_days, ai_max_attempts,
         )
         records[pr["id"]]["since_last_look"] = delta_map.get(pr["id"], [])

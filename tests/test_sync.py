@@ -1,6 +1,6 @@
 import pytest
 
-from pr_dash import db, github, hidden, render
+from pr_dash import db, github, hidden, query, render
 from pr_dash.config import Config
 from pr_dash.sync import Sync
 from tests.fakes import T0, FakeClock, FakeGitHub, FakeMergebot, FakeReviewer, insert_pr
@@ -117,7 +117,7 @@ def test_an_archived_row_follows_its_pr_on_github(w):
     assert (row["ping_author"], row["push_at"]) == ("alice", None)
     assert row["ping_at"] == row["updated_at"] == "2026-07-01T02:00:00Z"
     assert "ready" in row["ping_snippet"]
-    assert db.has_comments(w.conn, ODOO)
+    assert db.has_discussion(w.conn, ODOO)
 
     w.clock.advance(hours=1)
     w.gh.push(ODOO, "sha2")
@@ -168,7 +168,7 @@ def test_a_reviewed_half_of_an_active_set_is_kept_and_primed(w):
     w.gh.comment(ENT, "someone", "why?")
     assert w.refresh().primed == 1
     assert w.row(ENT)["archived_at"] is None
-    assert db.has_comments(w.conn, ENT)
+    assert db.has_discussion(w.conn, ENT)
 
     # Unchanged with its comments cached, the half is kept without being re-persisted.
     assert w.refresh().primed == 0
@@ -205,6 +205,41 @@ def test_a_half_cached_before_comment_rows_existed_is_primed_once(w):
     w.gh.add("odoo/odoo", 1, requested=["me"])
     assert w.refresh().primed == 1
     assert w.refresh().primed == 0
+
+
+def test_a_queue_rows_thread_signals_follow_its_discussion(w):
+    w.gh.add("odoo/odoo", 1, requested=["me"],
+             comments=[{"author": "robodoo", "at": T0, "body": "staged"}],
+             reviews=[{"id": "RJ", "author": "jov", "state": "COMMENTED", "at": T0, "commit": "s"},
+                      {"author": "clbr", "state": "APPROVED", "at": T0, "commit": "s"},
+                      {"author": "me", "state": "PENDING", "at": T0, "commit": "s"}],
+             threads=[{"id": "T1", "path": "a.py", "comments": [
+                 {"author": "jov", "at": T0, "body": "why?", "review": "RJ"},
+                 {"author": "me", "at": T0, "body": "because"}]}])
+
+    def look():
+        w.clock.advance(minutes=1)
+        w.refresh()
+        items, seen = render.build_payload(w.conn, "me", {}, 30)
+        render.commit_seen_baseline(w.conn, seen, w.clock().isoformat())
+        row = w.row(ODOO)
+        return (row["unresolved_threads"], row["awaiting_my_reply"], row["my_pending_review"],
+                items[0]["since_last_look"])
+
+    assert look() == (1, 0, 1, [])
+    w.gh.reply(ODOO, "T1", "jov", "still why?")
+    assert look() == (1, 1, 1, ["reply"])
+    w.gh.reply(ODOO, "T1", "me", "fixed")
+    assert look()[:2] == (1, 0)
+    w.gh.resolve(ODOO, "T1")
+    assert look()[:2] == (0, 0)
+
+    # The envelope review is dropped, the bodiless approval kept, the bot flagged.
+    [member] = query.get_comments(w.cfg, "odoo#1")["members"]
+    assert [(g["kind"], g["entry"] and (g["entry"]["author"], g["entry"]["is_bot"]))
+            for g in member["discussion"]] == [
+        ("issue", ("robodoo", True)), ("review", ("clbr", False)), ("review", ("me", False)),
+        ("orphan", None)]
 
 
 # --- Companions --------------------------------------------------------------
@@ -406,7 +441,7 @@ def test_tracking_by_hand_fills_rows_at_once_and_outlives_a_github_failure(w):
 
 
 def test_a_pr_in_two_tabs_shares_one_discussion_swept_once_it_leaves_them_all(w):
-    mine = w.gh.add("odoo/odoo", 1, author="me", subscribed=True)
+    mine = w.gh.add("odoo/odoo", 1, author="me", subscribed=True, requested=["me"])
     other = w.gh.add("odoo/odoo", 2, subscribed=True)
     for pr in (mine, other):
         w.gh.comment(pr.id, "jov-odoo", "Why here?")
