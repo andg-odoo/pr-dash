@@ -1584,15 +1584,6 @@ def _node_to_rows(
 ) -> tuple[dict, list[str], list[dict], list[dict], list[dict]]:
     repo = node["repository"]["nameWithOwner"]
     paths = [f["path"] for f in (node.get("files") or {}).get("nodes", [])]
-    # files() pagination beyond 100 is rare; fetch_remaining_files if needed
-    files_pageinfo = (node.get("files") or {}).get("pageInfo") or {}
-    if files_pageinfo.get("hasNextPage"):
-        try:
-            paths.extend(github.fetch_remaining_files(
-                repo, node["number"], files_pageinfo.get("endCursor"),
-            ))
-        except github.GithubError:
-            pass
 
     modules = derive.modules_for(repo, paths)
 

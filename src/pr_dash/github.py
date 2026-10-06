@@ -14,11 +14,12 @@ _PAGE_INFO = "pageInfo { hasNextPage endCursor }"
 
 @dataclass(frozen=True)
 class _Pages:
-    """Node fields of a fragment's discussion connections, shared with its follow-up pages."""
+    """Node fields of a fragment's paged connections, shared with its follow-up pages."""
     reviews: str
     comments: str
     threads: str
     thread_comments: str
+    files: str = ""
 
 
 _REVIEW_PAGES = _Pages(
@@ -26,6 +27,7 @@ _REVIEW_PAGES = _Pages(
     comments="author { login } createdAt body databaseId url",
     threads="id isResolved",
     thread_comments="author { login } createdAt body path databaseId url",
+    files="path",
 )
 
 _TRACKED_PAGES = _Pages(
@@ -53,14 +55,15 @@ def _connections(pages: _Pages, size: int, replies: int) -> str:
 
 
 def _complete_pages(nodes: list[dict], pages: _Pages, *, chunk_size: int = 25) -> None:
-    """Fetch in place the later pages of every discussion connection, one aliased request per round."""
+    """Fetch in place the later pages of every paged connection, one aliased request per round."""
     def _overflowing(conns):
         return [c for c in conns if c[3] and (c[3].get("pageInfo") or {}).get("hasNextPage")]
 
     pending = _overflowing(
         [(n["id"], "PullRequest", name, n.get(name), fields) for n in nodes if n.get("id")
          for name, fields in (("reviews", pages.reviews), ("comments", pages.comments),
-                              ("reviewThreads", _thread_fields(pages, 100)))]
+                              ("reviewThreads", _thread_fields(pages, 100)), ("files", pages.files))
+         if fields]
         + [(t["id"], "PullRequestReviewThread", "comments", t.get("comments"), pages.thread_comments)
            for n in nodes for t in (n.get("reviewThreads") or {}).get("nodes") or []]
     )
@@ -156,10 +159,7 @@ fragment PRFields on PullRequest {
       }
     }
   }
-  files(first: 100) {
-    pageInfo { hasNextPage endCursor }
-    nodes { path }
-  }
+  """ + _connection("files", "first: 100", _REVIEW_PAGES.files) + """
 }
 """
 
@@ -205,20 +205,6 @@ query($q: String!, $login: String!, $cursor: String) {
   rateLimit { remaining cost resetAt }
 }
 """
-
-FILES_QUERY = """
-query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      files(first: 100, after: $cursor) {
-        pageInfo { hasNextPage endCursor }
-        nodes { path }
-      }
-    }
-  }
-}
-"""
-
 
 class GithubError(Exception):
     def __init__(self, message: str, *, retryable: bool = False):
@@ -337,6 +323,18 @@ def _graphql_partial(query: str, variables: dict) -> dict:
     return data.get("data") or {}
 
 
+def _search_pages(query: str, variables: dict):
+    """Yield the response of each page of `query`'s `search` connection, following its cursor."""
+    cursor = None
+    while True:
+        data = _graphql(query, {**variables, "cursor": cursor})
+        yield data
+        page = data["search"]["pageInfo"]
+        if not page["hasNextPage"]:
+            return
+        cursor = page["endCursor"]
+
+
 def search_personal_review_requested(login: str) -> tuple[list[dict], RateLimit | None]:
     """Return PRs where `login` is personally requested as a reviewer.
 
@@ -348,18 +346,12 @@ def search_personal_review_requested(login: str) -> tuple[list[dict], RateLimit 
     """
     q = f"is:open is:pr user-review-requested:{login} archived:false"
     nodes: list[dict] = []
-    cursor = None
     rl: RateLimit | None = None
-    while True:
-        data = _graphql(SEARCH_QUERY, {"q": q, "cursor": cursor})
-        search = data["search"]
-        nodes.extend(n for n in search["nodes"] if n)
+    for data in _search_pages(SEARCH_QUERY, {"q": q}):
+        nodes.extend(n for n in data["search"]["nodes"] if n)
         rate = data.get("rateLimit")
         if rate:
             rl = RateLimit(rate["remaining"], rate["cost"], rate["resetAt"])
-        if not search["pageInfo"]["hasNextPage"]:
-            break
-        cursor = search["pageInfo"]["endCursor"]
     _complete_pages(nodes, _REVIEW_PAGES)
     return nodes, rl
 
@@ -381,24 +373,15 @@ def search_reviewed_by(
         q += f" updated:>={since}"
     q += " sort:updated-desc"
     nodes: list[dict] = []
-    cursor = None
     rl: RateLimit | None = None
-    while len(nodes) < limit:
-        data = _graphql(REVIEWED_BY_QUERY, {"q": q, "login": login, "cursor": cursor})
-        search = data["search"]
-        for n in search["nodes"]:
-            if not n:
-                continue
-            nodes.append(n)
-            if len(nodes) >= limit:
-                break
+    for data in _search_pages(REVIEWED_BY_QUERY, {"q": q, "login": login}):
+        nodes.extend(n for n in data["search"]["nodes"] if n)
         rate = data.get("rateLimit")
         if rate:
             rl = RateLimit(rate["remaining"], rate["cost"], rate["resetAt"])
-        if not search["pageInfo"]["hasNextPage"]:
+        if len(nodes) >= limit:
             break
-        cursor = search["pageInfo"]["endCursor"]
-    return nodes, rl
+    return nodes[:limit], rl
 
 
 def fetch_reviewed_prs(
@@ -726,13 +709,10 @@ query($q: String!, $cursor: String) {
 def _search_authored(q: str) -> tuple[list[tuple[str, int]], int]:
     """Return (repo, number) of every PR search `q` matches, and the total GitHub counted."""
     refs: list[tuple[str, int]] = []
-    cursor = None
-    while True:
-        search = _graphql(AUTHORED_SEARCH_QUERY, {"q": q, "cursor": cursor})["search"]
+    for data in _search_pages(AUTHORED_SEARCH_QUERY, {"q": q}):
+        search = data["search"]
         refs.extend((n["repository"]["nameWithOwner"], n["number"]) for n in search["nodes"] if n)
-        if not search["pageInfo"]["hasNextPage"]:
-            return refs, search["issueCount"]
-        cursor = search["pageInfo"]["endCursor"]
+    return refs, search["issueCount"]
 
 
 def search_authored_open(login: str) -> list[tuple[str, int]]:
@@ -838,21 +818,6 @@ def fetch_nodes(
     # Both fragments fetch_nodes serves spread TrackedFields.
     _complete_pages(list(out.values()), _TRACKED_PAGES)
     return out
-
-
-def fetch_remaining_files(repo: str, number: int, after_cursor: str) -> list[str]:
-    """Paginate files() beyond the first 100 included in the search query."""
-    owner, name = repo.split("/", 1)
-    paths: list[str] = []
-    cursor = after_cursor
-    while cursor:
-        data = _graphql(FILES_QUERY, {"owner": owner, "name": name, "number": number, "cursor": cursor})
-        files = data["repository"]["pullRequest"]["files"]
-        paths.extend(f["path"] for f in files["nodes"])
-        if not files["pageInfo"]["hasNextPage"]:
-            break
-        cursor = files["pageInfo"]["endCursor"]
-    return paths
 
 
 def fetch_patch(repo: str, number: int) -> str | None:
