@@ -871,7 +871,7 @@
         </section>
 
         <section class="section">
-          <h3>Discussion ${pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent);text-transform:none;letter-spacing:0;margin-left:10px;">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")}</h3>
+          <h3>Discussion ${pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank" rel="noopener" class="disc-repo-link">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")}</h3>
           ${discussionHTML(pr.discussion, pr.is_pair)}
         </section>
 

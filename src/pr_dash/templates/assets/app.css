@@ -1316,6 +1316,14 @@ body {
 .tab.is-active .tab-count { color: var(--fg-dim); }
 
 .tr-empty,
+.disc-repo-link {
+  font-size: 11px;
+  color: var(--accent);
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: 10px;
+}
+
 .disc-none {
   color: var(--fg-faint);
   font-size: 13px;
