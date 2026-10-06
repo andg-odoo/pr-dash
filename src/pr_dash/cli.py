@@ -105,12 +105,14 @@ def _render_from_cache(conn, cfg, *, offline=False):
         p["my_login"] = cfg.github_login
     hidden_map = hidden.prune(hidden.load(cfg), payload)
     hidden.save(cfg, hidden_map)
-    tracked, tracked_seen = render.build_tracked_payload(conn)
+    tracked, tracked_seen = render.build_tracked_payload(conn, include_dismissed=True)
     mine, mine_seen = render.build_mine_payload(conn, cfg.github_login)
+    # Built apart so a dismissed member never joins a live set sharing its head branch.
+    dismissed_mine, _ = render.build_mine_payload(conn, cfg.github_login, dismissed_only=True)
     render.render(payload, cfg.html_path, offline=offline,
                   last_refresh=db.get_meta(conn, "last_refresh"),
                   hidden_map=hidden_map, hidden_sync_port=cfg.hidden_sync_port,
-                  tracked=tracked, mine=mine)
+                  tracked=tracked, mine=mine + dismissed_mine)
     return payload, seen_updates, {"tracked": tracked_seen, "mine": mine_seen}
 
 

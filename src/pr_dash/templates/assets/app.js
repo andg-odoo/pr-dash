@@ -39,6 +39,7 @@
   const mineListEl = document.getElementById("mine-list");
   const mineTabCountEl = document.getElementById("mine-tab-count");
   const mineSortBarEl = document.getElementById("mine-sort-bar");
+  const mineFiltersEl = document.getElementById("mine-filters");
 
   const STATE_KEY = "pr-dash:filters:v1";
   const TAB_KEY = "pr-dash:tab:v1";
@@ -72,6 +73,7 @@
   const TRACKED_STATES = [
     { id: "resolved", label: "merged / closed" },
     { id: "moved", label: "moved since last look" },
+    { id: "show-dismissed", label: "show dismissed" },
   ];
 
   /** Hidden map: { pr_id: { head_sha, hidden_at } }. Auto-unhide if head_sha changed. */
@@ -165,7 +167,7 @@
   let filters = loadJSON(STATE_KEY) || {};
   // Backfill any group missing from a stored payload written before it existed,
   // so an older localStorage entry can't leave a group undefined.
-  for (const g of ["repo", "bucket", "branch", "state", "tracked-state"]) {
+  for (const g of ["repo", "bucket", "branch", "state", "tracked-state", "mine-state"]) {
     if (!(g in filters)) filters[g] = [];
   }
   // localStorage roundtrips Set as array
@@ -257,6 +259,7 @@
     buildChips("state", STATES.map(s => s.id), id => STATES.find(s => s.id === id).label);
     buildChips("tracked-state", TRACKED_STATES.map(s => s.id),
                id => TRACKED_STATES.find(s => s.id === id).label);
+    buildChips("mine-state", ["show-dismissed"], () => "show dismissed");
   }
 
   function passesFilters(pr) {
@@ -562,7 +565,7 @@
                                selectTracked, trackedListEl);
     }
     if (activeTab === "mine") {
-      return moveListSelection(visibleMine.map(s => s.key), selectedMineKey, delta,
+      return moveListSelection(visibleMine.map(s => s.uid), selectedMineKey, delta,
                                selectMine, mineListEl);
     }
     if (!visiblePRs.length) return;
@@ -592,7 +595,7 @@
       return;
     }
     if (activeTab === "mine") {
-      const set = MINE.find(x => x.key === selectedMineKey);
+      const set = MINE.find(x => x.uid === selectedMineKey);
       if (set) window.open(set.members[0].url, "_blank", "noopener");
       return;
     }
@@ -1117,14 +1120,22 @@
     catch { return {}; }
   }
   const dismissed = { tracked: loadDismissed("tracked"), mine: loadDismissed("mine") };
+  // A local entry beats the baked stamp, an ISO time dismissing and `false` restoring.
+  const isDismissed = (tab, row) => row.id in dismissed[tab]
+    ? dismissed[tab][row.id] !== false : !!row.dismissed_at;
+  for (const [tab, rows] of [["tracked", TRACKED], ["mine", MINE.flatMap(s => s.members)]]) {
+    const stamped = new Set(rows.filter(r => r.dismissed_at).map(r => r.id));
+    // Once the listener cleared the stamp, a restore marker has nothing left to override.
+    for (const id of Object.keys(dismissed[tab])) {
+      if (dismissed[tab][id] === false && !stamped.has(id)) delete dismissed[tab][id];
+    }
+    localStorage.setItem(dismissedKey(tab), JSON.stringify(dismissed[tab]));
+  }
 
   function setDismissed(tab, ids, on) {
     const map = dismissed[tab];
     const when = new Date().toISOString();
-    for (const id of ids) {
-      if (on) map[id] = when;
-      else delete map[id];
-    }
+    for (const id of ids) map[id] = on ? when : false;
     localStorage.setItem(dismissedKey(tab), JSON.stringify(map));
     if (!HIDDEN_SYNC_PORT) return;
     fetch(`http://127.0.0.1:${HIDDEN_SYNC_PORT}/${tab}`, {
@@ -1146,10 +1157,10 @@
   }
 
   function trackedPasses(t) {
-    if (dismissed.tracked[t.id]) return false;
+    const f = filters["tracked-state"];
+    if (isDismissed("tracked", t) && !f.has("show-dismissed")) return false;
     if (searchQuery && !searchQuery.split(/\s+/).every(
       q => !q || trackedHaystack(t).includes(q))) return false;
-    const f = filters["tracked-state"];
     const resolved = t.state === "MERGED" || t.state === "CLOSED";
     if (f.has("resolved") && !resolved) return false;
     if (f.has("moved") && !(t.since_last_look || []).length) return false;
@@ -1208,13 +1219,13 @@
   function renderTrackedList() {
     const visible = sortTracked(TRACKED.filter(trackedPasses));
     visibleTracked = visible;
-    const dismissedCount = TRACKED.filter(t => dismissed.tracked[t.id]).length;
+    const dismissedCount = TRACKED.filter(t => isDismissed("tracked", t)).length;
     visibleCountEl.textContent = dismissedCount
       ? `${visible.length} / ${TRACKED.length}  ·  ${dismissedCount} dismissed`
       : `${visible.length} / ${TRACKED.length}`;
     if (totalCountEl) totalCountEl.textContent = "tracked PRs";
     if (lookCountEl) {
-      const n = TRACKED.filter(t => !dismissed.tracked[t.id] && (t.since_last_look || []).length).length;
+      const n = TRACKED.filter(t => !isDismissed("tracked", t) && (t.since_last_look || []).length).length;
       lookCountEl.textContent = n ? `${n} moved` : "";
       lookCountEl.title = n ? "Show only tracked PRs that moved since your last visit" : "";
     }
@@ -1233,7 +1244,8 @@
     visible.forEach(t => {
       const li = document.createElement("li");
       const resolved = t.state === "MERGED" || t.state === "CLOSED";
-      li.className = "pr-row tr-row" + (resolved ? " tr-row-resolved" : "");
+      const gone = isDismissed("tracked", t);
+      li.className = "pr-row tr-row" + (resolved ? " tr-row-resolved" : "") + (gone ? " hidden-row" : "");
       li.dataset.id = t.id;
       const badges = (t.since_last_look || [])
         .map(x => `<span class="look-badge look-${x}">${TRACKED_BADGES[x] || x}</span>`)
@@ -1247,11 +1259,11 @@
       li.innerHTML = `
         <span class="pr-id-group">
           <span class="pr-id">${escapeHTML(t.repo_short)}#${t.number}</span>
-          ${trackedStateTag(t)}${badges}
+          ${trackedStateTag(t)}${gone ? '<span class="tr-state tr-dismissed">dismissed</span>' : ""}${badges}
         </span>
         <span class="pr-title" title="${escapeHTML(t.title)}">${escapeHTML(t.title)}</span>
-        <button class="pr-hide" type="button" title="Dismiss from tracked list"
-                data-dismiss-id="${escapeHTML(t.id)}">×</button>
+        <button class="pr-hide" type="button" title="${gone ? "Restore to tracked list" : "Dismiss from tracked list"}"
+                data-dismiss-id="${escapeHTML(t.id)}">${gone ? "↺" : "×"}</button>
         <span class="pr-sub">
           <span class="pr-author">@${escapeHTML(t.author)}</span>
           <span class="tr-branch">${escapeHTML(t.target_branch)}</span>
@@ -1266,9 +1278,10 @@
       });
       li.querySelector(".pr-hide").addEventListener("click", (e) => {
         e.stopPropagation();
+        if (gone) return restoreTracked(t);
         setDismissed("tracked", [t.id], true);
         renderTrackedList();
-        if (selectedTrackedId === t.id) {
+        if (selectedTrackedId === t.id && !visibleTracked.includes(t)) {
           selectedTrackedId = null;
           renderTrackedDetail(null);
         }
@@ -1446,7 +1459,7 @@
 
         <div class="detail-links">
           <a href="${escapeHTML(t.url)}" target="_blank" rel="noopener">GitHub: ${escapeHTML(t.repo_short)}#${t.number} ↗</a>
-          <button class="detail-hide tr-dismiss" type="button">Dismiss</button>
+          <button class="detail-hide tr-dismiss" type="button">${isDismissed("tracked", t) ? "Restore" : "Dismiss"}</button>
         </div>
 
         <section class="section">
@@ -1476,18 +1489,29 @@
       </div>`;
     const btn = detailEl.querySelector(".tr-dismiss");
     if (btn) btn.addEventListener("click", () => {
+      if (isDismissed("tracked", t)) return restoreTracked(t);
       setDismissed("tracked", [t.id], true);
-      selectedTrackedId = null;
       renderTrackedList();
+      if (visibleTracked.includes(t)) return renderTrackedDetail(t);
+      selectedTrackedId = null;
       renderTrackedDetail(null);
     });
   }
 
+  function restoreTracked(t) {
+    setDismissed("tracked", [t.id], false);
+    renderTrackedList();
+    if (selectedTrackedId === t.id) renderTrackedDetail(t);
+  }
+
   function dismissSelectedTracked() {
     if (!selectedTrackedId) return;
-    const idx = visibleTracked.findIndex(t => t.id === selectedTrackedId);
+    const t = TRACKED.find(x => x.id === selectedTrackedId);
+    if (isDismissed("tracked", t)) return restoreTracked(t);
+    const idx = visibleTracked.indexOf(t);
     setDismissed("tracked", [selectedTrackedId], true);
     renderTrackedList();
+    if (visibleTracked.includes(t)) return renderTrackedDetail(t);
     const next = visibleTracked[Math.min(idx, visibleTracked.length - 1)];
     if (next) selectTracked(next.id);
     else { selectedTrackedId = null; renderTrackedDetail(null); }
@@ -1495,10 +1519,12 @@
 
   // ---- mine: Authored PRs as Branch sets, one row per head branch, each member inline --
 
+  // Selection keys on a per-page id, as a dismissed and a live set can share a head branch.
+  MINE.forEach((s, i) => { s.uid = String(i); });
   let selectedMineKey = null;
   let visibleMine = [];
 
-  const isMineDismissed = s => s.members.every(m => dismissed.mine[m.id]);
+  const isMineDismissed = s => s.members.every(m => isDismissed("mine", m));
 
   // Local-first like dismissals, an Acknowledge holds only for the fingerprint it was taken at.
   const ACK_KEY = "pr-dash:mine-ack:v1";
@@ -1509,17 +1535,18 @@
   }
   const mineBand = s => s.band === "done" ? "done" : s.actions.length && !isAcked(s) ? "needs" : "open";
 
-  function toggleAck(key) {
-    const s = MINE.find(x => x.key === key);
+  function toggleAck(uid) {
+    const s = MINE.find(x => x.uid === uid);
     if (!s || mineBand(s) === "done" || !s.actions.length) return;
     const on = !isAcked(s);
+    const key = s.key;
     localAcks[key] = { fingerprint: s.fingerprint, on };
     localStorage.setItem(ACK_KEY, JSON.stringify(localAcks));
     enqueueOp({ route: "mine-ack", op: on ? "ack" : "unack", key, fingerprint: s.fingerprint,
                 at: new Date().toISOString() });
     flushQueue();
     renderMineList();
-    if (selectedMineKey === key) renderMineDetail(s);
+    if (selectedMineKey === uid) renderMineDetail(s);
   }
 
   function mineHaystack(s) {
@@ -1533,7 +1560,7 @@
   }
 
   function minePasses(s) {
-    if (isMineDismissed(s)) return false;
+    if (isMineDismissed(s) && !filters["mine-state"].has("show-dismissed")) return false;
     return !searchQuery || searchQuery.split(/\s+/).every(q => !q || mineHaystack(s).includes(q));
   }
 
@@ -1579,13 +1606,17 @@
   function renderMineList() {
     const live = MINE.filter(s => !isMineDismissed(s));
     const visible = MINE.filter(minePasses);
+    const shown = visible.filter(s => !isMineDismissed(s));
     const oldest = s => new Date(s.actions[0].since);
     const bands = [
       ["Needs you", " mine-band-needs",
-       visible.filter(s => mineBand(s) === "needs").sort((a, b) => oldest(a) - oldest(b))],
-      ["Open", "", visible.filter(s => mineBand(s) === "open")],
-      ["Done", " mine-band-done", visible.filter(s => mineBand(s) === "done")],
+       shown.filter(s => mineBand(s) === "needs").sort((a, b) => oldest(a) - oldest(b))],
+      ["Open", "", shown.filter(s => mineBand(s) === "open")],
+      ["Done", " mine-band-done", shown.filter(s => mineBand(s) === "done")],
     ];
+    if (filters["mine-state"].has("show-dismissed")) {
+      bands.push(["Dismissed", "", visible.filter(isMineDismissed)]);
+    }
     visibleMine = bands.flatMap(b => b[2]);
     const count = band => live.filter(s => mineBand(s) === band).length;
     visibleCountEl.textContent = `${count("needs")} need you · ${count("open")} open · ${count("done")} done`;
@@ -1615,11 +1646,13 @@
 
   function mineRow(s) {
     const li = document.createElement("li");
-    li.className = "pr-row mine-row" + (s.band === "done" ? " mine-row-done" : "");
-    li.dataset.id = s.key;
+    const gone = isMineDismissed(s);
+    li.className = "pr-row mine-row" + (s.band === "done" ? " mine-row-done" : "")
+      + (gone ? " hidden-row" : "");
+    li.dataset.id = s.uid;
     li.innerHTML = `
       <span class="pr-title" title="${escapeHTML(mineTitle(s))}">${escapeHTML(mineTitle(s))}</span>
-      <button class="pr-hide" type="button" title="Dismiss this Branch set">×</button>
+      <button class="pr-hide" type="button" title="${gone ? "Restore this Branch set" : "Dismiss this Branch set"}">${gone ? "↺" : "×"}</button>
       <span class="pr-sub mine-members">${s.members.map(memberChip).join("")}</span>
       <span class="pr-sub">
         <span class="tr-branch">${escapeHTML(s.key)} → ${escapeHTML(mineTargets(s))}</span>
@@ -1631,11 +1664,11 @@
         `<span class="pr-sub mine-reason">${escapeHTML(a.member)}: ${escapeHTML(a.text)}</span>`).join("") : ""}`;
     li.addEventListener("click", (e) => {
       if (e.target.classList.contains("pr-hide")) return;
-      selectMine(s.key);
+      selectMine(s.uid);
     });
     li.querySelector(".pr-hide").addEventListener("click", (e) => {
       e.stopPropagation();
-      dismissMine(s.key);
+      dismissMine(s.uid);
     });
     return li;
   }
@@ -1646,22 +1679,23 @@
     });
   }
 
-  function selectMine(key) {
-    selectedMineKey = key;
-    highlightMine(key);
-    renderMineDetail(MINE.find(s => s.key === key) || null);
+  function selectMine(uid) {
+    selectedMineKey = uid;
+    highlightMine(uid);
+    renderMineDetail(MINE.find(s => s.uid === uid) || null);
   }
 
-  // Dismiss a Branch set by stamping every member, then select the row that took its place.
-  function dismissMine(key) {
-    const set = MINE.find(s => s.key === key);
+  // Dismiss or restore a Branch set by every member, then select the row that took its place.
+  function dismissMine(uid) {
+    const set = MINE.find(s => s.uid === uid);
     if (!set) return;
     const idx = visibleMine.indexOf(set);
-    setDismissed("mine", set.members.map(m => m.id), true);
+    setDismissed("mine", set.members.map(m => m.id), !isMineDismissed(set));
     renderMineList();
-    if (selectedMineKey !== key) return;
+    if (selectedMineKey !== uid) return;
+    if (visibleMine.includes(set)) return selectMine(uid);
     const next = visibleMine[Math.min(idx, visibleMine.length - 1)];
-    if (next) selectMine(next.key);
+    if (next) selectMine(next.uid);
     else { selectedMineKey = null; renderMineDetail(null); }
   }
 
@@ -1717,7 +1751,7 @@
         </div>
 
         <div class="detail-links">
-          <button class="detail-hide mine-dismiss" type="button">Dismiss</button>
+          <button class="detail-hide mine-dismiss" type="button">${isMineDismissed(s) ? "Restore" : "Dismiss"}</button>
         </div>
 
         ${s.actions.length && mineBand(s) !== "done" ? `
@@ -1742,8 +1776,8 @@
                            "No discussion yet.")}
         </section>
       </div>`;
-    detailEl.querySelector(".mine-dismiss").addEventListener("click", () => dismissMine(s.key));
-    detailEl.querySelector(".mine-ack-btn")?.addEventListener("click", () => toggleAck(s.key));
+    detailEl.querySelector(".mine-dismiss").addEventListener("click", () => dismissMine(s.uid));
+    detailEl.querySelector(".mine-ack-btn")?.addEventListener("click", () => toggleAck(s.uid));
   }
 
   /** Render whichever tab is showing. Shared controls (search, reset, the
@@ -1765,6 +1799,7 @@
     mineListEl.hidden = activeTab !== "mine";
     queueFiltersEl.hidden = activeTab !== "queue";
     trackedFiltersEl.hidden = activeTab !== "tracked";
+    mineFiltersEl.hidden = activeTab !== "mine";
     queueSortBarEl.hidden = activeTab !== "queue";
     trackedSortBarEl.hidden = activeTab !== "tracked";
     mineSortBarEl.hidden = activeTab !== "mine";
@@ -1778,8 +1813,8 @@
       if (!selectedTrackedId && visibleTracked.length) selectTracked(visibleTracked[0].id);
       else renderTrackedDetail(TRACKED.find(t => t.id === selectedTrackedId) || null);
     } else if (activeTab === "mine") {
-      if (!selectedMineKey && visibleMine.length) selectMine(visibleMine[0].key);
-      else renderMineDetail(MINE.find(s => s.key === selectedMineKey) || null);
+      if (!selectedMineKey && visibleMine.length) selectMine(visibleMine[0].uid);
+      else renderMineDetail(MINE.find(s => s.uid === selectedMineKey) || null);
     } else {
       renderDetail(PRS.find(p => p.id === selectedId));
     }

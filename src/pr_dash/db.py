@@ -1159,10 +1159,12 @@ def link_mine_forward_port(conn: sqlite3.Connection, fw_id: str, source_id: str)
                  (fw_id, source_id))
 
 
-def list_mine(conn: sqlite3.Connection, *, include_dismissed: bool = False) -> list[dict]:
+def list_mine(conn: sqlite3.Connection, *, include_dismissed: bool = False,
+              dismissed_only: bool = False) -> list[dict]:
     """Authored PRs and their Forward-ports, which carry a `source_id` and follow its dismissal."""
     where = "" if include_dismissed else (
-        " WHERE COALESCE(src.dismissed_at, mine.dismissed_at) IS NULL")
+        " WHERE COALESCE(src.dismissed_at, mine.dismissed_at) IS"
+        f"{' NOT' if dismissed_only else ''} NULL")
     rows = [dict(r) for r in conn.execute(
         "SELECT mine.*, mine_fw.source_id FROM mine"
         " LEFT JOIN mine_fw ON mine_fw.fw_id = mine.id"

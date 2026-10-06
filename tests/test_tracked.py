@@ -297,14 +297,19 @@ def test_build_tracked_payload_sorts_active_first_and_drops_bots(tmp_path):
     assert by_id["odoo/odoo#1"]["repo_short"] == "odoo"
 
 
-def test_build_tracked_payload_excludes_dismissed(tmp_path):
+def test_build_tracked_payload_dismissed_rows(tmp_path):
     conn = _conn(tmp_path)
     _add(conn, "odoo/odoo#1")
     _add(conn, "odoo/odoo#2")
     db.set_dismissed(conn, "tracked", "odoo/odoo#2", "2026-08-02T00:00:00+00:00")
 
-    items, _ = render.build_tracked_payload(conn)
+    items, updates = render.build_tracked_payload(conn)
     assert [i["id"] for i in items] == ["odoo/odoo#1"]
+    # Shipped for the dashboard, a dismissed row still leaves the seen baseline alone.
+    items, all_updates = render.build_tracked_payload(conn, include_dismissed=True)
+    assert {i["id"]: i["dismissed_at"] for i in items} == {
+        "odoo/odoo#1": None, "odoo/odoo#2": "2026-08-02T00:00:00+00:00"}
+    assert all_updates == updates
 
 
 def test_build_tracked_payload_handles_never_fetched_row(tmp_path):
@@ -432,6 +437,16 @@ def test_dismissed_mine_set_stays_hidden_after_a_refresh(tmp_path):
     sets, _ = render.build_mine_payload(conn, "andg")
     assert ec not in [s["key"] for s in sets]
     assert len(sets) == 2
+
+    # A PR opened later on the branch stays its own live set, the dismissed ones apart.
+    _mine(conn, "odoo/odoo#291000", ec, "2026-10-06T00:00:00Z")
+    sets, seen_updates = render.build_mine_payload(conn, "andg")
+    gone, _ = render.build_mine_payload(conn, "andg", dismissed_only=True)
+    assert [m["id"] for s in sets if s["key"] == ec for m in s["members"]] == ["odoo/odoo#291000"]
+    assert [(s["key"], [(m["id"], bool(m["dismissed_at"])) for m in s["members"]]) for s in gone] == [
+        (ec, [("odoo/enterprise#132695", True), ("odoo/odoo#290109", True)])]
+    assert {u["pr_id"] for u in seen_updates} == {
+        "odoo/odoo#291000", "odoo/odoo#290657", "odoo/odoo#269608"}
 
 
 # --- cli._parse_pr_ref -------------------------------------------------------

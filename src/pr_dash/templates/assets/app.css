@@ -1389,7 +1389,7 @@ body {
 .tr-open   { background: #1d2b1f; color: var(--green); }
 .tr-merged { background: #2a1f36; color: #c08ae0; }
 .tr-closed { background: #331d1d; color: var(--red); }
-.tr-draft  { background: var(--chip-bg); color: var(--fg-faint); }
+.tr-draft, .tr-dismissed { background: var(--chip-bg); color: var(--fg-faint); }
 
 .tr-branch { color: var(--fg-faint); }
 

@@ -560,14 +560,14 @@ def _tab_seen_row(row: dict) -> dict:
 
 
 def build_tracked_payload(
-    conn: sqlite3.Connection,
+    conn: sqlite3.Connection, *, include_dismissed: bool = False,
 ) -> tuple[list[dict], list[dict]]:
     """Return (tracked items, tracked seen_updates).
 
     Same contract as build_payload: the caller persists the baseline only after
     a successful render, so a render failure can't swallow the deltas.
     """
-    rows = [dict(r) for r in db.list_tracked(conn)]
+    rows = [dict(r) for r in db.list_tracked(conn, include_dismissed=include_dismissed)]
     comments_by_pr = db.list_tab_comments(conn, "tracked")
     seen_rows = db.list_tab_seen(conn, "tracked")
     first_run = not seen_rows
@@ -583,7 +583,9 @@ def build_tracked_payload(
             prev_tuple, row["state"], row["head_sha"], row["activity_count"] or 0,
             first_run=first_run,
         )
-        seen_updates.append(_tab_seen_row(row))
+        # A dismissed row keeps its baseline, so a restore still shows what moved meanwhile.
+        if not row["dismissed_at"]:
+            seen_updates.append(_tab_seen_row(row))
         repo_short = row["repo"].split("/")[-1]
         items.append({
             "id": row["id"],
@@ -615,6 +617,7 @@ def build_tracked_payload(
             "age_days": derive.days_since(row["created_at"]) if row["created_at"] else 0,
             "idle_days": derive.days_since(row["updated_at"]) if row["updated_at"] else 0,
             "since_last_look": deltas,
+            "dismissed_at": row["dismissed_at"],
         })
 
     # Resolved first (that's the event you subscribed for), then most recently
@@ -632,9 +635,10 @@ def build_tracked_payload(
 
 def build_mine_payload(
     conn: sqlite3.Connection, login: str, *, include_dismissed: bool = False,
+    dismissed_only: bool = False,
 ) -> tuple[list[dict], list[dict]]:
     """Return (Branch sets with their discussion, mine seen_updates), in band order."""
-    rows = db.list_mine(conn, include_dismissed=include_dismissed)
+    rows = db.list_mine(conn, include_dismissed=include_dismissed, dismissed_only=dismissed_only)
     by_id = {r["id"]: r for r in rows}
     comments_by_pr = db.list_tab_comments(conn, "mine")
     sets = derive.branch_sets(
@@ -693,9 +697,10 @@ def render(payload: list[dict], html_path: Path, *, offline: bool = False,
         prs_json=_json_for_script(payload),
         pr_count=len(payload),
         tracked_json=_json_for_script(tracked or []),
-        tracked_count=len(tracked or []),
+        tracked_count=sum(not t["dismissed_at"] for t in tracked or []),
         mine_json=_json_for_script(mine or []),
-        mine_count=sum(s["band"] != "done" for s in mine or []),
+        mine_count=sum(s["band"] != "done" and not all(m["dismissed_at"] for m in s["members"])
+                       for s in mine or []),
         offline=offline,
         last_refresh=last_refresh or "",
         hidden_server_json=_json_for_script(hidden_map or {}),
