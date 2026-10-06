@@ -106,7 +106,7 @@ def _render_from_cache(conn, cfg, *, offline=False):
     hidden_map = hidden.prune(hidden.load(cfg), payload)
     hidden.save(cfg, hidden_map)
     tracked, tracked_seen = render.build_tracked_payload(conn)
-    mine, mine_seen = render.build_mine_payload(conn)
+    mine, mine_seen = render.build_mine_payload(conn, cfg.github_login)
     render.render(payload, cfg.html_path, offline=offline,
                   last_refresh=db.get_meta(conn, "last_refresh"),
                   hidden_map=hidden_map, hidden_sync_port=cfg.hidden_sync_port,
@@ -564,6 +564,8 @@ def _run_mine_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
         with db.transaction(conn):
             for pr_id, state in reads.items():
                 db.upsert_mine_mergebot(conn, pr_id, dataclasses.asdict(state), derive.now_utc())
+        sets, _ = render.build_mine_payload(conn, cfg.github_login)
+        db.drop_stale_mine_acks(conn, {s["key"]: s["fingerprint"] for s in sets})
 
     _notify(cron, f"mine: +{added} new, {len(nodes)} refreshed, "
                   f"{len(reads)} Mergebot pages read", "dim")

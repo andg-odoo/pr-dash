@@ -428,10 +428,12 @@ def load_mine(cfg: Config, *, include_dismissed: bool = False) -> list[dict]:
     """Build the Branch sets from the cache, read-only, so no seen baseline moves."""
     conn = db.connect(cfg.db_path)
     try:
-        return derive.branch_sets(db.list_mine(conn, include_dismissed=include_dismissed),
-                                  db.list_mine_mergebot(conn))
+        sets, _ = render.build_mine_payload(conn, cfg.github_login,
+                                            include_dismissed=include_dismissed)
     finally:
         conn.close()
+    # The discussion stays out of a listing, mine_detail serves it.
+    return [{k: v for k, v in s.items() if k != "comments"} for s in sets]
 
 
 def resolve_mine(sets: list[dict], ref: str | int) -> dict | None:

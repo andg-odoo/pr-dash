@@ -394,15 +394,19 @@ def get_tracked(ref: str) -> dict:
 @mcp.tool()
 def list_mine(band: str | None = None, include_dismissed: bool = False) -> dict:
     """List your Authored PRs as Branch sets - PRs sharing one head branch across
-    repos, one row per set, most recently active first.
+    repos, one row per set, Needs you first (oldest Action item first), then Open by
+    most recent activity, then Done.
 
     Use this to answer "what needs doing on my PRs" instead of shelling out to gh.
 
-    band: only sets in this band ('open', 'done', ...), every band by default.
+    band: only sets in this band ('needs', 'open' or 'done'), every band by default.
     include_dismissed: dismissed members are excluded by default; True adds them
     back carrying dismissed_at.
 
-    Each set carries key (the head branch), task, band and members. Members
+    Each set carries key (the head branch), task, band ('needs', 'open' or
+    'done'), actions [{member, kind, text, since}] (what waits on you: thread, ci,
+    conflict, changes, reviewers, linked), fyi labels (movement since the last
+    look, plus 'idle Nd' and 'waiting on re-review'), acknowledged, and members. Members
     carry repo, num, state, ci (green / red / pending) with ci_failing and
     override (Mergebot Overrides), decision (GitHub review), r_plus, requested
     people and teams, conflict, and mergebot_unknown when the Mergebot page could
@@ -711,7 +715,7 @@ def _make_handler(cfg: config.Config) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             path = self.path.split("?", 1)[0]
-            if path not in ("/hidden", "/tracked", "/mine"):
+            if path not in ("/hidden", "/tracked", "/mine", "/mine-ack"):
                 self._send_json(404, {"error": "not found"})
                 return
             length = int(self.headers.get("Content-Length") or 0)
@@ -721,6 +725,9 @@ def _make_handler(cfg: config.Config) -> type[BaseHTTPRequestHandler]:
                 ops = parsed.get("ops") or []
             except (ValueError, AttributeError):
                 self._send_json(400, {"error": "invalid body"})
+                return
+            if path == "/mine-ack":
+                self._send_json(200, {"ok": True, "count": _apply_ack_ops(cfg, ops)})
                 return
             if path != "/hidden":
                 count = _apply_dismiss_ops(cfg, path[1:], ops)
@@ -751,6 +758,26 @@ def _apply_dismiss_ops(cfg: config.Config, tab: str, ops: list) -> int:
                 when = (op.get("dismissed_at") or derive.now_utc()) \
                     if kind == "dismiss" else None
                 db.set_dismissed(conn, tab, pr_id, when)
+                applied += 1
+    finally:
+        conn.close()
+    return applied
+
+
+def _apply_ack_ops(cfg: config.Config, ops: list) -> int:
+    """Store dashboard Acknowledge ops, each an ack of a Branch set at the fingerprint it showed."""
+    applied = 0
+    conn = db.connect(cfg.db_path)
+    try:
+        with db.transaction(conn):
+            for op in ops:
+                key = (op or {}).get("key")
+                kind = (op or {}).get("op")
+                if not key or kind not in ("ack", "unack") or (
+                        kind == "ack" and not op.get("fingerprint")):
+                    continue
+                db.set_mine_ack(conn, key, op["fingerprint"] if kind == "ack" else None,
+                                op.get("at") or derive.now_utc())
                 applied += 1
     finally:
         conn.close()

@@ -1539,3 +1539,12 @@ body {
 .mine-table td { border-bottom: 1px solid var(--border); padding: 5px 8px; text-align: left; }
 .mine-table th { color: var(--fg-faint); font-size: 12px; font-weight: 500; }
 .mine-table a { color: var(--accent); }
+.mine-table td { white-space: nowrap; }
+.mine-table td.mine-requested { white-space: normal; width: 100%; }
+
+.mine-band-needs { color: var(--red); }
+.mine-reason,
+.pr-row .mine-reason { color: var(--red); font-size: 12px; }
+.mine-reason::before { content: "● "; }
+.mine-fyi { color: var(--accent); font-size: 11px; }
+.mine-ack { background: var(--chip-bg); color: var(--yellow); }

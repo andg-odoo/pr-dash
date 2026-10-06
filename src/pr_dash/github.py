@@ -640,6 +640,7 @@ fragment MineFields on PullRequest {{
   headRefName
   reviewDecision
   mergeable
+  commits(last: 1) {{ nodes {{ commit {{ committedDate }} }} }}
   reviewRequests(first: 30) {{ nodes {{ {_REVIEWER} }} }}
   timelineItems(last: 30, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]) {{
     nodes {{

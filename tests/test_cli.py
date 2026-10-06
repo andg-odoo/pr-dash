@@ -717,7 +717,7 @@ def test_review_queue_carries_the_companion_and_rekeys_the_cache(tmp_path):
 def _mine_node(repo, number, state):
     return {"url": f"https://github.com/{repo}/pull/{number}", "title": f"PR {number}",
             "state": state, "headRefName": "master-x-6396725-andg",
-            "updatedAt": "2026-10-05T00:00:00Z"}
+            "createdAt": "2026-10-01T00:00:00Z", "updatedAt": "2026-10-05T00:00:00Z"}
 
 
 def test_mine_refresh_keeps_resolved_members_and_stops_reading_their_final_page(

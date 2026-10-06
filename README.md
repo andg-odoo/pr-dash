@@ -21,7 +21,7 @@ loop:
 - **AI first-pass** - optional `claude` sanity-check that flags obvious issues.
 - **One-click commands** - copy-paste checkout / fresh-DB / test / cleanup for each PR.
 - **Tracked tab** - a second view for PRs you *watch* rather than review (see below).
-- **Mine tab** - your Authored PRs, one row per Branch set (same head branch across repos), Open above Done, `x` to dismiss.
+- **Mine tab** - your Authored PRs, one row per Branch set (same head branch across repos): Needs you (Action items, oldest first) above Open above Done, `a` to Acknowledge, `x` to dismiss.
 
 It is **not** a re-skin of GitHub - browse code on github.com. It earns its keep
 on personal filtering, ball-in-my-court signals, Odoo-specific derivations, and
@@ -359,7 +359,7 @@ Tools:
 - `stats()` - pending-queue and archived-history counts.
 - `list_tracked(state, include_dismissed)` - watched PRs (the `tracked` tab, not the review queue); `state` is `all` / `open` / `resolved`.
 - `get_tracked(ref)` - one watched PR in full, with its merged discussion stream (conversation comments, review submissions, inline threads).
-- `list_mine(band, include_dismissed)` - your Authored PRs as Branch sets (the `mine` tab); `band` is any band the tab shows (`open`, `done`, ...), all by default.
+- `list_mine(band, include_dismissed)` - your Authored PRs as Branch sets (the `mine` tab); `band` is any band the tab shows (`needs`, `open`, `done`), all by default.
 - `get_mine(ref)` - the Branch set holding one Authored PR, every member with its body and merged discussion stream.
 - `refresh(force)` - re-fetch from GitHub (slow; network + AI), same as `pr-dash refresh`.
 

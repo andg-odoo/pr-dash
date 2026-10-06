@@ -630,16 +630,22 @@ def build_tracked_payload(
     return items, seen_updates
 
 
-def build_mine_payload(conn: sqlite3.Connection) -> tuple[list[dict], list[dict]]:
-    """Return (Branch sets with their discussion, mine seen_updates), Done sets last."""
-    rows = db.list_mine(conn)
+def build_mine_payload(
+    conn: sqlite3.Connection, login: str, *, include_dismissed: bool = False,
+) -> tuple[list[dict], list[dict]]:
+    """Return (Branch sets with their discussion, mine seen_updates), in band order."""
+    rows = db.list_mine(conn, include_dismissed=include_dismissed)
     by_id = {r["id"]: r for r in rows}
     comments_by_pr = db.list_tab_comments(conn, "mine")
-    sets = derive.branch_sets(rows, db.list_mine_mergebot(conn))
+    sets = derive.branch_sets(
+        rows, db.list_mine_mergebot(conn), streams=comments_by_pr, login=login,
+        acks=db.list_mine_acks(conn), seen=db.list_tab_seen(conn, "mine"), now=derive.now_utc())
+    seen_updates = []
     for s in sets:
         for m in s["members"]:
             row = by_id[m["id"]]
-            m["ref"] = f"{m['repo'].split('/')[-1]}#{m['num']}"
+            seen_updates.append({**_tab_seen_row(row), "fetched_at": row["fetched_at"],
+                                 "r_plus": m["r_plus"]})
             m["target_branch"] = row["target_branch"]
             approval = {"APPROVED": "approved", "CHANGES_REQUESTED": "changes requested"}.get(
                 m["decision"])
@@ -653,8 +659,7 @@ def build_mine_payload(conn: sqlite3.Connection) -> tuple[list[dict], list[dict]
             for m in s["members"] for c in comments_by_pr.get(m["id"], [])
             if not derive.is_bot(c["author"])
         ]
-    sets.sort(key=lambda s: s["band"] == "done")
-    return sets, [_tab_seen_row(r) for r in rows]
+    return sets, seen_updates
 
 
 def commit_tab_seen_baseline(
@@ -690,7 +695,7 @@ def render(payload: list[dict], html_path: Path, *, offline: bool = False,
         tracked_json=_json_for_script(tracked or []),
         tracked_count=len(tracked or []),
         mine_json=_json_for_script(mine or []),
-        mine_count=sum(s["band"] == "open" for s in mine or []),
+        mine_count=sum(s["band"] != "done" for s in mine or []),
         offline=offline,
         last_refresh=last_refresh or "",
         hidden_server_json=_json_for_script(hidden_map or {}),

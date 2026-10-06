@@ -337,7 +337,8 @@ def _mine(conn, pr_id, branch, updated, page=None, **node):
     db.add_mine(conn, pr_id, repo, int(number), f"https://github.com/{repo}/pull/{number}", "t")
     row, comments = derive.mine_row_from_node(
         {"title": f"PR {number}", "headRefName": branch, "baseRefName": "master",
-         "headRefOid": "s", "updatedAt": updated, **node}, "t")
+         "headRefOid": "s", "createdAt": "2026-09-01T00:00:00Z", "updatedAt": updated,
+         **node}, updated)
     db.update_tab_state(conn, "mine", pr_id, row)
     db.replace_tab_comments(conn, "mine", pr_id, comments)
     if page:
@@ -360,8 +361,10 @@ def _mine_sets(conn):
     _mine(conn, "odoo/enterprise#132695", ec, "2026-10-03T00:00:00Z",
           page=mergebot.MergebotState("blocked", r_plus=False),
           comments={"nodes": [
-              {"author": {"login": "robodoo"}, "body": "staging failed", "createdAt": "t1"},
-              {"author": {"login": "clbr-odoo"}, "body": "why?", "createdAt": "t2"}]})
+              {"author": {"login": "robodoo"}, "body": "staging failed",
+               "createdAt": "2026-10-03T00:00:00Z"},
+              {"author": {"login": "clbr-odoo"}, "body": "why?",
+               "createdAt": "2026-10-03T01:00:00Z"}]})
     _mine(conn, "odoo/odoo#269608", "19.0-mp-test-mode-andg", "2026-10-04T00:00:00Z",
           isDraft=True, page=mergebot.MergebotState("unknown", reason="timeout"))
     return ec, done, runbot
@@ -371,20 +374,49 @@ def test_mine_payload_bands_members_and_discussion(tmp_path):
     conn = _conn(tmp_path)
     ec, done, runbot = _mine_sets(conn)
 
-    sets, seen_updates = render.build_mine_payload(conn)
+    sets, seen_updates = render.build_mine_payload(conn, "andg")
 
-    # Open by most recent activity, the Done set below them.
+    # Needs you above Open, the Done set below them, and the draft never lifts.
     assert [(s["key"], s["band"]) for s in sets] == [
-        ("19.0-mp-test-mode-andg", "open"), (ec, "open"), (done, "done")]
+        (ec, "needs"), ("19.0-mp-test-mode-andg", "open"), (done, "done")]
     assert len(seen_updates) == 4
-    odoo = next(m for m in sets[1]["members"] if m["ref"] == "odoo#290109")
+    odoo = next(m for m in sets[0]["members"] if m["ref"] == "odoo#290109")
     assert (odoo["ci"], odoo["override"], odoo["review"], odoo["runbot_url"]) == (
         "green", [{"check": "ci/style", "by": "kmagusiak"}], "approved · r+ missing", runbot)
     # Bot comments stay out of the human stream, each comment names its member.
-    assert [(c["author"], c["member"]) for c in sets[1]["comments"]] == [
+    assert [(c["author"], c["member"]) for c in sets[0]["comments"]] == [
         ("clbr-odoo", "enterprise#132695")]
-    [mp] = sets[0]["members"]
+    [mp] = sets[1]["members"]
     assert (mp["draft"], mp["mergebot_unknown"], mp["review"]) == (True, True, "")
+
+
+def test_acknowledge_through_the_listener_and_fyi_clearing_on_a_look(tmp_path):
+    conn = _conn(tmp_path)
+    ec, _, _ = _mine_sets(conn)
+    cfg = SimpleNamespace(db_path=tmp_path / "t.db")
+    sets, seen_updates = render.build_mine_payload(conn, "andg")
+    render.commit_tab_seen_baseline(conn, "mine", seen_updates, "2026-10-05T00:00:00Z")
+    reply = {"nodes": [{"author": {"login": "clbr-odoo"}, "body": "ping",
+                        "createdAt": "2026-10-05T06:00:00Z"}]}
+    _mine(conn, "odoo/enterprise#132695", ec, "2026-10-05T06:00:00Z", comments=reply)
+
+    sets, seen_updates = render.build_mine_payload(conn, "andg")
+    assert mcp_server._apply_ack_ops(cfg, [
+        {"op": "ack", "key": ec, "fingerprint": sets[0]["fingerprint"]}]) == 1
+    sets, _ = render.build_mine_payload(conn, "andg")
+    ec_set = next(s for s in sets if s["key"] == ec)
+    # Acknowledged, it sits in Open with its Action items, and the reply shows until a look.
+    assert (ec_set["band"], ec_set["acknowledged"], len(ec_set["actions"]), ec_set["fyi"]) == (
+        "open", True, 2, ["new reply"])
+    render.commit_tab_seen_baseline(conn, "mine", seen_updates, "2026-10-05T07:00:00Z")
+    assert next(s for s in render.build_mine_payload(conn, "andg")[0] if s["key"] == ec)[
+        "fyi"] == []
+
+    # A push changes the fingerprint, the refresh drops the Acknowledge and the set lifts again.
+    _mine(conn, "odoo/enterprise#132695", ec, "2026-10-05T08:00:00Z", headRefOid="s2")
+    sets, _ = render.build_mine_payload(conn, "andg")
+    db.drop_stale_mine_acks(conn, {s["key"]: s["fingerprint"] for s in sets})
+    assert (sets[0]["key"], sets[0]["band"], db.list_mine_acks(conn)) == (ec, "needs", {})
 
 
 def test_dismissed_mine_set_stays_hidden_after_a_refresh(tmp_path):
@@ -397,7 +429,7 @@ def test_dismissed_mine_set_stays_hidden_after_a_refresh(tmp_path):
 
     # The next refresh writes fresh state for the same PRs.
     _mine(conn, "odoo/enterprise#132695", ec, "2026-10-05T00:00:00Z")
-    sets, _ = render.build_mine_payload(conn)
+    sets, _ = render.build_mine_payload(conn, "andg")
     assert ec not in [s["key"] for s in sets]
     assert len(sets) == 2
 

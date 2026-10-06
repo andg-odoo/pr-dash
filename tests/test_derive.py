@@ -600,24 +600,43 @@ def test_push_falls_back_to_head_ref_oid_without_commits():
 
 # --- derive.branch_sets ------------------------------------------------------
 
-def _mine_row(repo, number, branch, *, checks=(("ci/runbot", "SUCCESS"),), **over):
+def _mine_row(repo, number, branch, *, checks=(("ci/runbot", "SUCCESS"),),
+              pushed="2026-10-02T00:00:00Z", **over):
     node = {
         "title": f"PR {number}", "state": "OPEN", "isDraft": False, "headRefName": branch,
+        "createdAt": "2026-09-01T00:00:00Z",
         "updatedAt": "2026-10-01T00:00:00Z", "reviewDecision": None,
         "mergeable": "MERGEABLE",
         "reviewRequests": {"nodes": [
             {"requestedReviewer": {"__typename": "User", "login": "clbr-odoo"}},
             {"requestedReviewer": {"__typename": "Team", "slug": "rd-accounting"}},
         ]},
-        "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": [
-            {"__typename": "StatusContext", "context": name, "state": state}
-            for name, state in checks
-        ]}}}}]},
+        "commits": {"nodes": [{"commit": {
+            "committedDate": pushed,
+            "statusCheckRollup": {"contexts": {"nodes": [
+                {"__typename": "StatusContext", "context": name, "state": state}
+                for name, state in checks
+            ]}},
+        }}]},
         **over,
     }
     row, _ = derive.mine_row_from_node(node, "2026-10-05T00:00:00+00:00")
     return {**row, "id": f"{repo}#{number}", "repo": repo, "number": number, "url": "u",
             "dismissed_at": None}
+
+
+def _sets(rows, pages, *, streams=None, acks=None, seen=None, now="2026-10-05T00:00:00Z"):
+    return derive.branch_sets(rows, pages, streams=streams or {}, login="andg",
+                              acks=acks or {}, seen=seen or {}, now=now)
+
+
+def _entry(kind, author, at, *, state=None, thread=None, path=None):
+    return {"kind": kind, "author": author, "created_at": at, "state": state,
+            "thread_id": thread, "path": path}
+
+
+def _actions(s):
+    return [(a["member"], a["kind"], a["text"]) for a in s["actions"]]
 
 
 def _page(name):
@@ -637,7 +656,7 @@ def test_branch_sets_group_by_head_branch_across_repos():
         _mine_row("odoo/enterprise", 132695, ec),
         _mine_row("odoo/upgrade", 11389, ec, updatedAt="2026-10-05T00:00:00Z"),
     ]
-    sets = derive.branch_sets(rows, {})
+    sets = _sets(rows, {})
     assert [(s["key"], s["task"], [(m["repo"], m["num"]) for m in s["members"]]) for s in sets] == [
         (ec, "6396725",
          [("odoo/enterprise", 132695), ("odoo/odoo", 290109), ("odoo/upgrade", 11389)]),
@@ -659,7 +678,7 @@ def test_override_greens_ci_but_an_unlisted_red_check_stays_red():
     ]
     upgrade_page = mergebot.MergebotState(
         "blocked", checks=[mergebot.Check("ci/runbot", "ok", "", False, None)], r_plus=False)
-    sets = derive.branch_sets(rows, {
+    sets = _sets(rows, {
         "odoo/odoo#290109": _page("odoo_odoo_290109_blocked_linked"),
         "odoo/upgrade#11485": dataclasses.asdict(upgrade_page),
     })
@@ -671,11 +690,15 @@ def test_override_greens_ci_but_an_unlisted_red_check_stays_red():
         "APPROVED", False, False)
     upgrade = _member(sets, "odoo/upgrade", 11485)
     assert (upgrade["ci"], upgrade["ci_failing"]) == ("red", ["upgradeci/matt"])
+    # The Overridden check raises nothing, and linked PRs missing only an r+ wait on a reviewer.
+    [s] = sets
+    assert (s["band"], _actions(s)) == (
+        "needs", [("upgrade#11485", "ci", "CI red: upgradeci/matt")])
 
 
 def test_lazy_page_check_is_pending_not_red():
     pages = {"odoo/odoo#291953": _page("odoo_odoo_291953_missing_statuses")}
-    sets = derive.branch_sets([_mine_row("odoo/odoo", 291953, "b")], pages)
+    sets = _sets([_mine_row("odoo/odoo", 291953, "b")], pages)
     assert _member(sets, "odoo/odoo", 291953)["ci"] == "pending"
 
 
@@ -687,10 +710,10 @@ def test_merged_vs_closed_and_done_only_when_every_member_resolved():
     ]
     pages = {"odoo/odoo#290657": _page("odoo_odoo_290657_merged"),
              "odoo/odoo#255698": _page("odoo_odoo_255698_closed")}
-    [open_set] = derive.branch_sets(rows, pages)
+    [open_set] = _sets(rows, pages)
     assert [m["state"] for m in open_set["members"]] == ["OPEN", "CLOSED", "MERGED"]
     assert open_set["band"] == "open"
-    [done] = derive.branch_sets(rows[:2], pages)
+    [done] = _sets(rows[:2], pages)
     assert done["band"] == "done"
 
 
@@ -699,7 +722,7 @@ def test_unmanaged_repo_trusts_github_and_unknown_falls_back_flagged():
         _mine_row("odoo/odoo-ls", 658, "a", mergeable="CONFLICTING"),
         _mine_row("odoo/odoo", 269608, "b", checks=[("ci/style", "ERROR")]),
     ]
-    sets = derive.branch_sets(rows, {
+    sets = _sets(rows, {
         "odoo/odoo-ls#658": dataclasses.asdict(mergebot.MergebotState("unmanaged")),
         "odoo/odoo#269608": dataclasses.asdict(mergebot.MergebotState("unknown")),
     })
@@ -708,3 +731,129 @@ def test_unmanaged_repo_trusts_github_and_unknown_falls_back_flagged():
         True, "green", None, False)
     odoo = _member(sets, "odoo/odoo", 269608)
     assert (odoo["ci"], odoo["r_plus"], odoo["mergebot_unknown"]) == ("red", None, True)
+
+
+def test_thread_lifts_when_someone_else_spoke_last_and_a_draft_never_lifts():
+    rows = [_mine_row("odoo/odoo", 1, "a"),
+            _mine_row("odoo/odoo", 2, "b", isDraft=True, checks=[("ci/style", "ERROR")])]
+    streams = {
+        "odoo/odoo#1": [
+            _entry("thread", "clbr-odoo", "2026-09-10T00:00:00Z", state="UNRESOLVED", thread="t1"),
+            _entry("thread", "andg", "2026-09-11T00:00:00Z", state="UNRESOLVED", thread="t1"),
+            _entry("thread", "andg", "2026-09-12T00:00:00Z", state="UNRESOLVED", thread="t2"),
+            _entry("thread", "odoo-pda", "2026-09-13T00:00:00Z", state="UNRESOLVED",
+                   thread="t2", path="x.py"),
+            _entry("thread", "odoo-pda", "2026-09-14T00:00:00Z", state="RESOLVED", thread="t3"),
+        ],
+        "odoo/odoo#2": [
+            _entry("thread", "odoo-pda", "2026-09-13T00:00:00Z", state="UNRESOLVED", thread="t4"),
+        ],
+    }
+    lifted, draft = _sets(rows, {}, streams=streams)
+    assert (lifted["key"], lifted["band"], _actions(lifted)) == (
+        "a", "needs", [("odoo#1", "thread", "odoo-pda is waiting in a thread on x.py")])
+    assert lifted["actions"][0]["since"] == "2026-09-13T00:00:00Z"
+    assert (draft["key"], draft["band"], draft["actions"]) == ("b", "open", [])
+
+
+def test_changes_requested_lift_until_a_push_then_wait_on_re_review():
+    stream = [
+        _entry("review", "jbw-odoo", "2026-10-01T00:00:00Z", state="CHANGES_REQUESTED"),
+        _entry("review", "jbw-odoo", "2026-10-01T12:00:00Z", state="APPROVED"),
+        _entry("review", "jco-odoo", "2026-10-03T00:00:00Z", state="CHANGES_REQUESTED"),
+    ]
+    streams = {"odoo/odoo#1": stream}
+    [before] = _sets([_mine_row("odoo/odoo", 1, "a")], {}, streams=streams)
+    assert (before["band"], _actions(before), before["fyi"]) == (
+        "needs", [("odoo#1", "changes", "changes requested by jco-odoo")], [])
+    pushed = _mine_row("odoo/odoo", 1, "a", pushed="2026-10-04T00:00:00Z")
+    [after] = _sets([pushed], {}, streams=streams)
+    assert (after["band"], after["actions"], after["fyi"]) == (
+        "open", [], ["waiting on re-review"])
+
+
+def test_teams_never_count_as_a_reviewer_and_needs_you_is_oldest_first():
+    removed = {"nodes": [{"__typename": "ReviewRequestRemovedEvent",
+                          "createdAt": "2026-09-20T00:00:00Z",
+                          "requestedReviewer": {"__typename": "User", "login": "svs-odoo"}}]}
+    teams = {"nodes": [{"requestedReviewer": {"__typename": "Team", "slug": "rd-accounting"}}]}
+    rows = [
+        _mine_row("odoo/odoo", 1, "teams", reviewRequests=teams, timelineItems=removed,
+                  updatedAt="2026-10-04T00:00:00Z"),
+        _mine_row("odoo/odoo", 2, "nobody", reviewRequests={"nodes": []}),
+        _mine_row("odoo/odoo", 3, "person"),
+    ]
+    sets = _sets(rows, {})
+    assert [(s["key"], s["band"], _actions(s), [a["since"] for a in s["actions"]])
+            for s in sets] == [
+        ("nobody", "needs", [("odoo#2", "reviewers", "no reviewer requested")],
+         ["2026-09-01T00:00:00Z"]),
+        ("teams", "needs", [("odoo#1", "reviewers", "only teams requested")],
+         ["2026-09-20T00:00:00Z"]),
+        ("person", "open", [], []),
+    ]
+
+
+def test_linked_pr_lifts_only_from_outside_the_set_and_not_for_a_missing_r_plus():
+    pages = {"odoo/odoo#291953": _page("odoo_odoo_291953_missing_statuses")}
+    [alone] = _sets([_mine_row("odoo/odoo", 291953, "b")], pages)
+    assert _actions(alone) == [("odoo#291953", "linked",
+                                "linked odoo/enterprise#133776: missing statuses, missing r+")]
+    rows = [_mine_row("odoo/odoo", 291953, "b"), _mine_row("odoo/enterprise", 133776, "b")]
+    [together] = _sets(rows, pages)
+    assert (together["band"], together["actions"]) == ("open", [])
+
+
+def test_idle_label_once_quiet_more_than_seven_days():
+    rows = [_mine_row("odoo/odoo", 1, "a")]
+    assert _sets(rows, {}, now="2026-10-09T00:00:00Z")[0]["fyi"] == ["idle 8d"]
+    assert _sets(rows, {}, now="2026-10-08T00:00:00Z")[0]["fyi"] == []
+
+
+def test_acknowledge_holds_until_a_push_a_comment_or_a_ci_change():
+    red = [("ci/style", "ERROR")]
+    row = _mine_row("odoo/odoo", 1, "a", checks=red, headRefOid="s1")
+    [s] = _sets([row], {})
+    acks = {"a": s["fingerprint"]}
+    [acked] = _sets([row], {}, acks=acks)
+    assert (acked["band"], acked["acknowledged"], len(acked["actions"])) == ("open", True, 1)
+    changed = [
+        ([_mine_row("odoo/odoo", 1, "a", checks=red, headRefOid="s2")], {}),
+        ([row], {"odoo/odoo#1": [_entry("issue", "clbr-odoo", "2026-10-04T00:00:00Z")]}),
+        ([_mine_row("odoo/odoo", 1, "a", headRefOid="s1",
+                    checks=[*red, ("ci/runbot", "FAILURE")])], {}),
+    ]
+    for rows, streams in changed:
+        [back] = _sets(rows, {}, acks=acks, streams=streams)
+        assert (back["band"], back["acknowledged"]) == ("needs", False)
+
+
+def test_fyi_labels_are_movement_since_the_last_look():
+    events = {"nodes": [
+        {"__typename": "ReviewRequestedEvent", "createdAt": "2026-10-04T00:00:00Z",
+         "requestedReviewer": {"__typename": "User", "login": "jbw-odoo"}},
+        {"__typename": "ReviewRequestRemovedEvent", "createdAt": "2026-10-04T00:00:00Z",
+         "requestedReviewer": {"__typename": "User", "login": "svs-odoo"}},
+        {"__typename": "ReviewRequestedEvent", "createdAt": "2026-10-04T00:00:00Z",
+         "requestedReviewer": {"__typename": "Team", "slug": "rd-accounting"}},
+    ]}
+    rows = [_mine_row("odoo/odoo", 1, "a", timelineItems=events)]
+    streams = {"odoo/odoo#1": [
+        _entry("issue", "clbr-odoo", "2026-10-02T00:00:00Z"),
+        _entry("review", "jco-odoo", "2026-10-04T00:00:00Z", state="APPROVED"),
+        _entry("issue", "andg", "2026-10-04T00:00:00Z"),
+        _entry("issue", "robodoo", "2026-10-04T00:00:00Z"),
+        _entry("issue", "clbr-odoo", "2026-10-04T01:00:00Z"),
+    ]}
+    seen = {"odoo/odoo#1": {"fetched_at": "2026-10-03T00:00:00+00:00", "r_plus": 0}}
+
+    def fyi(r_plus, seen):
+        page = dataclasses.asdict(mergebot.MergebotState("blocked", r_plus=r_plus))
+        return _sets(rows, {"odoo/odoo#1": page}, streams=streams, seen=seen)[0]["fyi"]
+
+    assert fyi(False, seen) == ["approved · r+ missing", "new reply",
+                                "reviewer added: jbw-odoo", "reviewer removed: svs-odoo"]
+    assert fyi(True, seen) == ["approved", "new reply", "r+",
+                               "reviewer added: jbw-odoo", "reviewer removed: svs-odoo"]
+    # Nothing to compare against before the first interactive look.
+    assert fyi(True, {}) == []

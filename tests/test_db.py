@@ -236,14 +236,14 @@ def test_migration_adds_ping_columns_to_v12_db(tmp_path):
 def test_migration_adds_mine_tables_to_v23_db(tmp_path):
     path = tmp_path / "old.db"
     conn = sqlite3.connect(path, isolation_level=None)
-    conn.executescript(db.SCHEMA_SQL.replace(db.MINE_SCHEMA_SQL, ""))
+    conn.executescript(db.SCHEMA_SQL.replace(db.MINE_SCHEMA_SQL + db.MINE_ACK_SCHEMA_SQL, ""))
     conn.execute("INSERT INTO tracked (id, repo, number, url, added_at) "
                  "VALUES ('odoo/odoo#1', 'odoo/odoo', 1, 'u', 't')")
     conn.execute("PRAGMA user_version = 23")
     conn.close()
 
     conn = db.connect(path)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 24
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
     assert db.add_mine(conn, "odoo/odoo#2", "odoo/odoo", 2, "u", "t") is True
     db.upsert_tab_seen(conn, "mine", {"pr_id": "odoo/odoo#2", "state": "OPEN", "seen_at": "t"})
     db.upsert_mine_mergebot(conn, "odoo/odoo#2", {
@@ -252,3 +252,26 @@ def test_migration_adds_mine_tables_to_v23_db(tmp_path):
     assert [r["id"] for r in db.list_mine(conn)] == ["odoo/odoo#2"]
     assert db.list_mine_mergebot(conn)["odoo/odoo#2"]["r_plus"] is False
     assert [r["id"] for r in db.list_tracked(conn)] == ["odoo/odoo#1"]
+
+
+def test_migration_adds_acknowledge_and_fyi_state_to_v24_db(tmp_path):
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path, isolation_level=None)
+    v24 = (db.SCHEMA_SQL.replace(db.MINE_ACK_SCHEMA_SQL, "")
+           .replace("  head_committed_at TEXT,\n", "")
+           .replace("  fetched_at     TEXT,\n  r_plus         INTEGER,\n", ""))
+    conn.executescript(v24)
+    conn.execute("INSERT INTO mine (id, repo, number, url, added_at) "
+                 "VALUES ('odoo/odoo#2', 'odoo/odoo', 2, 'u', 't')")
+    conn.execute("INSERT INTO mine_seen (pr_id, state, seen_at) VALUES ('odoo/odoo#2', 'OPEN', 't')")
+    conn.execute("PRAGMA user_version = 24")
+    conn.close()
+
+    conn = db.connect(path)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
+    db.update_tab_state(conn, "mine", "odoo/odoo#2", {"head_committed_at": "2026-10-01"})
+    db.set_mine_ack(conn, "b", "f1", "t")
+    [row] = db.list_mine(conn)
+    seen = db.list_tab_seen(conn, "mine")["odoo/odoo#2"]
+    assert (row["head_committed_at"], seen["fetched_at"], seen["r_plus"],
+            db.list_mine_acks(conn)) == ("2026-10-01", None, None, {"b": "f1"})

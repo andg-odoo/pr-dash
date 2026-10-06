@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 24
+SCHEMA_VERSION = 25
 
 # Cache-wide facts with nowhere better to live, such as when a refresh last reached GitHub.
 META_SCHEMA_SQL = """
@@ -138,6 +138,7 @@ CREATE TABLE mine (
   checks        TEXT NOT NULL DEFAULT '[]',
   review_decision  TEXT,
   mergeable        TEXT,
+  head_committed_at TEXT,
   requested_people TEXT NOT NULL DEFAULT '[]',
   requested_teams  TEXT NOT NULL DEFAULT '[]',
   review_request_events TEXT NOT NULL DEFAULT '[]',
@@ -176,6 +177,8 @@ CREATE TABLE mine_seen (
   head_sha       TEXT,
   comment_count  INTEGER,
   activity_count INTEGER,
+  fetched_at     TEXT,
+  r_plus         INTEGER,
   seen_at        TEXT NOT NULL
 );
 
@@ -191,6 +194,15 @@ CREATE TABLE mine_mergebot (
 );
 
 CREATE INDEX idx_mine_comment_pr ON mine_comment(pr_id);
+"""
+
+# A Branch set is keyed by head branch, so its Acknowledge outlives any one member row.
+MINE_ACK_SCHEMA_SQL = """
+CREATE TABLE mine_ack (
+  key         TEXT PRIMARY KEY,
+  fingerprint TEXT NOT NULL,
+  acked_at    TEXT NOT NULL
+);
 """
 
 SCHEMA_SQL = """
@@ -316,7 +328,8 @@ CREATE INDEX idx_pr_module_pr ON pr_module(pr_id);
 CREATE INDEX idx_pr_reviewer_pr ON pr_reviewer(pr_id);
 CREATE INDEX idx_pr_thread_pr ON pr_thread(pr_id);
 CREATE INDEX idx_pr_comment_pr ON pr_comment(pr_id);
-""" + TRACKED_SCHEMA_SQL + COMPANION_SCHEMA_SQL + AI_ATTEMPT_SCHEMA_SQL + META_SCHEMA_SQL + MINE_SCHEMA_SQL
+""" + TRACKED_SCHEMA_SQL + COMPANION_SCHEMA_SQL + AI_ATTEMPT_SCHEMA_SQL + META_SCHEMA_SQL + MINE_SCHEMA_SQL \
+    + MINE_ACK_SCHEMA_SQL
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
@@ -561,6 +574,19 @@ def _migrate(conn: sqlite3.Connection) -> None:
         }
         if "mine" not in tables:
             conn.executescript(MINE_SCHEMA_SQL)
+    if current < 25:
+        tables = {
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'",
+            ).fetchall()
+        }
+        if "mine_ack" not in tables:
+            conn.executescript(MINE_ACK_SCHEMA_SQL)
+        # Older databases got these columns from MINE_SCHEMA_SQL above.
+        if current == 24:
+            conn.execute("ALTER TABLE mine ADD COLUMN head_committed_at TEXT")
+            conn.execute("ALTER TABLE mine_seen ADD COLUMN fetched_at TEXT")
+            conn.execute("ALTER TABLE mine_seen ADD COLUMN r_plus INTEGER")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -1014,7 +1040,7 @@ _MINE_JSON_COLS = ["checks", "requested_people", "requested_teams", "review_requ
 _TAB_STATE_COLS = {
     "tracked": TRACKED_STATE_COLS,
     "mine": [*TRACKED_STATE_COLS, "head_branch", "review_decision", "mergeable",
-             *_MINE_JSON_COLS],
+             "head_committed_at", *_MINE_JSON_COLS],
 }
 
 
@@ -1148,6 +1174,26 @@ def list_mine_mergebot(conn: sqlite3.Connection) -> dict[str, dict]:
             "linked": json.loads(row["linked"]),
         }
     return out
+
+
+def list_mine_acks(conn: sqlite3.Connection) -> dict[str, str]:
+    return {r["key"]: r["fingerprint"] for r in conn.execute("SELECT * FROM mine_ack")}
+
+
+def set_mine_ack(conn: sqlite3.Connection, key: str, fingerprint: str | None,
+                 when: str) -> None:
+    """Acknowledge Branch set `key` at `fingerprint`, or drop its Acknowledge when None."""
+    if fingerprint is None:
+        conn.execute("DELETE FROM mine_ack WHERE key = ?", (key,))
+    else:
+        _upsert(conn, "mine_ack", {"key": key, "fingerprint": fingerprint, "acked_at": when},
+                ["key"])
+
+
+def drop_stale_mine_acks(conn: sqlite3.Connection, fingerprints: dict[str, str]) -> None:
+    """Drop each Acknowledge whose Branch set no longer has the fingerprint it was taken at."""
+    conn.executemany("DELETE FROM mine_ack WHERE key = ? AND fingerprint != ?",
+                     list(fingerprints.items()))
 
 
 def list_tab_seen(conn: sqlite3.Connection, tab: str) -> dict[str, sqlite3.Row]:

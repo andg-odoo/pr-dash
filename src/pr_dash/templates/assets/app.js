@@ -82,7 +82,7 @@
   }
   function saveHidden(h) { localStorage.setItem(HIDDEN_KEY, JSON.stringify(h)); }
 
-  // Unsynced hide/unhide ops, flushed to the MCP listener when it's reachable.
+  // Unsynced listener ops, each posted to its route (`hidden` when unset) once it answers.
   function loadQueue() {
     const raw = localStorage.getItem(HIDDEN_QUEUE_KEY);
     if (!raw) return [];
@@ -93,11 +93,17 @@
   function flushQueue() {
     const q = loadQueue();
     if (!q.length || !HIDDEN_SYNC_PORT) return;
-    fetch(`http://127.0.0.1:${HIDDEN_SYNC_PORT}/hidden`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ops: q }),
-    }).then(r => { if (r.ok) saveQueue([]); }).catch(() => {});
+    for (const route of new Set(q.map(op => op.route || "hidden"))) {
+      const ops = q.filter(op => (op.route || "hidden") === route);
+      const sent = new Set(ops.map(op => JSON.stringify(op)));
+      fetch(`http://127.0.0.1:${HIDDEN_SYNC_PORT}/${route}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ops }),
+      }).then(r => {
+        if (r.ok) saveQueue(loadQueue().filter(op => !sent.has(JSON.stringify(op))));
+      }).catch(() => {});
+    }
   }
 
   // Reconcile the three hidden sources at load. The server map is authoritative
@@ -107,14 +113,15 @@
   // queue exactly once - skipping ids already in the server map or already
   // referenced by a queued op.
   const localHidden = loadHidden();
-  const queuedIds = new Set(loadQueue().map(op => op.pr_id));
+  const hideOps = () => loadQueue().filter(op => !op.route);
+  const queuedIds = new Set(hideOps().map(op => op.pr_id));
   for (const id of Object.keys(localHidden)) {
     if (HIDDEN_SERVER[id] || queuedIds.has(id)) continue;
     enqueueOp({ op: "hide", pr_id: id,
                 head_sha: localHidden[id].head_sha, hidden_at: localHidden[id].hidden_at });
   }
   let hidden = { ...HIDDEN_SERVER };
-  for (const op of loadQueue()) {
+  for (const op of hideOps()) {
     if (op.op === "hide") hidden[op.pr_id] = { head_sha: op.head_sha, hidden_at: op.hidden_at };
     else delete hidden[op.pr_id];
   }
@@ -1396,9 +1403,9 @@
   }
 
   // The merged discussion stream, newest review-rooted group first.
-  function discussionHTML(comments, showMember = false) {
+  function discussionHTML(comments, showMember = false, empty = "No discussion cached.") {
     const groups = groupDiscussion(comments);
-    if (!groups.length) return '<div class="tr-none">No discussion cached.</div>';
+    if (!groups.length) return `<div class="tr-none">${empty}</div>`;
     return groups.map(g => {
       if (g.kind === "orphan-threads") {
         return `<article class="tr-entry tr-entry-orphan">${threadsHTML(g.threads, showMember)}</article>`;
@@ -1493,6 +1500,28 @@
 
   const isMineDismissed = s => s.members.every(m => dismissed.mine[m.id]);
 
+  // Local-first like dismissals, an Acknowledge holds only for the fingerprint it was taken at.
+  const ACK_KEY = "pr-dash:mine-ack:v1";
+  const localAcks = loadJSON(ACK_KEY) || {};
+  function isAcked(s) {
+    const a = localAcks[s.key];
+    return a && a.fingerprint === s.fingerprint ? a.on : s.acknowledged;
+  }
+  const mineBand = s => s.band === "done" ? "done" : s.actions.length && !isAcked(s) ? "needs" : "open";
+
+  function toggleAck(key) {
+    const s = MINE.find(x => x.key === key);
+    if (!s || mineBand(s) === "done" || !s.actions.length) return;
+    const on = !isAcked(s);
+    localAcks[key] = { fingerprint: s.fingerprint, on };
+    localStorage.setItem(ACK_KEY, JSON.stringify(localAcks));
+    enqueueOp({ route: "mine-ack", op: on ? "ack" : "unack", key, fingerprint: s.fingerprint,
+                at: new Date().toISOString() });
+    flushQueue();
+    renderMineList();
+    if (selectedMineKey === key) renderMineDetail(s);
+  }
+
   function mineHaystack(s) {
     if (s._haystack === undefined) {
       const parts = [s.key, s.task || ""];
@@ -1507,7 +1536,7 @@
     return !searchQuery || searchQuery.split(/\s+/).every(q => !q || mineHaystack(s).includes(q));
   }
 
-  const mineTitle = s => s.members[0].title;
+  const mineTitle = s => (s.members.find(m => m.repo === "odoo/odoo") || s.members[0]).title;
   const mineTargets = s => [...new Set(s.members.map(m => m.target_branch))].join(", ");
 
   // CI pending stays green: the Mergebot lists lazy checks GitHub never reports.
@@ -1528,7 +1557,11 @@
   }
 
   function mineLabels(s) {
-    return (s.members.some(m => m.draft) ? '<span class="tr-state tr-draft">draft</span>' : "")
+    return s.fyi.map(t => `<span class="mine-fyi">${escapeHTML(t)}</span>`).join("")
+      + (s.members.some(m => m.draft) ? '<span class="tr-state tr-draft">draft</span>' : "")
+      + (s.actions.length && mineBand(s) === "open"
+        ? '<span class="tr-state mine-ack" title="Acknowledged, returns on a new push, comment or CI change">ack\'d</span>'
+        : "")
       + (s.members.some(m => m.mergebot_unknown)
         ? '<span class="tr-state mine-unknown" title="The Mergebot page could not be read, CI and r+ fall back to GitHub">mergebot?</span>'
         : "");
@@ -1537,16 +1570,19 @@
   function renderMineList() {
     const live = MINE.filter(s => !isMineDismissed(s));
     const visible = MINE.filter(minePasses);
+    const oldest = s => new Date(s.actions[0].since);
     const bands = [
-      ["Open", "", visible.filter(s => s.band !== "done")],
-      ["Done", " mine-band-done", visible.filter(s => s.band === "done")],
+      ["Needs you", " mine-band-needs",
+       visible.filter(s => mineBand(s) === "needs").sort((a, b) => oldest(a) - oldest(b))],
+      ["Open", "", visible.filter(s => mineBand(s) === "open")],
+      ["Done", " mine-band-done", visible.filter(s => mineBand(s) === "done")],
     ];
     visibleMine = bands.flatMap(b => b[2]);
-    const openCount = live.filter(s => s.band !== "done").length;
-    visibleCountEl.textContent = `${openCount} open · ${live.length - openCount} done`;
+    const count = band => live.filter(s => mineBand(s) === band).length;
+    visibleCountEl.textContent = `${count("needs")} need you · ${count("open")} open · ${count("done")} done`;
     if (totalCountEl) totalCountEl.textContent = "";
     if (lookCountEl) lookCountEl.textContent = "";
-    if (mineTabCountEl) mineTabCountEl.textContent = String(openCount);
+    if (mineTabCountEl) mineTabCountEl.textContent = String(count("needs") + count("open"));
 
     mineListEl.innerHTML = "";
     if (!visible.length) {
@@ -1580,7 +1616,9 @@
         <span class="tr-branch">${escapeHTML(s.key)} → ${escapeHTML(mineTargets(s))}</span>
         ${s.task ? `<span>task-${escapeHTML(s.task)}</span>` : ""}
         ${mineLabels(s)}
-      </span>`;
+      </span>
+      ${mineBand(s) === "needs" ? s.actions.map(a =>
+        `<span class="pr-sub mine-reason">${escapeHTML(a.member)}: ${escapeHTML(a.text)}</span>`).join("") : ""}`;
     li.addEventListener("click", (e) => {
       if (e.target.classList.contains("pr-hide")) return;
       selectMine(s.key);
@@ -1644,7 +1682,7 @@
           m.mergebot_unknown ? ' · <span class="mine-unknown">mergebot?</span>' : ""}</td>
         <td>${memberCI(m)}</td>
         <td>${escapeHTML(m.review || "-")}</td>
-        <td>${memberRequested(m)}</td>
+        <td class="mine-requested">${memberRequested(m)}</td>
         <td><a href="${escapeHTML(m.url)}" target="_blank" rel="noopener">GitHub ↗</a>${
           m.runbot_url ? ` · <a href="${escapeHTML(m.runbot_url)}" target="_blank" rel="noopener">runbot ↗</a>` : ""}</td>
       </tr>`).join("");
@@ -1663,6 +1701,14 @@
           <button class="detail-hide mine-dismiss" type="button">Dismiss</button>
         </div>
 
+        ${s.actions.length && mineBand(s) !== "done" ? `
+        <section class="section">
+          <h3>Action items <button class="detail-hide mine-ack-btn" type="button">${
+            isAcked(s) ? "Un-acknowledge" : "Acknowledge (a)"}</button></h3>
+          ${s.actions.map(a => `<div class="mine-reason">${escapeHTML(a.member)}: ${escapeHTML(a.text)}
+            <span class="mine-dim">since ${escapeHTML(a.since.slice(0, 10))}</span></div>`).join("")}
+        </section>` : ""}
+
         <section class="section">
           <h3>Members</h3>
           <table class="mine-table">
@@ -1673,10 +1719,11 @@
 
         <section class="section">
           <h3>Discussion</h3>
-          ${discussionHTML(s.comments, s.members.length > 1)}
+          ${discussionHTML(s.comments, s.members.length > 1, "No discussion yet.")}
         </section>
       </div>`;
     detailEl.querySelector(".mine-dismiss").addEventListener("click", () => dismissMine(s.key));
+    detailEl.querySelector(".mine-ack-btn")?.addEventListener("click", () => toggleAck(s.key));
   }
 
   /** Render whichever tab is showing. Shared controls (search, reset, the
@@ -1766,6 +1813,7 @@
         if (activeTab === "tracked") dismissSelectedTracked();
         else if (activeTab === "mine" && selectedMineKey) dismissMine(selectedMineKey);
         break;
+      case "a": if (activeTab === "mine" && selectedMineKey) toggleAck(selectedMineKey); break;
       case "t": setTab(TABS[(TABS.indexOf(activeTab) + 1) % TABS.length]); break;
     }
   });

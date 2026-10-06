@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import re
 from collections.abc import Iterator
@@ -208,7 +209,7 @@ def tracked_row_from_node(node: dict, fetched_at: str) -> tuple[dict, list[dict]
     approvals and the actual argument are reviews and threads, so fetching only
     conversation comments makes a busy PR look silent.
     """
-    ci_state, _ = status_check_state(_head_rollup(node))
+    ci_state, _ = status_check_state(_head_commit(node).get("statusCheckRollup"))
     comment_block = node.get("comments") or {}
     review_block = node.get("reviews") or {}
     thread_block = node.get("reviewThreads") or {}
@@ -246,9 +247,8 @@ def tracked_row_from_node(node: dict, fetched_at: str) -> tuple[dict, list[dict]
     return row, comments
 
 
-def _head_rollup(node: dict) -> dict | None:
-    return ((node.get("commits") or {}).get("nodes") or [{}])[0].get("commit", {}).get(
-        "statusCheckRollup")
+def _head_commit(node: dict) -> dict:
+    return ((node.get("commits") or {}).get("nodes") or [{}])[0].get("commit", {})
 
 
 def mine_row_from_node(node: dict, fetched_at: str) -> tuple[dict, list[dict]]:
@@ -272,10 +272,11 @@ def mine_row_from_node(node: dict, fetched_at: str) -> tuple[dict, list[dict]]:
         "head_branch": node.get("headRefName") or "",
         "review_decision": node.get("reviewDecision"),
         "mergeable": node.get("mergeable"),
+        "head_committed_at": _head_commit(node).get("committedDate"),
         "checks": [
             {"name": c["name"], "url": c["url"],
              "state": "failure" if c["failing"] else "pending" if c["pending"] else "success"}
-            for c in _iter_checks(_head_rollup(node))
+            for c in _iter_checks(_head_commit(node).get("statusCheckRollup"))
         ],
         "requested_people": [r["login"] for r in requested if r.get("__typename") == "User"],
         "requested_teams": [r["slug"] for r in requested if r.get("__typename") == "Team"],
@@ -863,28 +864,140 @@ _BRANCH_TASK_RE = re.compile(r"-(\d{6,8})-")
 _CI_WORST_FIRST = {"failure": "red", "pending": "pending", "success": "green"}
 
 
-def branch_sets(members: list[dict], mergebot_states: dict[str, dict]) -> list[dict]:
-    """Group Authored PRs into Branch sets by head branch, most recently active first.
+_BANDS = ("needs", "open", "done")
+
+
+def branch_sets(
+    members: list[dict], mergebot_states: dict[str, dict], *, streams: dict[str, list[dict]],
+    login: str, acks: dict[str, str], seen: dict[str, dict], now: str,
+) -> list[dict]:
+    """Group Authored PRs into Branch sets by head branch, Needs you first, then Open, then Done.
 
     :param members: Authored PR rows, as db.list_mine returns them
     :param mergebot_states: pr id -> last stored Mergebot read, a mergebot.MergebotState as a dict
+    :param streams: pr id -> its discussion stream oldest first, bots included
+    :param login: the user's GitHub login
+    :param acks: Branch set key -> the fingerprint it was Acknowledged at
+    :param seen: pr id -> its mine_seen row from the last interactive look
+    :param now: ISO time `idle Nd` counts to
     """
-    groups: dict[str, list[dict]] = {}
+    groups: dict[str, list[tuple[dict, dict]]] = {}
     for row in members:
-        groups.setdefault(row["head_branch"], []).append(
-            _mine_member(row, mergebot_states.get(row["id"])))
+        member = _mine_member(row, mergebot_states.get(row["id"]))
+        groups.setdefault(row["head_branch"], []).append((row, member))
     sets = []
     for key, group in groups.items():
-        group.sort(key=lambda m: (m["repo"], m["num"]))
+        group.sort(key=lambda rm: (rm[1]["repo"], rm[1]["num"]))
+        ids = {m["id"] for _, m in group}
+        actions, fyi = [], []
+        for row, m in group:
+            m_actions, m_fyi = _member_attention(
+                row, m, streams.get(m["id"], []), mergebot_states.get(m["id"]), login, ids,
+                seen.get(m["id"]))
+            actions += m_actions
+            fyi += m_fyi
+        actions.sort(key=lambda a: parse_iso(a["since"]))
+        done = all(m["state"] in ("MERGED", "CLOSED") for _, m in group)
+        updated = max((m["updated_at"] for _, m in group if m["updated_at"]), default=None)
+        if not done and updated and (idle := (parse_iso(now) - parse_iso(updated)).days) > 7:
+            fyi.append(f"idle {idle}d")
+        fingerprint = hashlib.sha1(json.dumps([
+            sorted(row["head_sha"] for row, _ in group),
+            sorted((a["member"], a["kind"], a["text"]) for a in actions),
+            [(m["id"], m["ci"], m["ci_failing"]) for _, m in group],
+            [(m["id"], row["activity_count"],
+              max((c["created_at"] or "" for c in streams.get(m["id"], [])), default=""))
+             for row, m in group],
+        ]).encode()).hexdigest()[:16]
+        acknowledged = acks.get(key) == fingerprint
         task = _BRANCH_TASK_RE.search(key)
         sets.append({
             "key": key,
             "task": task and task.group(1),
-            "members": group,
-            "band": "done" if all(m["state"] in ("MERGED", "CLOSED") for m in group) else "open",
+            "members": [m for _, m in group],
+            "actions": actions,
+            "fyi": list(dict.fromkeys(fyi)),
+            "acknowledged": acknowledged,
+            "fingerprint": fingerprint,
+            "band": "done" if done else "needs" if actions and not acknowledged else "open",
         })
     sets.sort(key=lambda s: max(m["updated_at"] or "" for m in s["members"]), reverse=True)
+    sets.sort(key=lambda s: (
+        _BANDS.index(s["band"]),
+        parse_iso(s["actions"][0]["since"]).timestamp() if s["band"] == "needs" else 0,
+    ))
     return sets
+
+
+def _member_attention(
+    row: dict, m: dict, stream: list[dict], mergebot: dict | None, login: str,
+    set_ids: set[str], prev: dict | None,
+) -> tuple[list[dict], list[str]]:
+    """(Action items, FYI labels) of one member, which owes nothing while draft or resolved."""
+    actions: list[dict] = []
+    fyi: list[str] = []
+    head_at = row["head_committed_at"] or row["fetched_at"]
+
+    def act(kind: str, text: str, since: str) -> None:
+        actions.append({"member": m["ref"], "kind": kind, "text": text, "since": since})
+
+    # A row added but not fetched yet carries no state to judge.
+    if m["state"] == "OPEN" and not m["draft"] and row["fetched_at"]:
+        threads = {c["thread_id"]: c for c in stream if c["kind"] == "thread"}
+        for c in threads.values():
+            if c["state"] == "UNRESOLVED" and c["author"] != login:
+                where = f" on {c['path']}" if c["path"] else ""
+                act("thread", f"{c['author']} is waiting in a thread{where}", c["created_at"])
+        if m["ci"] == "red":
+            act("ci", "CI red: " + ", ".join(m["ci_failing"]), head_at)
+        if m["conflict"]:
+            act("conflict", "merge conflict", head_at)
+        verdicts = {
+            c["author"]: c for c in stream
+            if c["kind"] == "review" and c["author"] != login
+            and c["state"] in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED")
+        }
+        changes = [c for c in verdicts.values() if c["state"] == "CHANGES_REQUESTED"]
+        if changes:
+            latest = max(changes, key=lambda c: parse_iso(c["created_at"]))
+            pushed = row["head_committed_at"]
+            if not pushed or parse_iso(latest["created_at"]) > parse_iso(pushed):
+                by = ", ".join(sorted(c["author"] for c in changes))
+                act("changes", f"changes requested by {by}", latest["created_at"])
+            else:
+                fyi.append("waiting on re-review")
+        if not m["requested_people"]:
+            removed = [e["at"] for e in row["review_request_events"]
+                       if e["kind"] == "removed" and not e["is_team"]]
+            text = "only teams requested" if m["requested_teams"] else "no reviewer requested"
+            act("reviewers", text, max(removed, default=row["created_at"]))
+        for pr in mergebot["linked"] if mergebot else []:
+            # Its own member raises its own items, and a missing r+ waits on a reviewer.
+            if (pr["ready"] is False and f"{pr['repo']}#{pr['number']}" not in set_ids
+                    and set(pr["blockers"]) != {"missing r+"}):
+                blockers = ", ".join(pr["blockers"]) or "not ready"
+                act("linked", f"linked {pr['repo']}#{pr['number']}: {blockers}", head_at)
+
+    if prev is None or not prev["fetched_at"]:
+        return actions, fyi
+    mark = parse_iso(prev["fetched_at"])
+    for c in stream:
+        if c["author"] == login or is_bot(c["author"]) or parse_iso(c["created_at"]) <= mark:
+            continue
+        if c["kind"] == "review" and c["state"] == "APPROVED":
+            fyi.append("approved · r+ missing" if m["r_plus"] is False else "approved")
+        else:
+            fyi.append("new reply")
+    if m["r_plus"] and not prev["r_plus"]:
+        fyi.append("r+")
+    for e in row["review_request_events"]:
+        if e["is_team"] or parse_iso(e["at"]) <= mark:
+            continue
+        if e["kind"] == "requested":
+            fyi.append(f"reviewer added: {e['reviewer']}")
+        elif m["requested_people"]:
+            fyi.append(f"reviewer removed: {e['reviewer']}")
+    return actions, fyi
 
 
 def _mine_member(row: dict, mergebot: dict | None) -> dict:
@@ -907,6 +1020,7 @@ def _mine_member(row: dict, mergebot: dict | None) -> dict:
         "id": row["id"],
         "repo": row["repo"],
         "num": row["number"],
+        "ref": f"{row['repo'].split('/')[-1]}#{row['number']}",
         "title": row["title"],
         "url": row["url"],
         "state": state,
