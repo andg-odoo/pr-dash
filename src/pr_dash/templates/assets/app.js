@@ -1651,7 +1651,7 @@
         ${mineLabels(s)}
       </span>
       ${fwLines(s)}
-      ${mineBand(s) === "needs" ? s.actions.map(a =>
+      ${mineBand(s) === "needs" ? s.action_lines.map(a =>
         `<span class="pr-sub mine-reason">${escapeHTML(a.member)}: ${escapeHTML(a.text)}</span>`).join("") : ""}`;
     li.addEventListener("click", (e) => {
       if (e.target.classList.contains("pr-hide")) return;

@@ -733,6 +733,19 @@ def test_thread_lifts_when_someone_else_spoke_last_and_a_draft_never_lifts():
     assert (draft["key"], draft["band"], draft["actions"]) == ("b", "open", [])
 
 
+def test_the_list_folds_one_authors_waiting_threads_into_one_line():
+    stream = [_entry("thread", "clbr-odoo", f"2026-09-1{i}T00:00:00Z", state="UNRESOLVED",
+                     thread=f"t{i}", path=path)
+              for i, path in enumerate(["a.py", "b.py", "a.py"])]
+    stream.append(_entry("thread", "jbw-odoo", "2026-09-19T00:00:00Z", state="UNRESOLVED",
+                         thread="t9", path="c.py"))
+    [s] = _sets([_mine_row("odoo/odoo", 1, "a")], {}, streams={"odoo/odoo#1": stream})
+    assert len(s["actions"]) == 4
+    assert [(a["text"], a["since"]) for a in s["action_lines"]] == [
+        ("clbr-odoo is waiting in 3 threads on 2 files", "2026-09-10T00:00:00Z"),
+        ("jbw-odoo is waiting in a thread on c.py", "2026-09-19T00:00:00Z")]
+
+
 def test_changes_requested_lift_until_a_push_then_wait_on_re_review():
     stream = [
         _entry("review", "jbw-odoo", "2026-10-01T00:00:00Z", state="CHANGES_REQUESTED"),

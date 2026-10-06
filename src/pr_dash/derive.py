@@ -898,6 +898,7 @@ def branch_sets(
             "url": bs.primary["url"],
             "members": [m for _, m in group],
             "actions": actions,
+            "action_lines": _action_lines(actions),
             "fyi": list(dict.fromkeys(fyi)),
             "acknowledged": acknowledged,
             "fingerprint": fingerprint,
@@ -911,6 +912,23 @@ def branch_sets(
     return sets
 
 
+def _action_lines(actions: list[dict]) -> list[dict]:
+    """Action items for the list view, one line per member and author for their waiting threads."""
+    groups: dict[object, list[dict]] = {}
+    for i, a in enumerate(actions):
+        groups.setdefault((a["member"], a["author"]) if a["kind"] == "thread" else i, []).append(a)
+    lines = []
+    for group in groups.values():
+        first = group[0]
+        if len(group) == 1:
+            lines.append(first)
+            continue
+        files = len({a["path"] for a in group if a["path"]})
+        where = f" on {files} file{'s' * (files > 1)}" if files else ""
+        lines.append({**first, "text": f"{first['author']} is waiting in {len(group)} threads{where}"})
+    return lines
+
+
 def _member_attention(
     row: dict, m: dict, stream: list[dict], mergebot: dict | None, login: str,
     set_ids: set[str], prev: dict | None,
@@ -920,8 +938,8 @@ def _member_attention(
     fyi: list[str] = []
     head_at = row["head_committed_at"] or row["fetched_at"]
 
-    def act(kind: str, text: str, since: str) -> None:
-        actions.append({"member": m["ref"], "kind": kind, "text": text, "since": since})
+    def act(kind: str, text: str, since: str, **extra) -> None:
+        actions.append({"member": m["ref"], "kind": kind, "text": text, "since": since, **extra})
 
     # A row added but not fetched yet carries no state to judge.
     if m["state"] == "OPEN" and not m["draft"] and row["fetched_at"]:
@@ -929,7 +947,8 @@ def _member_attention(
         for c in threads.values():
             if c["state"] == "UNRESOLVED" and c["author"] != login:
                 where = f" on {c['path']}" if c["path"] else ""
-                act("thread", f"{c['author']} is waiting in a thread{where}", c["created_at"])
+                act("thread", f"{c['author']} is waiting in a thread{where}", c["created_at"],
+                    author=c["author"], path=c["path"])
         if m["ci"] == "red":
             act("ci", "CI red: " + ", ".join(m["ci_failing"]), head_at)
         if m["conflict"]:
