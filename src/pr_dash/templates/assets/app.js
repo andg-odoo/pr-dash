@@ -1525,7 +1525,8 @@
   function mineHaystack(s) {
     if (s._haystack === undefined) {
       const parts = [s.key, s.task || ""];
-      s.members.forEach(m => parts.push(m.title, m.ref, m.repo, m.target_branch));
+      s.members.forEach(m => parts.push(m.title, m.ref, m.repo, m.target_branch,
+                                        ...m.fw.map(f => f.ref)));
       s._haystack = parts.join(" ").toLowerCase();
     }
     return s._haystack;
@@ -1555,6 +1556,14 @@
     return `<span class="mine-chip mine-chip-${tone}${m.draft ? " mine-chip-draft" : ""}" title="${escapeHTML(m.title)}">`
       + `<span class="mine-dot mine-dot-${tone}"></span>${escapeHTML(m.ref)}${bits.length ? " " + bits.join(" ") : ""}</span>`;
   }
+
+  const FW_FLAG = { conflict: "conflict", red: "red CI" };
+  const fwLabel = f => f.flag
+    ? `<span class="tr-ci-failure">${FW_FLAG[f.flag]}</span>`
+    : `<span class="${f.state === "MERGED" ? "mine-fw-merged" : "mine-dim"}">${escapeHTML(f.state.toLowerCase())}</span>`;
+
+  const fwLines = s => s.members.flatMap(m => m.fw.map(f =>
+    `<span class="pr-sub mine-fw">${escapeHTML(f.base)} ${escapeHTML(f.ref)} ${fwLabel(f)}</span>`)).join("");
 
   function mineLabels(s) {
     return s.fyi.map(t => `<span class="mine-fyi">${escapeHTML(t)}</span>`).join("")
@@ -1617,6 +1626,7 @@
         ${s.task ? `<span>task-${escapeHTML(s.task)}</span>` : ""}
         ${mineLabels(s)}
       </span>
+      ${fwLines(s)}
       ${mineBand(s) === "needs" ? s.actions.map(a =>
         `<span class="pr-sub mine-reason">${escapeHTML(a.member)}: ${escapeHTML(a.text)}</span>`).join("") : ""}`;
     li.addEventListener("click", (e) => {
@@ -1685,7 +1695,16 @@
         <td class="mine-requested">${memberRequested(m)}</td>
         <td><a href="${escapeHTML(m.url)}" target="_blank" rel="noopener">GitHub ↗</a>${
           m.runbot_url ? ` · <a href="${escapeHTML(m.runbot_url)}" target="_blank" rel="noopener">runbot ↗</a>` : ""}</td>
-      </tr>`).join("");
+      </tr>${m.fw.map(f => `
+      <tr>
+        <td>&nbsp;&nbsp;↳ ${escapeHTML(f.ref)}</td>
+        <td>${escapeHTML(f.state.toLowerCase())}${f.flag ? " · " + fwLabel(f) : ""}${
+          f.mergebot_unknown ? ' · <span class="mine-unknown">mergebot?</span>' : ""}</td>
+        <td>${memberCI(f)}</td>
+        <td class="mine-dim">fw to ${escapeHTML(f.base)}</td>
+        <td></td>
+        <td><a href="${escapeHTML(f.url)}" target="_blank" rel="noopener">GitHub ↗</a></td>
+      </tr>`).join("")}`).join("");
     detailEl.innerHTML = `
       <div class="detail">
         <div class="detail-header">
@@ -1719,7 +1738,8 @@
 
         <section class="section">
           <h3>Discussion</h3>
-          ${discussionHTML(s.comments, s.members.length > 1, "No discussion yet.")}
+          ${discussionHTML(s.comments, s.members.length > 1 || s.members.some(m => m.fw.length),
+                           "No discussion yet.")}
         </section>
       </div>`;
     detailEl.querySelector(".mine-dismiss").addEventListener("click", () => dismissMine(s.key));

@@ -601,7 +601,7 @@ def test_push_falls_back_to_head_ref_oid_without_commits():
 # --- derive.branch_sets ------------------------------------------------------
 
 def _mine_row(repo, number, branch, *, checks=(("ci/runbot", "SUCCESS"),),
-              pushed="2026-10-02T00:00:00Z", **over):
+              pushed="2026-10-02T00:00:00Z", source=None, **over):
     node = {
         "title": f"PR {number}", "state": "OPEN", "isDraft": False, "headRefName": branch,
         "createdAt": "2026-09-01T00:00:00Z",
@@ -622,7 +622,7 @@ def _mine_row(repo, number, branch, *, checks=(("ci/runbot", "SUCCESS"),),
     }
     row, _ = derive.mine_row_from_node(node, "2026-10-05T00:00:00+00:00")
     return {**row, "id": f"{repo}#{number}", "repo": repo, "number": number, "url": "u",
-            "dismissed_at": None}
+            "dismissed_at": None, "source_id": source}
 
 
 def _sets(rows, pages, *, streams=None, acks=None, seen=None, now="2026-10-05T00:00:00Z"):
@@ -857,3 +857,67 @@ def test_fyi_labels_are_movement_since_the_last_look():
                                "reviewer added: jbw-odoo", "reviewer removed: svs-odoo"]
     # Nothing to compare against before the first interactive look.
     assert fyi(True, {}) == []
+
+
+def test_a_review_since_the_last_push_stands_in_for_a_dropped_request():
+    rows = [_mine_row("odoo/odoo", 1, "a", reviewRequests={"nodes": []})]
+    after = [_entry("review", "jco-odoo", "2026-10-03T00:00:00Z", state="APPROVED")]
+    assert _sets(rows, {}, streams={"odoo/odoo#1": after})[0]["actions"] == []
+    # Neither a plain comment nor the user's own review since the push counts.
+    before = [
+        _entry("review", "jco-odoo", "2026-10-01T00:00:00Z", state="APPROVED"),
+        _entry("issue", "clbr-odoo", "2026-10-03T00:00:00Z"),
+        _entry("review", "andg", "2026-10-03T00:00:00Z", state="COMMENTED"),
+    ]
+    [s] = _sets(rows, {}, streams={"odoo/odoo#1": before})
+    assert _actions(s) == [("odoo#1", "reviewers", "no reviewer requested")]
+
+
+def _fw(number, base, **over):
+    return _mine_row("odoo/odoo", number, f"{base}-saas-19.1-arca-6470810-andg-5729-fw",
+                     source="odoo/odoo#290657", baseRefName=base, **over)
+
+
+_SOURCE = _mine_row("odoo/odoo", 290657, "saas-19.1-arca-6470810-andg", state="CLOSED")
+
+
+def test_chain_runs_in_odoo_branch_order_and_is_done_only_when_every_forward_port_is():
+    merged = _page("odoo_odoo_290657_merged")
+    pages = {pr: merged for pr in ("odoo/odoo#290657", "odoo/odoo#291580", "odoo/odoo#291857")}
+    chain = [_fw(291981, "master"), _fw(291857, "20.0", state="CLOSED"),
+             _fw(291580, "saas-19.2", state="CLOSED")]
+    [s] = _sets([_SOURCE, *chain], pages)
+    assert [(f["base"], f["ref"], f["state"], f["flag"]) for f in s["members"][0]["fw"]] == [
+        ("saas-19.2", "odoo#291580", "MERGED", None), ("20.0", "odoo#291857", "MERGED", None),
+        ("master", "odoo#291981", "OPEN", None)]
+    # A healthy open Forward-port keeps the row Open and raises nothing.
+    assert (s["band"], s["actions"], s["fyi"]) == ("open", [], ["source merged", "fw 2/3 merged"])
+    pages["odoo/odoo#291981"] = merged
+    [done] = _sets([_SOURCE, _fw(291981, "master", state="CLOSED"), *chain[1:]], pages)
+    assert (done["band"], done["fyi"]) == ("done", ["fw 3/3 merged"])
+
+
+def test_conflicted_or_red_forward_port_lifts_its_source():
+    rows = [_SOURCE, _fw(291981, "master", checks=[("ci/runbot", "FAILURE")]),
+            _fw(291857, "20.0", mergeable="CONFLICTING")]
+    [s] = _sets(rows, {"odoo/odoo#290657": _page("odoo_odoo_290657_merged")})
+    assert [(f["base"], f["flag"]) for f in s["members"][0]["fw"]] == [
+        ("20.0", "conflict"), ("master", "red")]
+    assert (s["band"], _actions(s)) == ("needs", [
+        ("odoo#291857", "fw", "forward-port to 20.0: merge conflict"),
+        ("odoo#291981", "fw", "forward-port to master: CI red: ci/runbot")])
+
+
+def test_human_comment_on_a_forward_port_lifts_until_the_user_answers():
+    rows = [_SOURCE, _fw(291981, "master")]
+    pages = {"odoo/odoo#290657": _page("odoo_odoo_290657_merged")}
+    stream = [_entry("issue", "fw-bot", "2026-10-03T00:00:00Z"),
+              _entry("issue", "clbr-odoo", "2026-10-04T00:00:00Z")]
+    [s] = _sets(rows, pages, streams={"odoo/odoo#291981": stream})
+    assert (s["band"], _actions(s), s["actions"][0]["since"]) == (
+        "needs", [("odoo#291981", "fw", "forward-port to master: clbr-odoo commented")],
+        "2026-10-04T00:00:00Z")
+    answered = [*stream, _entry("issue", "andg", "2026-10-04T01:00:00Z"),
+                _entry("issue", "fw-bot", "2026-10-04T02:00:00Z")]
+    [s] = _sets(rows, pages, streams={"odoo/odoo#291981": answered})
+    assert (s["band"], s["actions"]) == ("open", [])

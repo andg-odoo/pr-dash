@@ -498,6 +498,8 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
         _seed_mine(conn, "odoo/enterprise#132695", ec)
         _seed_mine(conn, "odoo/upgrade#11389", ec)
         _seed_mine(conn, "odoo/enterprise#1", "master-other-andg", state="CLOSED")
+        _seed_mine(conn, "odoo/odoo#291981", "master-fw", comments=[("me", "Rebased.")])
+        db.link_mine_forward_port(conn, "odoo/odoo#291981", "odoo/odoo#290109")
 
     cfg, mcp_server = _seeded_cfg(tmp_path, monkeypatch, seed)
 
@@ -519,8 +521,15 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
         ("jov-odoo", "issue", "Why here?")]
     assert mcp_server.get_mine("https://github.com/odoo/upgrade/pull/11389")["key"] == ec
 
-    pr = mcp_server.get_pr("odoo/odoo#290109")
+    # A Forward-port ref resolves to its Source PR's set, carrying its own discussion.
+    by_fw = mcp_server.get_mine("odoo#291981")
+    [fw] = next(m for m in by_fw["members"] if m["num"] == 290109)["fw"]
+    assert (by_fw["key"], fw["ref"], [d["body"] for d in fw["discussion"]]) == (
+        ec, "odoo#291981", ["Rebased."])
+
+    pr = mcp_server.get_pr("odoo/odoo#291981")
     assert (pr["key"], ["discussion" in m for m in pr["members"]]) == (ec, [False] * 3)
+    assert "discussion" not in pr["members"][1]["fw"][0]
     assert mcp_server.get_comments("132695")["members"][1]["discussion"] == odoo["discussion"]
     # A bare number in the review queue still resolves there, the Authored PR needs its repo.
     assert mcp_server.get_pr("1")["id"] == "odoo/odoo#1"

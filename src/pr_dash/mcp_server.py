@@ -308,7 +308,11 @@ def get_pr(ref: str) -> dict:
     items = query.load_items(cfg)
     authored = query.resolve_authored(cfg, items, ref)
     if authored is not None:
-        members = [{k: v for k, v in m.items() if k != "discussion"} for m in authored["members"]]
+        members = [
+            {**{k: v for k, v in m.items() if k != "discussion"},
+             "fw": [{k: v for k, v in f.items() if k != "discussion"} for f in m["fw"]]}
+            for m in authored["members"]
+        ]
         return {**authored, "members": members}
     return query.detail(query.resolve_item(items, ref))
 
@@ -405,12 +409,16 @@ def list_mine(band: str | None = None, include_dismissed: bool = False) -> dict:
 
     Each set carries key (the head branch), task, band ('needs', 'open' or
     'done'), actions [{member, kind, text, since}] (what waits on you: thread, ci,
-    conflict, changes, reviewers, linked), fyi labels (movement since the last
-    look, plus 'idle Nd' and 'waiting on re-review'), acknowledged, and members. Members
+    conflict, changes, reviewers, linked, fw), fyi labels (movement since the last
+    look, plus 'idle Nd', 'waiting on re-review', 'source merged' and 'fw k/n merged'),
+    acknowledged, and members. Members
     carry repo, num, state, ci (green / red / pending) with ci_failing and
     override (Mergebot Overrides), decision (GitHub review), r_plus, requested
     people and teams, conflict, and mergebot_unknown when the Mergebot page could
-    not be read. Returns {cache_fetched_at, count, branch_sets}.
+    not be read, plus fw: the member's Forward-ports in target branch order, each with
+    ref, base (target branch), state, ci and flag (conflict / red / null). A set is
+    Done only once every member and Forward-port is. Returns {cache_fetched_at, count,
+    branch_sets}.
     """
     cfg = _get_cfg()
     sets = query.load_mine(cfg, include_dismissed=include_dismissed)
@@ -426,10 +434,10 @@ def list_mine(band: str | None = None, include_dismissed: bool = False) -> dict:
 @mcp.tool()
 def get_mine(ref: str) -> dict:
     """Full detail for the Branch set holding one of your Authored PRs: every
-    member with its body and merged discussion stream.
+    member with its body and merged discussion stream, each Forward-port with its own stream.
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL,
-    naming any member of the set.
+    naming any member of the set or one of their Forward-ports.
 
     Discussion entries have the get_tracked shape: kind ('issue' | 'review' |
     'thread'), review state, and thread path, thread_id and parent_id.

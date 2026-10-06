@@ -1547,4 +1547,7 @@ body {
 .pr-row .mine-reason { color: var(--red); font-size: 12px; }
 .mine-reason::before { content: "● "; }
 .mine-fyi { color: var(--accent); font-size: 11px; }
+.pr-row .mine-fw { gap: 6px; padding-left: 14px; }
+.mine-fw::before { color: var(--fg-faint); content: "↳"; }
+.mine-fw-merged { color: #c08ae0; }
 .mine-ack { background: var(--chip-bg); color: var(--yellow); }

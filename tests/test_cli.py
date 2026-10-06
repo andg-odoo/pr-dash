@@ -755,3 +755,58 @@ def test_mine_refresh_keeps_resolved_members_and_stops_reading_their_final_page(
     assert [(s["key"], s["band"], [(m["num"], m["state"]) for m in s["members"]])
             for s in out["branch_sets"]] == [
         ("master-x-6396725-andg", "done", [(10, "MERGED"), (20, "CLOSED")])]
+
+
+def _xref(repo, number, author):
+    return {"source": {"number": number, "author": {"login": author},
+                       "repository": {"nameWithOwner": repo}}}
+
+
+def test_mine_refresh_hangs_confirmed_forward_ports_under_their_source(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        '[user]\ngithub_login = "andg-odoo"\n\n[repos]\n"odoo/odoo" = "/tmp/odoo"\n'
+        f'\n[paths]\ncache_dir = "{tmp_path}"\n',
+    )
+    cfg = config.load(config_path)
+    body = "The new company now gets the contact's responsibility.\r\n\r\ntask-6470810\n\n"
+    nodes = {
+        "odoo/odoo#290657": {**_mine_node("odoo/odoo", 290657, "CLOSED"),
+                             "headRefName": "saas-19.1-l10n_ar-company-arca-6470810-andg",
+                             "crossReferences": {"nodes": [
+                                 _xref("odoo/odoo", 291857, "fw-bot"),
+                                 _xref("odoo/enterprise", 133776, "andg-odoo"),
+                                 _xref("odoo/odoo", 291981, "fw-bot"),
+                                 _xref("odoo/odoo", 291000, "fw-bot"),
+                             ]}},
+        "odoo/odoo#291857": {**_mine_node("odoo/odoo", 291857, "CLOSED"), "baseRefName": "20.0",
+                             "body": body + "Forward-Port-Of: odoo/odoo#290657"},
+        "odoo/odoo#291981": {**_mine_node("odoo/odoo", 291981, "OPEN"), "baseRefName": "master",
+                             "body": body + "Forward-Port-Of: odoo/odoo#291857\n"
+                                            "Forward-Port-Of: odoo/odoo#290657"},
+        "odoo/odoo#291000": {**_mine_node("odoo/odoo", 291000, "OPEN"),
+                             "body": "Forward-Port-Of: odoo/odoo#280000"},
+    }
+    fetched = []
+    monkeypatch.setattr(github, "search_authored_open", lambda login: [("odoo/odoo", 290657)])
+    monkeypatch.setattr(github, "fetch_nodes", lambda refs, fragment: fetched.append(
+        sorted(n for _, n in refs)) or {f"{r}#{n}": nodes[f"{r}#{n}"] for r, n in refs})
+    monkeypatch.setattr(mergebot, "fetch", lambda repo, n: mergebot.MergebotState(
+        "blocked" if n == 291981 else "merged"))
+
+    conn = db.connect(cfg.db_path)
+    cli._run_mine_refresh(conn, cfg, force=True)
+    # Only bot cross-references are candidates, and only a matching Forward-Port-Of line joins.
+    assert fetched == [[290657], [291000, 291857, 291981]]
+    out = json.loads(CliRunner().invoke(
+        cli.cli, ["query", "mine", "--config", str(config_path)]).output)
+    [s] = out["branch_sets"]
+    [source] = s["members"]
+    assert (s["band"], s["fyi"], [(f["base"], f["ref"], f["state"]) for f in source["fw"]]) == (
+        "open", ["source merged", "fw 1/2 merged"],
+        [("20.0", "odoo#291857", "MERGED"), ("master", "odoo#291981", "OPEN")])
+
+    # Linked Forward-ports ride in the members' batch from then on.
+    fetched.clear()
+    cli._run_mine_refresh(conn, cfg, force=True)
+    assert fetched[0] == [290657, 291857, 291981]

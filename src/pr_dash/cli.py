@@ -536,9 +536,28 @@ def _run_mine_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
             refs = list(dict.fromkeys([*refs, *((r["repo"], r["number"]) for r in known)]))
             progress.update(task, description=f"Fetching {len(refs)} authored PRs...")
             nodes = github.fetch_nodes(refs, github.MINE_NODE_FRAGMENT)
+            # GitHub refuses author:fw-bot searches, so Forward-ports are found from their source.
+            candidates = {c for node in nodes.values()
+                          for c in derive.forward_port_candidates(node)} - nodes.keys()
+            if candidates:
+                progress.update(task, description=f"Checking {len(candidates)} forward-ports...")
+                fw_refs = (c.rpartition("#") for c in sorted(candidates))
+                fw_nodes = github.fetch_nodes([(repo, int(n)) for repo, _, n in fw_refs],
+                                              github.MINE_NODE_FRAGMENT)
+            else:
+                fw_nodes = {}
         except github.GithubError as e:
             _notify(cron, f"Authored PR refresh failed: {e}", "yellow")
             return
+        sources = nodes.keys() - {r["id"] for r in known if r["source_id"]}
+        links = {}
+        for fw_id, node in fw_nodes.items():
+            # A Forward-port of a Forward-port names every ancestor, its Source PR among them.
+            source = next((a for a in derive.forward_port_ancestors(node["body"]) if a in sources),
+                          None)
+            if source:
+                links[fw_id] = source
+                nodes[fw_id] = node
         now = derive.now_utc()
         added = 0
         with db.transaction(conn):
@@ -548,6 +567,8 @@ def _run_mine_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
                 row, comments = derive.mine_row_from_node(node, now)
                 db.update_tab_state(conn, "mine", pr_id, row)
                 db.replace_tab_comments(conn, "mine", pr_id, comments)
+            for fw_id, source in links.items():
+                db.link_mine_forward_port(conn, fw_id, source)
 
         stored = db.list_mine_mergebot(conn)
         # A resolved PR's final Mergebot read cannot change, so it is not fetched again.

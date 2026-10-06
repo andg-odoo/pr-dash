@@ -882,7 +882,11 @@ def branch_sets(
     :param now: ISO time `idle Nd` counts to
     """
     groups: dict[str, list[tuple[dict, dict]]] = {}
+    forward_ports: dict[str, list[dict]] = {}
     for row in members:
+        if row["source_id"]:
+            forward_ports.setdefault(row["source_id"], []).append(row)
+            continue
         member = _mine_member(row, mergebot_states.get(row["id"]))
         groups.setdefault(row["head_branch"], []).append((row, member))
     sets = []
@@ -890,15 +894,25 @@ def branch_sets(
         group.sort(key=lambda rm: (rm[1]["repo"], rm[1]["num"]))
         ids = {m["id"] for _, m in group}
         actions, fyi = [], []
+        chains: list[tuple[dict, dict]] = []
         for row, m in group:
             m_actions, m_fyi = _member_attention(
                 row, m, streams.get(m["id"], []), mergebot_states.get(m["id"]), login, ids,
                 seen.get(m["id"]))
             actions += m_actions
             fyi += m_fyi
+            chain = sorted(forward_ports.get(m["id"], []),
+                           key=lambda r: branch_order(r["target_branch"]))
+            m["fw"] = [_forward_port(r, mergebot_states.get(r["id"])) for r in chain]
+            for r, f in zip(chain, m["fw"], strict=True):
+                actions += _forward_port_attention(r, f, streams.get(f["id"], []), login)
+                chains.append((r, f))
+            fyi += _chain_labels(m)
         actions.sort(key=lambda a: parse_iso(a["since"]))
-        done = all(m["state"] in ("MERGED", "CLOSED") for _, m in group)
-        updated = max((m["updated_at"] for _, m in group if m["updated_at"]), default=None)
+        done = all(m["state"] in ("MERGED", "CLOSED") for _, m in group) and all(
+            f["state"] in ("MERGED", "CLOSED") for _, f in chains)
+        updated = max((r["updated_at"] for r in [*(row for row, _ in group), *(r for r, _ in chains)]
+                       if r["updated_at"]), default=None)
         if not done and updated and (idle := (parse_iso(now) - parse_iso(updated)).days) > 7:
             fyi.append(f"idle {idle}d")
         fingerprint = hashlib.sha1(json.dumps([
@@ -908,6 +922,9 @@ def branch_sets(
             [(m["id"], row["activity_count"],
               max((c["created_at"] or "" for c in streams.get(m["id"], [])), default=""))
              for row, m in group],
+            [(f["id"], r["head_sha"], f["ci"], f["ci_failing"], r["activity_count"],
+              max((c["created_at"] or "" for c in streams.get(f["id"], [])), default=""))
+             for r, f in chains],
         ]).encode()).hexdigest()[:16]
         acknowledged = acks.get(key) == fingerprint
         task = _BRANCH_TASK_RE.search(key)
@@ -966,7 +983,15 @@ def _member_attention(
                 act("changes", f"changes requested by {by}", latest["created_at"])
             else:
                 fyi.append("waiting on re-review")
-        if not m["requested_people"]:
+        # GitHub drops a person's request once they review, so a review since the push counts.
+        reviewed = any(
+            (c["kind"] == "thread" or c["state"] in ("APPROVED", "CHANGES_REQUESTED", "COMMENTED"))
+            and c["author"] != login and not is_bot(c["author"])
+            and (not row["head_committed_at"]
+                 or parse_iso(c["created_at"]) > parse_iso(row["head_committed_at"]))
+            for c in stream
+        )
+        if not m["requested_people"] and not reviewed:
             removed = [e["at"] for e in row["review_request_events"]
                        if e["kind"] == "removed" and not e["is_team"]]
             text = "only teams requested" if m["requested_teams"] else "no reviewer requested"
@@ -998,6 +1023,71 @@ def _member_attention(
         elif m["requested_people"]:
             fyi.append(f"reviewer removed: {e['reviewer']}")
     return actions, fyi
+
+
+def _forward_port(row: dict, mergebot: dict | None) -> dict:
+    """One Forward-port of a member, flagged when it is open and conflicting or red."""
+    m = _mine_member(row, mergebot)
+    flag = None
+    if m["state"] == "OPEN":
+        flag = "conflict" if m["conflict"] else "red" if m["ci"] == "red" else None
+    keep = ("id", "ref", "num", "repo", "url", "state", "ci", "ci_failing", "override",
+            "conflict", "mergebot_unknown")
+    return {**{k: m[k] for k in keep}, "base": row["target_branch"], "flag": flag}
+
+
+def _forward_port_attention(row: dict, f: dict, stream: list[dict], login: str) -> list[dict]:
+    """Action items of one open Forward-port: a conflict, red CI or a human waiting on the user."""
+    if f["state"] != "OPEN":
+        return []
+    head_at = row["head_committed_at"] or row["fetched_at"]
+    items = []
+    if f["conflict"]:
+        items.append(("merge conflict", head_at))
+    if f["ci"] == "red":
+        items.append(("CI red: " + ", ".join(f["ci_failing"]), head_at))
+    humans = [c for c in stream if not is_bot(c["author"])]
+    if humans and humans[-1]["author"] != login:
+        items.append((f"{humans[-1]['author']} commented", humans[-1]["created_at"]))
+    return [{"member": f["ref"], "kind": "fw", "text": f"forward-port to {f['base']}: {text}",
+             "since": since} for text, since in items]
+
+
+def _chain_labels(m: dict) -> list[str]:
+    """The in-between labels of a member's Chain: its Source Merged and how many ports followed."""
+    merged = sum(f["state"] == "MERGED" for f in m["fw"])
+    labels = []
+    if m["state"] == "MERGED" and any(f["state"] == "OPEN" for f in m["fw"]):
+        labels.append("source merged")
+    if merged:
+        labels.append(f"fw {merged}/{len(m['fw'])} merged")
+    return labels
+
+
+def branch_order(branch: str) -> tuple:
+    """Sort key putting Odoo branches in release order, 19.0 < saas-19.1 < 20.0 < master."""
+    if branch == "master":
+        return (math.inf,)
+    return tuple(int(n) for n in re.findall(r"\d+", branch))
+
+
+# fw-bot writes one line per ancestor, odoo#291981 names odoo#291857 then odoo#290657.
+_FORWARD_PORT_OF_RE = re.compile(r"^Forward-Port-Of: ([\w.-]+/[\w.-]+#\d+)\s*$", re.MULTILINE)
+
+
+def forward_port_ancestors(body: str | None) -> list[str]:
+    """The `owner/repo#n` ids a Forward-port body names as its ancestors."""
+    return _FORWARD_PORT_OF_RE.findall(body or "")
+
+
+def forward_port_candidates(node: dict) -> list[str]:
+    """Ids of the bot-authored PRs cross-referencing `node`, its Forward-ports among them."""
+    out = []
+    for e in (node.get("crossReferences") or {}).get("nodes") or []:
+        source = e.get("source") or {}
+        if source.get("number") and is_bot(_login(source)):
+            out.append(f"{source['repository']['nameWithOwner']}#{source['number']}")
+    return out
 
 
 def _mine_member(row: dict, mergebot: dict | None) -> dict:

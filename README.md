@@ -360,7 +360,7 @@ Tools:
 - `list_tracked(state, include_dismissed)` - watched PRs (the `tracked` tab, not the review queue); `state` is `all` / `open` / `resolved`.
 - `get_tracked(ref)` - one watched PR in full, with its merged discussion stream (conversation comments, review submissions, inline threads).
 - `list_mine(band, include_dismissed)` - your Authored PRs as Branch sets (the `mine` tab); `band` is any band the tab shows (`needs`, `open`, `done`), all by default.
-- `get_mine(ref)` - the Branch set holding one Authored PR, every member with its body and merged discussion stream.
+- `get_mine(ref)` - the Branch set holding one Authored PR or one of its Forward-ports, every member with its body and merged discussion stream, each Forward-port with its own stream.
 - `refresh(force)` - re-fetch from GitHub (slow; network + AI), same as `pr-dash refresh`.
 
 `ref` accepts `12345`, `odoo#12345`, `odoo/odoo#12345`, or a PR URL; an

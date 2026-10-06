@@ -655,8 +655,8 @@ def build_mine_payload(
                       if "runbot.odoo.com" in (c.get("url") or "")}
             m["runbot_url"] = runbot.get("ci/runbot") or next(iter(runbot.values()), None)
         s["comments"] = [
-            {**c, "member": m["ref"]}
-            for m in s["members"] for c in comments_by_pr.get(m["id"], [])
+            {**c, "member": pr["ref"]}
+            for m in s["members"] for pr in [m, *m["fw"]] for c in comments_by_pr.get(pr["id"], [])
             if not derive.is_bot(c["author"])
         ]
     return sets, seen_updates

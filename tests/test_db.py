@@ -275,3 +275,23 @@ def test_migration_adds_acknowledge_and_fyi_state_to_v24_db(tmp_path):
     seen = db.list_tab_seen(conn, "mine")["odoo/odoo#2"]
     assert (row["head_committed_at"], seen["fetched_at"], seen["r_plus"],
             db.list_mine_acks(conn)) == ("2026-10-01", None, None, {"b": "f1"})
+
+
+def test_migration_links_forward_ports_that_follow_their_source_dismissal(tmp_path):
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path, isolation_level=None)
+    conn.executescript(db.SCHEMA_SQL.replace(db.MINE_FW_SCHEMA_SQL, ""))
+    conn.execute("INSERT INTO mine (id, repo, number, url, added_at) "
+                 "VALUES ('odoo/odoo#2', 'odoo/odoo', 2, 'u', 't')")
+    conn.execute("PRAGMA user_version = 25")
+    conn.close()
+
+    conn = db.connect(path)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
+    db.add_mine(conn, "odoo/odoo#3", "odoo/odoo", 3, "u", "t")
+    db.link_mine_forward_port(conn, "odoo/odoo#3", "odoo/odoo#2")
+    assert [(r["id"], r["source_id"]) for r in db.list_mine(conn)] == [
+        ("odoo/odoo#2", None), ("odoo/odoo#3", "odoo/odoo#2")]
+    db.set_dismissed(conn, "mine", "odoo/odoo#2", "t")
+    assert db.list_mine(conn) == []
+    assert len(db.list_mine(conn, include_dismissed=True)) == 2

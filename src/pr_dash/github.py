@@ -649,6 +649,13 @@ fragment MineFields on PullRequest {{
       ... on ReviewRequestRemovedEvent {{ createdAt {_REVIEWER} }}
     }}
   }}
+  crossReferences: timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) {{
+    nodes {{
+      ... on CrossReferencedEvent {{
+        source {{ ... on PullRequest {{ number author {{ login }} repository {{ nameWithOwner }} }} }}
+      }}
+    }}
+  }}
 }}
 """ + TRACKED_NODE_FRAGMENT
 

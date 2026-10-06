@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 25
+SCHEMA_VERSION = 26
 
 # Cache-wide facts with nowhere better to live, such as when a refresh last reached GitHub.
 META_SCHEMA_SQL = """
@@ -205,6 +205,14 @@ CREATE TABLE mine_ack (
 );
 """
 
+# A Forward-port row lives in `mine` for its state and stream, this link keeps it out of the sets.
+MINE_FW_SCHEMA_SQL = """
+CREATE TABLE mine_fw (
+  fw_id     TEXT PRIMARY KEY REFERENCES mine(id) ON DELETE CASCADE,
+  source_id TEXT NOT NULL REFERENCES mine(id) ON DELETE CASCADE
+);
+"""
+
 SCHEMA_SQL = """
 CREATE TABLE pr (
   id                   TEXT PRIMARY KEY,
@@ -329,7 +337,7 @@ CREATE INDEX idx_pr_reviewer_pr ON pr_reviewer(pr_id);
 CREATE INDEX idx_pr_thread_pr ON pr_thread(pr_id);
 CREATE INDEX idx_pr_comment_pr ON pr_comment(pr_id);
 """ + TRACKED_SCHEMA_SQL + COMPANION_SCHEMA_SQL + AI_ATTEMPT_SCHEMA_SQL + META_SCHEMA_SQL + MINE_SCHEMA_SQL \
-    + MINE_ACK_SCHEMA_SQL
+    + MINE_ACK_SCHEMA_SQL + MINE_FW_SCHEMA_SQL
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
@@ -587,6 +595,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE mine ADD COLUMN head_committed_at TEXT")
             conn.execute("ALTER TABLE mine_seen ADD COLUMN fetched_at TEXT")
             conn.execute("ALTER TABLE mine_seen ADD COLUMN r_plus INTEGER")
+    if current < 26:
+        tables = {
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'",
+            ).fetchall()
+        }
+        if "mine_fw" not in tables:
+            conn.executescript(MINE_FW_SCHEMA_SQL)
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -1138,9 +1154,19 @@ def add_mine(conn: sqlite3.Connection, pr_id: str, repo: str, number: int, url: 
     ).rowcount > 0
 
 
+def link_mine_forward_port(conn: sqlite3.Connection, fw_id: str, source_id: str) -> None:
+    conn.execute("INSERT OR IGNORE INTO mine_fw (fw_id, source_id) VALUES (?, ?)",
+                 (fw_id, source_id))
+
+
 def list_mine(conn: sqlite3.Connection, *, include_dismissed: bool = False) -> list[dict]:
-    where = "" if include_dismissed else " WHERE dismissed_at IS NULL"
-    rows = [dict(r) for r in conn.execute(f"SELECT * FROM mine{where}")]
+    """Authored PRs and their Forward-ports, which carry a `source_id` and follow its dismissal."""
+    where = "" if include_dismissed else (
+        " WHERE COALESCE(src.dismissed_at, mine.dismissed_at) IS NULL")
+    rows = [dict(r) for r in conn.execute(
+        "SELECT mine.*, mine_fw.source_id FROM mine"
+        " LEFT JOIN mine_fw ON mine_fw.fw_id = mine.id"
+        f" LEFT JOIN mine AS src ON src.id = mine_fw.source_id{where}")]
     for row in rows:
         for col in _MINE_JSON_COLS:
             row[col] = json.loads(row[col])

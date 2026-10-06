@@ -437,17 +437,17 @@ def load_mine(cfg: Config, *, include_dismissed: bool = False) -> list[dict]:
 
 
 def resolve_mine(sets: list[dict], ref: str | int) -> dict | None:
-    """The Branch set holding the Authored PR `ref` names, None when no member matches."""
+    """The Branch set holding the Authored PR or Forward-port `ref` names, None when none does."""
     repo_full, repo_short, number = _parse_ref(ref)
     found = {
-        s["key"]: s for s in sets for m in s["members"]
-        if m["num"] == number
-        and (repo_full is None or m["repo"] == repo_full)
-        and (repo_short is None or m["repo"].split("/")[-1] == repo_short)
+        s["key"]: s for s in sets for m in s["members"] for pr in [m, *m["fw"]]
+        if pr["num"] == number
+        and (repo_full is None or pr["repo"] == repo_full)
+        and (repo_short is None or pr["repo"].split("/")[-1] == repo_short)
     }
     if len(found) > 1:
-        opts = ", ".join(f"{m['repo']}#{m['num']}" for s in found.values()
-                         for m in s["members"] if m["num"] == number)
+        opts = ", ".join(f"{pr['repo']}#{pr['num']}" for s in found.values()
+                         for m in s["members"] for pr in [m, *m["fw"]] if pr["num"] == number)
         raise ValueError(f"{ref!r} is ambiguous - candidates: {opts}")
     return next(iter(found.values()), None)
 
@@ -463,7 +463,8 @@ def mine_detail(cfg: Config, branch_set: dict) -> dict:
     members = []
     for m in branch_set["members"]:
         pr_id = f"{m['repo']}#{m['num']}"
-        members.append({**m, "body": bodies.get(pr_id),
+        fw = [{**f, "discussion": _discussion(comments.get(f["id"], []))} for f in m["fw"]]
+        members.append({**m, "fw": fw, "body": bodies.get(pr_id),
                         "discussion": _discussion(comments.get(pr_id, []))})
     return {**branch_set, "members": members}
 
