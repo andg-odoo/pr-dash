@@ -522,7 +522,7 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
     assert [(s["key"], s["band"], [(m["repo"], m["num"]) for m in s["members"]])
             for s in listed["branch_sets"]] == [
         (ec, "open",
-         [("odoo/enterprise", 132695), ("odoo/odoo", 290109), ("odoo/upgrade", 11389)]),
+         [("odoo/odoo", 290109), ("odoo/enterprise", 132695), ("odoo/upgrade", 11389)]),
         ("master-other-andg", "done", [("odoo/enterprise", 1)]),
     ]
     assert [s["key"] for s in mcp_server.list_mine(band="done")["branch_sets"]] == [
@@ -544,8 +544,8 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
 
     pr = mcp_server.get_pr("odoo/odoo#291981")
     assert (pr["key"], ["discussion" in m for m in pr["members"]]) == (ec, [False] * 3)
-    assert "discussion" not in pr["members"][1]["fw"][0]
-    assert mcp_server.get_comments("132695")["members"][1]["discussion"] == odoo["discussion"]
+    assert "discussion" not in pr["members"][0]["fw"][0]
+    assert mcp_server.get_comments("132695")["members"][0]["discussion"] == odoo["discussion"]
     # A bare number in the review queue still resolves there, the Authored PR needs its repo.
     assert mcp_server.get_pr("1")["id"] == "odoo/odoo#1"
     assert mcp_server.get_comments("1")["id"] == "odoo/odoo#1"

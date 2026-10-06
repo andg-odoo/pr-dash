@@ -635,10 +635,11 @@ def test_branch_sets_group_by_head_branch_across_repos():
     sets = _sets(rows, {})
     assert [(s["key"], s["task"], [(m["repo"], m["num"]) for m in s["members"]]) for s in sets] == [
         (ec, "6396725",
-         [("odoo/enterprise", 132695), ("odoo/odoo", 290109), ("odoo/upgrade", 11389)]),
+         [("odoo/odoo", 290109), ("odoo/enterprise", 132695), ("odoo/upgrade", 11389)]),
         (cr, "6439180", [("odoo/odoo", 292635), ("odoo/upgrade", 11485)]),
         ("alpha-xmlid-andg", None, [("odoo/odoo-ls", 658)]),
     ]
+    assert sets[0]["title"] == "PR 290109"
     member = sets[0]["members"][0]
     assert (member["requested_people"], member["requested_teams"]) == (
         ["clbr-odoo"], ["rd-accounting"])
@@ -687,7 +688,7 @@ def test_merged_vs_closed_and_done_only_when_every_member_resolved():
     pages = {"odoo/odoo#290657": _page("odoo_odoo_290657_merged"),
              "odoo/odoo#255698": _page("odoo_odoo_255698_closed")}
     [open_set] = _sets(rows, pages)
-    assert [m["state"] for m in open_set["members"]] == ["OPEN", "CLOSED", "MERGED"]
+    assert [m["state"] for m in open_set["members"]] == ["CLOSED", "MERGED", "OPEN"]
     assert open_set["band"] == "open"
     [done] = _sets(rows[:2], pages)
     assert done["band"] == "done"

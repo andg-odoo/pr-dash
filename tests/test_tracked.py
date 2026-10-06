@@ -444,7 +444,7 @@ def test_dismissed_mine_set_stays_hidden_after_a_refresh(tmp_path):
     gone, _ = render.build_mine_payload(conn, "andg", dismissed_only=True)
     assert [m["id"] for s in sets if s["key"] == ec for m in s["members"]] == ["odoo/odoo#291000"]
     assert [(s["key"], [(m["id"], bool(m["dismissed_at"])) for m in s["members"]]) for s in gone] == [
-        (ec, [("odoo/enterprise#132695", True), ("odoo/odoo#290109", True)])]
+        (ec, [("odoo/odoo#290109", True), ("odoo/enterprise#132695", True)])]
     assert {u["pr_id"] for u in seen_updates} == {
         "odoo/odoo#291000", "odoo/odoo#290657", "odoo/odoo#269608"}
 

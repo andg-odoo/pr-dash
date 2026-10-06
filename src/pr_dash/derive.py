@@ -8,6 +8,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from pr_dash import branch_set
+
 # Tolerate the separators/noise that appear between the keyword and the id in PR
 # bodies: a hyphen, spaces, a tilde, or a markdown link opening (`[`, sometimes
 # with a leading `#`), e.g. `task-6234716`, `task ~6234716`, `task-[6234716](url)`.
@@ -834,7 +836,7 @@ def branch_sets(
     members: list[dict], mergebot_states: dict[str, dict], *, streams: dict[str, list[dict]],
     login: str, acks: dict[str, str], seen: dict[str, dict], now: str,
 ) -> list[dict]:
-    """Group Authored PRs into Branch sets by head branch, Needs you first, then Open, then Done.
+    """Group Authored PRs into Branch sets, Needs you first, then Open, then Done.
 
     :param members: Authored PR rows, as db.list_mine returns them
     :param mergebot_states: pr id -> last stored Mergebot read, a mergebot.MergebotState as a dict
@@ -844,17 +846,14 @@ def branch_sets(
     :param seen: pr id -> its mine_seen row from the last interactive look
     :param now: ISO time `idle Nd` counts to
     """
-    groups: dict[str, list[tuple[dict, dict]]] = {}
     forward_ports: dict[str, list[dict]] = {}
     for row in members:
         if row["source_id"]:
             forward_ports.setdefault(row["source_id"], []).append(row)
-            continue
-        member = _mine_member(row, mergebot_states.get(row["id"]))
-        groups.setdefault(row["head_branch"], []).append((row, member))
     sets = []
-    for key, group in groups.items():
-        group.sort(key=lambda rm: (rm[1]["repo"], rm[1]["num"]))
+    for bs in branch_set.group(row for row in members if not row["source_id"]):
+        key = bs.key[1]
+        group = [(row, _mine_member(row, mergebot_states.get(row["id"]))) for row in bs.members]
         ids = {m["id"] for _, m in group}
         actions, fyi = [], []
         chains: list[tuple[dict, dict]] = []
@@ -882,19 +881,20 @@ def branch_sets(
         fingerprint = hashlib.sha1(json.dumps([
             sorted(row["head_sha"] for row, _ in group),
             sorted((a["member"], a["kind"], a["text"]) for a in actions),
-            [(m["id"], m["ci"], m["ci_failing"]) for _, m in group],
-            [(m["id"], row["activity_count"],
-              max((c["created_at"] or "" for c in streams.get(m["id"], [])), default=""))
-             for row, m in group],
-            [(f["id"], r["head_sha"], f["ci"], f["ci_failing"], r["activity_count"],
-              max((c["created_at"] or "" for c in streams.get(f["id"], [])), default=""))
-             for r, f in chains],
+            sorted((m["id"], m["ci"], m["ci_failing"]) for _, m in group),
+            sorted((m["id"], row["activity_count"],
+                    max((c["created_at"] or "" for c in streams.get(m["id"], [])), default=""))
+                   for row, m in group),
+            sorted((f["id"], r["head_sha"], f["ci"], f["ci_failing"], r["activity_count"],
+                    max((c["created_at"] or "" for c in streams.get(f["id"], [])), default=""))
+                   for r, f in chains),
         ]).encode()).hexdigest()[:16]
         acknowledged = acks.get(key) == fingerprint
         task = _BRANCH_TASK_RE.search(key)
         sets.append({
             "key": key,
             "task": task and task.group(1),
+            "title": bs.primary["title"],
             "members": [m for _, m in group],
             "actions": actions,
             "fyi": list(dict.fromkeys(fyi)),

@@ -407,8 +407,8 @@ def list_mine(band: str | None = None, include_dismissed: bool = False) -> dict:
     include_dismissed: dismissed members are excluded by default; True adds them
     back carrying dismissed_at.
 
-    Each set carries key (the head branch), task, band ('needs', 'open' or
-    'done'), actions [{member, kind, text, since}] (what waits on you: thread, ci,
+    Each set carries key (the head branch), task, title (the primary's), band
+    ('needs', 'open' or 'done'), actions [{member, kind, text, since}] (what waits on you: thread, ci,
     conflict, changes, reviewers, linked, fw), fyi labels (movement since the last
     look, plus 'idle Nd', 'waiting on re-review', 'source merged' and 'fw k/n merged'),
     acknowledged, and members. Members

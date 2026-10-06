@@ -1556,7 +1556,6 @@
     return !searchQuery || searchQuery.split(/\s+/).every(q => !q || mineHaystack(s).includes(q));
   }
 
-  const mineTitle = s => (s.members.find(m => m.repo === "odoo/odoo") || s.members[0]).title;
   const mineTargets = s => [...new Set(s.members.map(m => m.target_branch))].join(", ");
 
   // CI pending stays green: the Mergebot lists lazy checks GitHub never reports.
@@ -1643,7 +1642,7 @@
       + (gone ? " hidden-row" : "");
     li.dataset.id = s.uid;
     li.innerHTML = `
-      <span class="pr-title" title="${escapeHTML(mineTitle(s))}">${escapeHTML(mineTitle(s))}</span>
+      <span class="pr-title" title="${escapeHTML(s.title)}">${escapeHTML(s.title)}</span>
       <button class="pr-hide" type="button" title="${gone ? "Restore this Branch set" : "Dismiss this Branch set"}">${gone ? "↺" : "×"}</button>
       <span class="pr-sub mine-members">${s.members.map(memberChip).join("")}</span>
       <span class="pr-sub">
@@ -1734,7 +1733,7 @@
     detailEl.innerHTML = `
       <div class="detail">
         <div class="detail-header">
-          <h2>${s.members.some(m => m.draft) ? '<span class="draft-badge">draft</span>' : ""}${escapeHTML(mineTitle(s))}</h2>
+          <h2>${s.members.some(m => m.draft) ? '<span class="draft-badge">draft</span>' : ""}${escapeHTML(s.title)}</h2>
           <div class="crumbs">
             <span>${escapeHTML(s.key)}</span> ·
             <span>→ ${escapeHTML(mineTargets(s))}</span>
