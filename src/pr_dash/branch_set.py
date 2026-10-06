@@ -53,6 +53,12 @@ class BranchSet:
         return "+".join(sorted(h["head_sha"] for h in self.context(member, diff_cached)))
 
 
+def from_item(item: Mapping, members: Iterable[Mapping] | None = None) -> BranchSet:
+    """The Branch set a rendered Review queue item was built from, optionally with new members."""
+    halves = tuple(item["members"] if members is None else members)
+    return BranchSet((item["author"], item["head_branch"]), halves, item.get("companion"))
+
+
 def group(rows: Iterable[Mapping], companions: Iterable[Mapping] = ()) -> list[BranchSet]:
     """Group rows on (author, head branch) and attach each stored Companion to its branch's sets.
 

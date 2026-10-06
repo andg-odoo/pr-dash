@@ -965,11 +965,9 @@ def _run_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
                 "computed_at": derive.now_utc(),
             })
 
-        # Prime open pair-siblings I already reviewed (so no longer in the
-        # review-requested search): their threads/reviews/comments are fetched
-        # nowhere else. Adds them to kept_ids so the sweep leaves them be.
-        progress.update(task, description="Priming reviewed pair siblings...")
-        _prime_reviewed_siblings(conn, cfg, kept_ids, force=force)
+        # Prime reviewed open halves the search no longer returns, and keep them from the sweep.
+        progress.update(task, description="Priming reviewed Branch set halves...")
+        _prime_reviewed_halves(conn, cfg, kept_ids, force=force)
 
         # Before sweeping, rescue delete-candidates whose cached
         # previously_reviewed=0 is stale: a PR I just approved/changes-requested
@@ -992,8 +990,8 @@ def _run_refresh(conn, cfg, *, force: bool, cron: bool = False) -> None:
         # they left the request set (the search only returns open PRs, so their
         # cached state never updates). Re-check just those so the UI can tell
         # "closed on GitHub" apart from "merely reviewed by me".
-        progress.update(task, description="Re-checking archived siblings...")
-        _reconcile_sibling_states(conn, cfg, kept_ids)
+        progress.update(task, description="Re-checking archived rows...")
+        _reconcile_archived_states(conn, cfg, kept_ids)
 
         # Attach each bundle's migration PR. Before the review queue is built, so
         # the AI pass is told whether one exists rather than inferring from a
@@ -1024,19 +1022,19 @@ def _store_reviews(conn, outcomes: list, review_context: dict) -> None:
     """Persist each outcome: the review itself, or the failure that stands in for it."""
     now = derive.now_utc()
     for outcome in outcomes:
-        sibling_sha, companion_sha = review_context.get(outcome.head_sha, ("", ""))
+        context_heads, companion_sha = review_context.get(outcome.head_sha, ("", ""))
         if outcome.result is not None:
             rev = outcome.result
             with db.transaction(conn):
                 db.upsert_ai_review(
-                    conn, outcome.head_sha, sibling_sha,
+                    conn, outcome.head_sha, context_heads,
                     rev.summary, json.dumps(rev.concerns),
                     rev.verdict, now, companion_head_sha=companion_sha,
                 )
-                db.clear_ai_attempt(conn, outcome.head_sha, sibling_sha, companion_sha)
+                db.clear_ai_attempt(conn, outcome.head_sha, context_heads, companion_sha)
         elif outcome.reason != "cli-missing":
             # An absent CLI is the batch's problem, not this PR's or its budget's.
-            db.record_ai_attempt(conn, outcome.head_sha, sibling_sha, companion_sha,
+            db.record_ai_attempt(conn, outcome.head_sha, context_heads, companion_sha,
                                  outcome.reason, now)
 
 
@@ -1088,7 +1086,7 @@ def _refresh_pr_rows(conn, cfg, targets: list[dict], *, force: bool,
     """Re-fetch full nodes for already-cached rows and re-persist them in place.
 
     Shared by the two populations the review-requested search cannot return: open
-    pair-siblings I already reviewed, and archived-but-open rows whose head or
+    Branch set halves I already reviewed, and archived-but-open rows whose head or
     discussion moved after I reviewed. Both must keep their archived/reviewed
     bookkeeping, so this refreshes content only - it never resurrects a row into
     the pending queue.
@@ -1109,11 +1107,10 @@ def _refresh_pr_rows(conn, cfg, targets: list[dict], *, force: bool,
     for node in nodes:
         pr_id = _node_id(node)
         cached_row = by_id.get(pr_id)
-        # Kept regardless of whether we re-persist, so the sweep never archives a
-        # reviewed-open sibling out of an active pair.
+        # Kept even when not re-persisted, so the sweep never archives a reviewed half.
         if kept_ids is not None:
             kept_ids.add(pr_id)
-        if not _sibling_needs_refresh(
+        if not _half_needs_refresh(
             cached_row, node, db.has_comments(conn, pr_id), force=force,
         ):
             continue
@@ -1188,7 +1185,7 @@ def _reconcile_reviewed(conn, kept_ids: set[str], login: str) -> bool:
     return True
 
 
-def _reconcile_sibling_states(conn, cfg, kept_ids: set[str]) -> None:
+def _reconcile_archived_states(conn, cfg, kept_ids: set[str]) -> None:
     """Refresh archived-but-still-OPEN rows: their GitHub state and any informal
     "please re-review" ping the author left after my last review.
 
@@ -1276,7 +1273,7 @@ def _reconcile_sibling_states(conn, cfg, kept_ids: set[str]) -> None:
         log.debug("refreshed %d stale archived rows", refreshed)
 
 
-def _reviewed_open_siblings(cached: list[dict], active_ids: set[str]) -> list[dict]:
+def _reviewed_open_halves(cached: list[dict], active_ids: set[str]) -> list[dict]:
     """Cached rows that are open (GitHub state) and in the Branch set of a PR in
     this run's active set, yet absent from it themselves - the halves I already
     reviewed, which the review-requested search no longer returns. No other
@@ -1289,9 +1286,9 @@ def _reviewed_open_siblings(cached: list[dict], active_ids: set[str]) -> list[di
     ]
 
 
-def _sibling_needs_refresh(cached_row, node: dict, has_comments: bool, *,
-                           force: bool) -> bool:
-    """Whether a primed sibling's node must be re-persisted: on force, when never
+def _half_needs_refresh(cached_row, node: dict, has_comments: bool, *,
+                        force: bool) -> bool:
+    """Whether a primed half's node must be re-persisted: on force, when never
     cached, when it has no comment rows yet (so pre-feature rows are primed once),
     or when its head/updated_at moved."""
     if force or cached_row is None or not has_comments:
@@ -1300,12 +1297,12 @@ def _sibling_needs_refresh(cached_row, node: dict, has_comments: bool, *,
             or cached_row["updated_at"] != node["updatedAt"])
 
 
-def _prime_reviewed_siblings(conn, cfg, kept_ids: set[str], *, force: bool) -> None:
+def _prime_reviewed_halves(conn, cfg, kept_ids: set[str], *, force: bool) -> None:
     cached = [dict(r) for r in db.list_prs(conn)]
-    targets = _reviewed_open_siblings(cached, kept_ids)
+    targets = _reviewed_open_halves(cached, kept_ids)
     primed = _refresh_pr_rows(conn, cfg, targets, force=force, kept_ids=kept_ids)
     if primed:
-        log.debug("primed %d reviewed-open pair-siblings", primed)
+        log.debug("primed %d reviewed-open Branch set halves", primed)
 
 
 def _refresh_companions(conn, cfg, kept_ids: set[str]) -> str:

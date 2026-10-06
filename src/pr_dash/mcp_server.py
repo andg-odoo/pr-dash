@@ -58,7 +58,7 @@ def _hidden_ids(cfg: config.Config, items: list[dict]) -> set[str]:
 def _ai_review_shas(item: dict, ref: str) -> tuple[str, str, str]:
     """(head_sha, context_heads, companion_head_sha) of the half `ref` names, else the primary's."""
     repo_full, repo_short, number = query._parse_ref(ref)
-    bset = branch_set.BranchSet((item["author"], item["head_branch"]), tuple(item["members"]))
+    bset = branch_set.from_item(item)
     target = next(
         (m for m in bset.halves if query._member_matches(m, repo_full, repo_short, number)),
         bset.primary,
@@ -380,7 +380,7 @@ def list_mine(band: str | None = None, include_dismissed: bool = False) -> dict:
     include_dismissed: dismissed members are excluded by default; True adds them
     back carrying dismissed_at.
 
-    Each set carries key (the head branch), task, title (the primary's), band
+    Each set carries key (the head branch), task, title and url (the primary's), band
     ('needs', 'open' or 'done'), actions [{member, kind, text, since}] (what waits on you: thread, ci,
     conflict, changes, reviewers, linked, fw), fyi labels (movement since the last
     look, plus 'idle Nd', 'waiting on re-review', 'source merged' and 'fw k/n merged'),
@@ -449,7 +449,7 @@ def hide_pr(ref: str) -> dict:
         except (github.GithubError, ValueError):
             pass
         members.append({**member, "head_sha": live or member["head_sha"]})
-    live_set = branch_set.BranchSet((item["author"], item["head_branch"]), tuple(members))
+    live_set = branch_set.from_item(item, members)
     mapping = hidden.apply_ops(cfg, [{
         "op": "hide",
         "pr_id": item["id"],
@@ -549,7 +549,7 @@ def set_ai_review(ref: str, summary: str, verdict: str,
     entries without a message are dropped, and only the first 5 are kept.
 
     Calling again for the same PR updates the row in place (replaced: true),
-    including over an automatic review. Returns {id, head_sha, sibling_head_sha,
+    including over an automatic review. Returns {id, head_sha, context_heads,
     verdict, concern_count, replaced, computed_at}, plus replaced_source and
     replaced_at describing the row that was overwritten - a 'manual' one stamped
     moments ago means another session was reviewing the same PR.
@@ -563,7 +563,7 @@ def set_ai_review(ref: str, summary: str, verdict: str,
         raise ValueError(
             f"verdict must be one of {', '.join(ai._VERDICTS)}, got {verdict!r}",
         )
-    head_sha, sibling_head_sha, companion_head_sha = _ai_review_shas(item, ref)
+    head_sha, context_heads, companion_head_sha = _ai_review_shas(item, ref)
     # Normalised by the same parser the pipeline runs model output through
     # (unknown severity clamped, blank messages dropped, capped at 5), so a
     # hand-written row is indistinguishable from a generated one downstream. Its
@@ -579,13 +579,11 @@ def set_ai_review(ref: str, summary: str, verdict: str,
     computed_at = derive.now_utc()
     conn = db.connect(cfg.db_path)
     try:
-        # Checked without the pair context, because the table is keyed on
-        # head_sha alone: a row stored under a *different* sibling sha is
-        # overwritten too, and the caller should hear about that.
+        # Keyed on head_sha alone, so a row under another context is overwritten and reported.
         previous = db.get_ai_review_any(conn, head_sha)
         with db.transaction(conn):
             db.upsert_ai_review(
-                conn, head_sha, sibling_head_sha, result.summary,
+                conn, head_sha, context_heads, result.summary,
                 json.dumps(result.concerns), result.verdict, computed_at,
                 source="manual", companion_head_sha=companion_head_sha,
             )
@@ -595,7 +593,7 @@ def set_ai_review(ref: str, summary: str, verdict: str,
     out = {
         "id": item["id"],
         "head_sha": head_sha,
-        "sibling_head_sha": sibling_head_sha,
+        "context_heads": context_heads,
         "companion_head_sha": companion_head_sha,
         "verdict": result.verdict,
         "concern_count": len(result.concerns),

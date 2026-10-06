@@ -895,6 +895,7 @@ def branch_sets(
             "key": key,
             "task": task and task.group(1),
             "title": bs.primary["title"],
+            "url": bs.primary["url"],
             "members": [m for _, m in group],
             "actions": actions,
             "fyi": list(dict.fromkeys(fyi)),

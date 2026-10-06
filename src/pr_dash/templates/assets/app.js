@@ -588,11 +588,11 @@
     }
     if (activeTab === "mine") {
       const set = MINE.find(x => x.uid === selectedMineKey);
-      if (set) window.open(set.members[0].url, "_blank", "noopener");
+      if (set) window.open(set.url, "_blank", "noopener");
       return;
     }
     const pr = PRS.find(p => p.id === selectedId);
-    if (pr) window.open(pr.members[0].url, "_blank", "noopener");
+    if (pr) window.open(pr.url, "_blank", "noopener");
   }
 
   /** Hide/unhide the selection; if it drops out of view, take the next row. */

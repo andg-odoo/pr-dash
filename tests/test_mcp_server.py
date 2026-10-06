@@ -272,7 +272,7 @@ def test_set_ai_review_writes_and_reads_back(tmp_path, monkeypatch):
         ],
     )
     assert out["id"] == "odoo/odoo#1"
-    assert (out["head_sha"], out["sibling_head_sha"]) == ("sha1", "")
+    assert (out["head_sha"], out["context_heads"]) == ("sha1", "")
     assert (out["verdict"], out["concern_count"], out["replaced"]) == ("minor", 1, False)
 
     back = mcp_server.get_ai_review("odoo/odoo#1")
@@ -321,13 +321,13 @@ def test_set_ai_review_records_sibling_pair_context(tmp_path, monkeypatch):
     # carries the odoo half as pair context, whose diff is cached.
     out = mcp_server.set_ai_review("enterprise#2", summary="Enterprise half.",
                                    verdict="looks-good")
-    assert (out["head_sha"], out["sibling_head_sha"]) == ("sha2", "sha1")
+    assert (out["head_sha"], out["context_heads"]) == ("sha2", "sha1")
 
     # The odoo half is its own row, not a replacement, and is stored pair-blind
     # because the enterprise diff was never cached - exactly what
     # _build_review_queue would have stored, so a refresh reads it as a cache hit.
     out = mcp_server.set_ai_review("odoo#1", summary="Odoo half.", verdict="minor")
-    assert (out["head_sha"], out["sibling_head_sha"], out["replaced"]) == (
+    assert (out["head_sha"], out["context_heads"], out["replaced"]) == (
         "sha1", "", False,
     )
 

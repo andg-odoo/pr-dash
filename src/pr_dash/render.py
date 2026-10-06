@@ -88,7 +88,7 @@ def _build_pr_record(
             "source": review_row["source"] or "auto",
             # Stored pair context - used to validate against current pair state
             # at item-assembly time. Stale (mismatched) reviews are dropped.
-            "sibling_head_sha": review_row["sibling_head_sha"] or "",
+            "context_heads": review_row["context_heads"] or "",
             # Same, for the companion migration: a review written before one
             # appeared was told nothing carried the data across.
             "companion_head_sha": review_row["companion_head_sha"] or "",
@@ -102,7 +102,7 @@ def _build_pr_record(
             ai_failed = {
                 "attempts": attempt["attempts"],
                 "error": attempt["last_error"] or "unknown",
-                "sibling_head_sha": attempt["sibling_head_sha"] or "",
+                "context_heads": attempt["context_heads"] or "",
                 "companion_head_sha": attempt["companion_head_sha"] or "",
             }
 
@@ -339,7 +339,7 @@ def _make_item(bset: branch_set.BranchSet, my_login: str,
         # Same context check for a failure: one tried under a moved context is queued again.
         failed = m.get("ai_failed")
         if (ai_failed is None and failed
-                and failed["sibling_head_sha"] == expected_context
+                and failed["context_heads"] == expected_context
                 and failed["companion_head_sha"] == expected_companion):
             ai_failed = {"attempts": failed["attempts"], "error": failed["error"]}
         review = m.get("ai_review")
@@ -350,7 +350,7 @@ def _make_item(bset: branch_set.BranchSet, my_login: str,
         # replace it either. Dropping it here would hide it with nothing to
         # re-derive it.
         if review.get("source") != "manual" and (
-            (review.get("sibling_head_sha") or "") != expected_context
+            (review.get("context_heads") or "") != expected_context
             or (review.get("companion_head_sha") or "") != expected_companion
         ):
             continue
@@ -358,7 +358,7 @@ def _make_item(bset: branch_set.BranchSet, my_login: str,
             "repo_short": m["repo_short"],
             "number": m["number"],
             **{k: v for k, v in review.items()
-               if k not in ("sibling_head_sha", "companion_head_sha")},
+               if k not in ("context_heads", "companion_head_sha")},
         })
     # Worst verdict for the item-level pill: major > minor > looks-good
     verdict_rank = {"major": 2, "minor": 1, "looks-good": 0}

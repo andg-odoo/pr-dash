@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 26
+SCHEMA_VERSION = 27
 
 # Cache-wide facts with nowhere better to live, such as when a refresh last reached GitHub.
 META_SCHEMA_SQL = """
@@ -20,12 +20,12 @@ CREATE TABLE meta (
 AI_ATTEMPT_SCHEMA_SQL = """
 CREATE TABLE ai_attempt (
   head_sha           TEXT NOT NULL,
-  sibling_head_sha   TEXT NOT NULL DEFAULT '',
+  context_heads      TEXT NOT NULL DEFAULT '',
   companion_head_sha TEXT NOT NULL DEFAULT '',
   attempts           INTEGER NOT NULL DEFAULT 0,
   last_error         TEXT,
   last_attempt_at    TEXT NOT NULL,
-  PRIMARY KEY (head_sha, sibling_head_sha, companion_head_sha)
+  PRIMARY KEY (head_sha, context_heads, companion_head_sha)
 );
 """
 
@@ -308,7 +308,7 @@ CREATE TABLE pr_diff (
 
 CREATE TABLE ai_review (
   head_sha           TEXT PRIMARY KEY,
-  sibling_head_sha   TEXT NOT NULL DEFAULT '',
+  context_heads      TEXT NOT NULL DEFAULT '',
   companion_head_sha TEXT NOT NULL DEFAULT '',
   summary            TEXT NOT NULL,
   concerns           TEXT NOT NULL DEFAULT '[]',
@@ -385,7 +385,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
             )
     if current < 5:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(ai_review)").fetchall()}
-        if "sibling_head_sha" not in cols:
+        if "sibling_head_sha" not in cols and "context_heads" not in cols:
             conn.execute(
                 "ALTER TABLE ai_review ADD COLUMN sibling_head_sha TEXT NOT NULL DEFAULT ''"
             )
@@ -603,6 +603,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
         }
         if "mine_fw" not in tables:
             conn.executescript(MINE_FW_SCHEMA_SQL)
+    if current < 27:
+        for table in ("ai_review", "ai_attempt"):
+            cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            if "sibling_head_sha" in cols:
+                conn.execute(f"ALTER TABLE {table} RENAME COLUMN sibling_head_sha TO context_heads")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -816,13 +821,13 @@ def upsert_seen(conn: sqlite3.Connection, pr_id: str, head_sha: str | None,
     }, ["pr_id"])
 
 
-def upsert_ai_review(conn: sqlite3.Connection, head_sha: str, sibling_head_sha: str,
+def upsert_ai_review(conn: sqlite3.Connection, head_sha: str, context_heads: str,
                      summary: str, concerns_json: str, verdict: str,
                      computed_at: str, source: str = "auto",
                      companion_head_sha: str = "") -> None:
     _upsert(conn, "ai_review", {
         "head_sha": head_sha,
-        "sibling_head_sha": sibling_head_sha,
+        "context_heads": context_heads,
         "companion_head_sha": companion_head_sha,
         "summary": summary,
         "concerns": concerns_json,
@@ -846,7 +851,7 @@ def has_manual_ai_review(conn: sqlite3.Connection, head_sha: str) -> bool:
 
 
 def get_ai_review(conn: sqlite3.Connection, head_sha: str,
-                  sibling_head_sha: str = "",
+                  context_heads: str = "",
                   companion_head_sha: str = "") -> sqlite3.Row | None:
     """Return cached review only when the surrounding context matches.
 
@@ -856,15 +861,15 @@ def get_ai_review(conn: sqlite3.Connection, head_sha: str,
     precisely what decides whether a missing one is worth flagging.
     """
     return conn.execute(
-        "SELECT * FROM ai_review WHERE head_sha = ? AND sibling_head_sha = ? "
+        "SELECT * FROM ai_review WHERE head_sha = ? AND context_heads = ? "
         "AND companion_head_sha = ?",
-        (head_sha, sibling_head_sha, companion_head_sha),
+        (head_sha, context_heads, companion_head_sha),
     ).fetchone()
 
 
 def get_ai_review_any(conn: sqlite3.Connection, head_sha: str) -> sqlite3.Row | None:
-    """Fetch a review by head_sha without filtering on sibling context.
-    Used by the renderer, which must validate the pair context itself."""
+    """Fetch a review by head_sha without filtering on context.
+    Used by the renderer, which must validate the Branch set context itself."""
     return conn.execute(
         "SELECT * FROM ai_review WHERE head_sha = ?", (head_sha,),
     ).fetchone()
@@ -883,35 +888,35 @@ def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
     return row["value"] if row else None
 
 
-def record_ai_attempt(conn: sqlite3.Connection, head_sha: str, sibling_head_sha: str,
+def record_ai_attempt(conn: sqlite3.Connection, head_sha: str, context_heads: str,
                       companion_head_sha: str, error: str, when: str) -> None:
     """Count one failed pass at this review context, so the queue can give up."""
     conn.execute(
-        "INSERT INTO ai_attempt (head_sha, sibling_head_sha, companion_head_sha, "
+        "INSERT INTO ai_attempt (head_sha, context_heads, companion_head_sha, "
         "attempts, last_error, last_attempt_at) VALUES (?, ?, ?, 1, ?, ?) "
-        "ON CONFLICT(head_sha, sibling_head_sha, companion_head_sha) DO UPDATE SET "
+        "ON CONFLICT(head_sha, context_heads, companion_head_sha) DO UPDATE SET "
         "attempts = attempts + 1, last_error = excluded.last_error, "
         "last_attempt_at = excluded.last_attempt_at",
-        (head_sha, sibling_head_sha, companion_head_sha, error, when),
+        (head_sha, context_heads, companion_head_sha, error, when),
     )
 
 
-def clear_ai_attempt(conn: sqlite3.Connection, head_sha: str, sibling_head_sha: str,
+def clear_ai_attempt(conn: sqlite3.Connection, head_sha: str, context_heads: str,
                      companion_head_sha: str) -> None:
     conn.execute(
-        "DELETE FROM ai_attempt WHERE head_sha = ? AND sibling_head_sha = ? "
+        "DELETE FROM ai_attempt WHERE head_sha = ? AND context_heads = ? "
         "AND companion_head_sha = ?",
-        (head_sha, sibling_head_sha, companion_head_sha),
+        (head_sha, context_heads, companion_head_sha),
     )
 
 
 def get_ai_attempt(conn: sqlite3.Connection, head_sha: str,
-                   sibling_head_sha: str = "",
+                   context_heads: str = "",
                    companion_head_sha: str = "") -> sqlite3.Row | None:
     return conn.execute(
-        "SELECT * FROM ai_attempt WHERE head_sha = ? AND sibling_head_sha = ? "
+        "SELECT * FROM ai_attempt WHERE head_sha = ? AND context_heads = ? "
         "AND companion_head_sha = ?",
-        (head_sha, sibling_head_sha, companion_head_sha),
+        (head_sha, context_heads, companion_head_sha),
     ).fetchone()
 
 

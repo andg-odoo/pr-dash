@@ -4,7 +4,7 @@ from click.testing import CliRunner
 
 from pr_dash import cli, config, db, github, mergebot
 
-# --- _reviewed_open_siblings -------------------------------------------------
+# --- _reviewed_open_halves -------------------------------------------------
 
 def _row(pr_id, *, author="a", head_branch="feat", state="OPEN", archived_at=None):
     repo, _, number = pr_id.rpartition("#")
@@ -12,45 +12,45 @@ def _row(pr_id, *, author="a", head_branch="feat", state="OPEN", archived_at=Non
             "head_branch": head_branch, "state": state, "archived_at": archived_at}
 
 
-def test_reviewed_open_siblings_selects_open_reviewed_half():
+def test_reviewed_open_halves_selects_open_reviewed_half():
     # Active odoo half + its open, non-archived enterprise sibling that fell out
     # of the search -> the sibling is selected for priming.
     active = _row("odoo/odoo#1")
     sibling = _row("odoo/enterprise#2")
-    out = cli._reviewed_open_siblings([active, sibling], {"odoo/odoo#1"})
+    out = cli._reviewed_open_halves([active, sibling], {"odoo/odoo#1"})
     assert [r["id"] for r in out] == ["odoo/enterprise#2"]
 
 
-def test_reviewed_open_siblings_includes_archived_skips_closed():
+def test_reviewed_open_halves_includes_archived_skips_closed():
     # The sweep archives a reviewed half on the next refresh, so archived rows
     # are the normal case and must still be primed; closed ones must not.
     active = _row("odoo/odoo#1")
     archived_sib = _row("odoo/enterprise#2", archived_at="2026-07-01T00:00:00+00:00")
-    out = cli._reviewed_open_siblings([active, archived_sib], {"odoo/odoo#1"})
+    out = cli._reviewed_open_halves([active, archived_sib], {"odoo/odoo#1"})
     assert [r["id"] for r in out] == ["odoo/enterprise#2"]
 
     closed_sib = _row("odoo/enterprise#3", state="MERGED")
-    assert cli._reviewed_open_siblings(
+    assert cli._reviewed_open_halves(
         [_row("odoo/odoo#1"), closed_sib], {"odoo/odoo#1"}
     ) == []
 
 
-def test_reviewed_open_siblings_requires_active_partner():
+def test_reviewed_open_halves_requires_active_partner():
     # Both halves fell out of the active set -> nothing to prime.
     a = _row("odoo/odoo#1")
     b = _row("odoo/enterprise#2")
-    assert cli._reviewed_open_siblings([a, b], set()) == []
+    assert cli._reviewed_open_halves([a, b], set()) == []
 
 
-def test_reviewed_open_siblings_ignores_unpaired_and_active_self():
+def test_reviewed_open_halves_ignores_unpaired_and_active_self():
     # A lone PR (no pair) and the active PR itself are never returned.
     active = _row("odoo/odoo#1")
     lone = _row("odoo/odoo#9", head_branch="other")
-    out = cli._reviewed_open_siblings([active, lone], {"odoo/odoo#1"})
+    out = cli._reviewed_open_halves([active, lone], {"odoo/odoo#1"})
     assert out == []
 
 
-# --- _sibling_needs_refresh --------------------------------------------------
+# --- _half_needs_refresh --------------------------------------------------
 
 def _node(head="sha1", updated="2026-07-01T00:00:00Z"):
     return {"headRefOid": head, "updatedAt": updated}
@@ -60,26 +60,26 @@ def _cached(head="sha1", updated="2026-07-01T00:00:00Z"):
     return {"head_sha": head, "updated_at": updated}
 
 
-def test_sibling_needs_refresh_unchanged_with_comments_skips():
-    assert cli._sibling_needs_refresh(
+def test_half_needs_refresh_unchanged_with_comments_skips():
+    assert cli._half_needs_refresh(
         _cached(), _node(), True, force=False,
     ) is False
 
 
-def test_sibling_needs_refresh_primes_when_no_comments():
+def test_half_needs_refresh_primes_when_no_comments():
     # Same head/updated but no comment rows yet -> prime the pre-feature row once.
-    assert cli._sibling_needs_refresh(
+    assert cli._half_needs_refresh(
         _cached(), _node(), False, force=False,
     ) is True
 
 
-def test_sibling_needs_refresh_on_change_and_force_and_missing():
-    assert cli._sibling_needs_refresh(_cached(head="old"), _node(head="new"), True,
+def test_half_needs_refresh_on_change_and_force_and_missing():
+    assert cli._half_needs_refresh(_cached(head="old"), _node(head="new"), True,
                                       force=False) is True
-    assert cli._sibling_needs_refresh(_cached(updated="old"), _node(updated="new"),
+    assert cli._half_needs_refresh(_cached(updated="old"), _node(updated="new"),
                                       True, force=False) is True
-    assert cli._sibling_needs_refresh(_cached(), _node(), True, force=True) is True
-    assert cli._sibling_needs_refresh(None, _node(), True, force=False) is True
+    assert cli._half_needs_refresh(_cached(), _node(), True, force=True) is True
+    assert cli._half_needs_refresh(None, _node(), True, force=False) is True
 
 
 # --- shared GraphQL fragment -------------------------------------------------
@@ -92,7 +92,7 @@ def test_search_and_sibling_fetch_share_one_fragment():
     assert github.PR_NODE_FRAGMENT in github.SEARCH_QUERY
 
 
-# --- _prime_reviewed_siblings (integration over a real sqlite cache) ---------
+# --- _prime_reviewed_halves (integration over a real sqlite cache) ---------
 
 def _insert_pr(conn, pr_id, *, author="a", head_branch="feat", state="OPEN",
                archived_at=None, previously_reviewed=1, head_sha="sha1",
@@ -144,7 +144,7 @@ def _fake_node(repo, number, *, author="a", head_branch="feat", head="sha2",
     }
 
 
-def test_prime_reviewed_siblings_caches_comments_and_preserves_reviewed(tmp_path, monkeypatch):
+def test_prime_reviewed_halves_caches_comments_and_preserves_reviewed(tmp_path, monkeypatch):
     from pr_dash import db
     from pr_dash.config import Config
 
@@ -156,7 +156,7 @@ def test_prime_reviewed_siblings_caches_comments_and_preserves_reviewed(tmp_path
 
     monkeypatch.setattr(github, "fetch_pr_nodes",
                         lambda refs, **kw: [_fake_node("odoo/enterprise", 2)])
-    cli._prime_reviewed_siblings(conn, cfg, kept, force=False)
+    cli._prime_reviewed_halves(conn, cfg, kept, force=False)
 
     assert "odoo/enterprise#2" in kept                     # sweep will leave it
     assert db.has_comments(conn, "odoo/enterprise#2") is True
@@ -167,7 +167,7 @@ def test_prime_reviewed_siblings_caches_comments_and_preserves_reviewed(tmp_path
     assert row["previously_reviewed"] == 1
 
 
-def test_prime_reviewed_siblings_shortcircuits_when_unchanged(tmp_path, monkeypatch):
+def test_prime_reviewed_halves_shortcircuits_when_unchanged(tmp_path, monkeypatch):
     from pr_dash import db
     from pr_dash.config import Config
 
@@ -187,14 +187,14 @@ def test_prime_reviewed_siblings_shortcircuits_when_unchanged(tmp_path, monkeypa
                         lambda refs, **kw: [_fake_node("odoo/enterprise", 2,
                                                        head="sha2",
                                                        updated="2026-07-10T00:00:00Z")])
-    cli._prime_reviewed_siblings(conn, cfg, kept, force=False)
+    cli._prime_reviewed_halves(conn, cfg, kept, force=False)
 
     assert "odoo/enterprise#2" in kept
     # The pre-existing comment row is untouched (not replaced by the fetched one).
     assert [c["comment_id"] for c in db.comments_for(conn, "odoo/enterprise#2")] == ["1"]
 
 
-def test_prime_reviewed_siblings_keeps_archived_at(tmp_path, monkeypatch):
+def test_prime_reviewed_halves_keeps_archived_at(tmp_path, monkeypatch):
     from pr_dash import db
     from pr_dash.config import Config
 
@@ -207,7 +207,7 @@ def test_prime_reviewed_siblings_keeps_archived_at(tmp_path, monkeypatch):
 
     monkeypatch.setattr(github, "fetch_pr_nodes",
                         lambda refs, **kw: [_fake_node("odoo/enterprise", 2)])
-    cli._prime_reviewed_siblings(conn, cfg, kept, force=False)
+    cli._prime_reviewed_halves(conn, cfg, kept, force=False)
 
     assert db.has_comments(conn, "odoo/enterprise#2") is True
     row = db.get_cached_pr(conn, "odoo/enterprise#2")
@@ -216,7 +216,7 @@ def test_prime_reviewed_siblings_keeps_archived_at(tmp_path, monkeypatch):
     assert row["archived_at"] == "2026-07-02T00:00:00+00:00"
 
 
-# --- _reconcile_sibling_states: ping detection & clearing ---------------------
+# --- _reconcile_archived_states: ping detection & clearing ---------------------
 
 def _activity_node(state="OPEN", *, ping=True):
     reviews = [{"author": {"login": "me"}, "submittedAt": "2026-07-01T00:00:00Z",
@@ -238,7 +238,7 @@ def test_reconcile_sets_ping_on_archived_open(tmp_path, monkeypatch):
     monkeypatch.setattr(github, "fetch_archived_activity",
                         lambda refs, **kw: {"odoo/odoo#1": _activity_node()})
 
-    cli._reconcile_sibling_states(conn, cfg, set())
+    cli._reconcile_archived_states(conn, cfg, set())
     row = db.get_cached_pr(conn, "odoo/odoo#1")
     assert row["ping_at"] == "2026-07-02T00:00:00Z"
     assert row["ping_author"] == "alice"
@@ -256,7 +256,7 @@ def test_reconcile_hidden_pr_never_pinged(tmp_path, monkeypatch):
     monkeypatch.setattr(github, "fetch_archived_activity",
                         lambda refs, **kw: {"odoo/odoo#1": _activity_node()})
 
-    cli._reconcile_sibling_states(conn, cfg, set())
+    cli._reconcile_archived_states(conn, cfg, set())
     assert db.get_cached_pr(conn, "odoo/odoo#1")["ping_at"] is None
 
 
@@ -271,13 +271,13 @@ def test_reconcile_closed_clears_state_and_ping(tmp_path, monkeypatch):
     monkeypatch.setattr(github, "fetch_archived_activity",
                         lambda refs, **kw: {"odoo/odoo#1": _activity_node(state="MERGED")})
 
-    cli._reconcile_sibling_states(conn, cfg, set())
+    cli._reconcile_archived_states(conn, cfg, set())
     row = db.get_cached_pr(conn, "odoo/odoo#1")
     assert row["state"] == "MERGED"
     assert row["ping_at"] is None
 
 
-# --- _reconcile_sibling_states: push detection & stale-row refresh ------------
+# --- _reconcile_archived_states: push detection & stale-row refresh ------------
 
 def _push_activity_node(*, head="sha2", reviewed="sha1", updated="2026-07-01T00:00:00Z"):
     """Archived-activity node where my review sits on `reviewed` and the live
@@ -312,7 +312,7 @@ def test_reconcile_sets_push_on_archived_open(tmp_path, monkeypatch):
                         lambda refs, **kw: [_fake_node("odoo/odoo", 1)])
     monkeypatch.setattr(github, "fetch_patch", lambda repo, number: "diff --git a b")
 
-    cli._reconcile_sibling_states(conn, cfg, set())
+    cli._reconcile_archived_states(conn, cfg, set())
     row = db.get_cached_pr(conn, "odoo/odoo#1")
     assert row["push_at"] == "2026-07-05T00:00:00Z"
     assert row["push_sha"] == "sha2"
@@ -331,7 +331,7 @@ def test_reconcile_refreshes_stale_archived_row_in_place(tmp_path, monkeypatch):
                         lambda refs, **kw: [_fake_node("odoo/odoo", 1)])
     monkeypatch.setattr(github, "fetch_patch", lambda repo, number: "diff --git a b")
 
-    cli._reconcile_sibling_states(conn, cfg, set())
+    cli._reconcile_archived_states(conn, cfg, set())
     row = db.get_cached_pr(conn, "odoo/odoo#1")
     # The moved head pulled in the whole row, not just the push marker...
     assert row["head_sha"] == "sha2"
@@ -364,7 +364,7 @@ def test_reconcile_refreshes_on_bumped_updated_at_alone(tmp_path, monkeypatch):
                                                        updated="2026-07-09T00:00:00Z")])
     monkeypatch.setattr(github, "fetch_patch", lambda repo, number: "d")
 
-    cli._reconcile_sibling_states(conn, cfg, set())
+    cli._reconcile_archived_states(conn, cfg, set())
     row = db.get_cached_pr(conn, "odoo/odoo#1")
     assert row["updated_at"] == "2026-07-09T00:00:00Z"
     assert row["push_at"] is None  # head never moved
@@ -384,7 +384,7 @@ def test_reconcile_leaves_fresh_archived_row_alone(tmp_path, monkeypatch):
         raise AssertionError("unchanged row must not cost a node fetch")
 
     monkeypatch.setattr(github, "fetch_pr_nodes", _boom)
-    cli._reconcile_sibling_states(conn, cfg, set())
+    cli._reconcile_archived_states(conn, cfg, set())
     assert db.get_cached_pr(conn, "odoo/odoo#1")["head_sha"] == "sha1"
 
 
@@ -399,7 +399,7 @@ def test_reconcile_clears_push_once_i_review_the_new_head(tmp_path, monkeypatch)
     node = _push_activity_node(head="sha2", reviewed="sha2")
     monkeypatch.setattr(github, "fetch_archived_activity", lambda refs, **kw: {"odoo/odoo#1": node})
 
-    cli._reconcile_sibling_states(conn, cfg, set())
+    cli._reconcile_archived_states(conn, cfg, set())
     row = db.get_cached_pr(conn, "odoo/odoo#1")
     assert row["push_at"] is None
     assert row["push_sha"] is None
