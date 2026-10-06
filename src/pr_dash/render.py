@@ -598,15 +598,19 @@ def build_tracked_payload(
 
 def build_mine_payload(
     conn: sqlite3.Connection, login: str, *, include_dismissed: bool = False,
-    dismissed_only: bool = False,
+    dismissed_only: bool = False, now: str | None = None,
 ) -> tuple[list[dict], list[dict]]:
-    """Return (Branch sets with their discussion, mine seen_updates), in band order."""
+    """Return (Branch sets with their discussion, mine seen_updates), in band order.
+
+    :param now: ISO time `idle Nd` counts to, the wall clock when omitted
+    """
     rows = db.list_mine(conn, include_dismissed=include_dismissed, dismissed_only=dismissed_only)
     by_id = {r["id"]: r for r in rows}
     comments_by_pr = db.list_tab_comments(conn, "mine")
     sets = derive.branch_sets(
         rows, db.list_mine_mergebot(conn), streams=comments_by_pr, login=login,
-        acks=db.list_mine_acks(conn), seen=db.list_tab_seen(conn, "mine"), now=derive.now_utc())
+        acks=db.list_mine_acks(conn), seen=db.list_tab_seen(conn, "mine"),
+        now=now or derive.now_utc())
     seen_updates = []
     for s in sets:
         for m in s["members"]:

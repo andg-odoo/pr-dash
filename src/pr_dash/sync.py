@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from pr_dash import ai, branch_set, db, derive, github, hidden, mergebot
+from pr_dash import ai, branch_set, db, derive, github, hidden, mergebot, render
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -20,7 +21,7 @@ _AI_RETRY_BACKOFF_HOURS = (1, 4)
 
 @dataclass
 class RefreshReport:
-    """How many rows each refresh phase changed."""
+    """How many rows each refresh phase changed, and the failures it carried on past."""
     primed: int = 0
     archived: int = 0
     deleted: int = 0
@@ -29,6 +30,24 @@ class RefreshReport:
     pushed: int = 0
     refreshed: int = 0
     companions: int = 0
+    tracked_added: int = 0
+    tracked_refreshed: int = 0
+    tracked_total: int = 0
+    mine_added: int = 0
+    # None when the Mine refresh was not due or failed.
+    mine_refreshed: int | None = None
+    mergebot_read: int = 0
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ImportReport:
+    """What the history import stored and dismissed."""
+    closed: int
+    forward_ports: int
+    dismissed: int
+    left_open: int
+    unread: int
 
 
 def _node_id(node: dict) -> str:
@@ -54,9 +73,25 @@ class Sync:
     def _stamp(self) -> str:
         return self.clock().isoformat(timespec="seconds")
 
-    def refresh_queue(self, *, force: bool, cron: bool) -> RefreshReport:
+    def refresh(self, *, force: bool, cron: bool) -> RefreshReport:
+        """Refresh the Review queue when due, then the Tracked and Mine tabs unless it failed."""
+        report = RefreshReport()
+        last_queue = db.get_meta(self.conn, "last_queue_refresh")
+        # Same minute of slack as the Mine tab, a tick lands seconds short of the interval.
+        due = self.clock() - timedelta(minutes=self.cfg.thresholds.queue_interval_minutes - 1)
+        if force or not cron or not last_queue or derive.parse_iso(last_queue) <= due:
+            self._refresh_queue(report, force=force, cron=cron)
+            db.set_meta(self.conn, "last_queue_refresh", self._stamp())
+        self._refresh_tracked(report, force=force)
+        self._refresh_mine(report, force=force)
+        # Stamped only on a run that reached GitHub, so the header dates the data.
+        db.set_meta(self.conn, "last_refresh", self._stamp())
+        log.debug("refresh: %s", report)
+        return report
+
+    def _refresh_queue(self, report: RefreshReport, *, force: bool, cron: bool) -> None:
         """Fetch the Review queue, settle the rows that left it, then run the AI pass."""
-        conn, cfg, login, report = self.conn, self.cfg, self.cfg.github_login, RefreshReport()
+        conn, cfg, login = self.conn, self.cfg, self.cfg.github_login
         self._phase("Searching for review requests...")
         nodes, rate = self.gh.review_requested(login)
         if rate:
@@ -139,8 +174,172 @@ class Sync:
                     model=cfg.ai.model, max_diff_chars=cfg.ai.review_max_diff_chars,
                 )
                 self._store_reviews(outcomes, context)
-        log.debug("queue refresh: %s", report)
-        return report
+
+    def _refresh_tracked(self, report: RefreshReport, *, force: bool) -> None:
+        """Seed Tracked PRs from manual subscriptions, additively, then refresh the stale ones."""
+        conn = self.conn
+        self._phase("Reading tracked subscriptions...")
+        try:
+            subs = self.gh.manual_subscriptions()
+        except github.GithubError as e:
+            # A notifications failure must not sink the Review queue refresh, the primary job.
+            report.warnings.append(f"Could not read subscriptions: {e}")
+            subs = []
+        now = self._stamp()
+        with db.transaction(conn):
+            for s in subs:
+                report.tracked_added += db.add_tracked(
+                    conn, s["id"], s["repo"], s["number"], s["url"], "notif", now)
+
+        rows = db.list_tracked(conn, include_dismissed=True)
+        report.tracked_total = len(rows)
+        cutoff = self.clock() - timedelta(minutes=self.cfg.thresholds.tracked_staleness_minutes)
+        stale = [
+            (r["repo"], r["number"]) for r in rows
+            # Fetching a dismissed row is waste, but it stays in the table to dedupe the next seed.
+            if r["dismissed_at"] is None
+            and (force or not r["fetched_at"] or derive.parse_iso(r["fetched_at"]) < cutoff)
+        ]
+        if stale:
+            self._phase(f"Refreshing {len(stale)} tracked PRs...")
+            try:
+                report.tracked_refreshed = self.fetch_tracked(stale)
+            except github.GithubError as e:
+                report.warnings.append(f"Tracked PR refresh failed: {e}")
+
+    def fetch_tracked(self, refs: list[tuple[str, int]]) -> int:
+        """Refresh the cached GitHub state of the given Tracked PRs.
+
+        :return: the number of rows updated
+        """
+        nodes = self.gh.nodes(refs, "tracked")
+        now = self._stamp()
+        with db.transaction(self.conn):
+            for pr_id, node in nodes.items():
+                row, comments = derive.tracked_row_from_node(node, now)
+                db.update_tab_state(self.conn, "tracked", pr_id, row)
+                db.replace_tab_comments(self.conn, "tracked", pr_id, comments)
+        return len(nodes)
+
+    def _refresh_mine(self, report: RefreshReport, *, force: bool) -> None:
+        """Refresh the open and the undismissed Authored PRs, and their Mergebot pages."""
+        conn = self.conn
+        known = db.list_mine(conn)
+        last = max((r["fetched_at"] for r in known if r["fetched_at"]), default=None)
+        # A timer tick lands seconds short of the threshold, hence the minute of slack.
+        due = self.clock() - timedelta(minutes=self.cfg.thresholds.mine_staleness_minutes - 1)
+        if not force and last and derive.parse_iso(last) > due:
+            return
+        self._phase("Searching for authored PRs...")
+        try:
+            refs = self.gh.authored_open(self.cfg.github_login)
+            # Known PRs that left the open search are still fetched, so they can turn Done.
+            refs = list(dict.fromkeys([*refs, *_refs(known)]))
+            self._phase(f"Fetching {len(refs)} authored PRs...")
+            nodes, links = self._fetch_authored(refs, known, "mine")
+        except github.GithubError as e:
+            report.warnings.append(f"Authored PR refresh failed: {e}")
+            return
+        with db.transaction(conn):
+            report.mine_added = self._store_authored(nodes, links, self._stamp())
+        report.mine_refreshed = len(nodes)
+
+        stored = db.list_mine_mergebot(conn)
+        # A resolved PR's final Mergebot read cannot change, so it is not fetched again.
+        unread = [
+            r["id"] for r in db.list_mine(conn)
+            if r["state"] == "OPEN"
+            or stored.get(r["id"], {}).get("state") not in ("merged", "closed", "unmanaged")
+        ]
+        reads = self._read_mergebot(unread)
+        now = self._stamp()
+        with db.transaction(conn):
+            for pr_id, state in reads.items():
+                db.upsert_mine_mergebot(conn, pr_id, asdict(state), now)
+        report.mergebot_read = len(reads)
+        sets, _ = render.build_mine_payload(conn, self.cfg.github_login, now=now)
+        db.drop_stale_mine_acks(conn, {s["key"]: s["fingerprint"] for s in sets})
+
+    def import_history(self) -> ImportReport | None:
+        """Import every closed Authored PR once, dismissing the Branch sets already resolved.
+
+        :return: what was imported, None when an earlier import already ran
+        """
+        conn = self.conn
+        if db.get_meta(conn, "mine_history_imported"):
+            return None
+        known = db.list_mine(conn, include_dismissed=True)
+        known_ids = {r["id"] for r in known}
+        self._phase("Searching for closed authored PRs...")
+        refs = [(repo, n) for repo, n in self.gh.authored_closed(self.cfg.github_login)
+                if f"{repo}#{n}" not in known_ids]
+        self._phase(f"Fetching {len(refs)} closed authored PRs...")
+        nodes, links = self._fetch_authored(refs, known, "history")
+        reads = self._read_mergebot(list(nodes))
+
+        now = self._stamp()
+        with db.transaction(conn):
+            self._store_authored(nodes, links, now)
+            for pr_id, state in reads.items():
+                db.upsert_mine_mergebot(conn, pr_id, asdict(state), now)
+            sets, _ = render.build_mine_payload(conn, self.cfg.github_login, now=now)
+            imported = [s for s in sets if not any(m["id"] in known_ids for m in s["members"])]
+            # A Chain with an open Forward-port is not Done, so its set stays visible.
+            resolved = [s for s in imported if s["band"] == "done"]
+            for s in resolved:
+                for m in s["members"]:
+                    db.set_dismissed(conn, "mine", m["id"], now)
+            db.set_meta(conn, "mine_history_imported", now)
+        return ImportReport(
+            closed=len(nodes) - len(links), forward_ports=len(links), dismissed=len(resolved),
+            left_open=len(imported) - len(resolved),
+            unread=sum(state.state == "unknown" for state in reads.values()),
+        )
+
+    def _fetch_authored(self, refs: list[tuple[str, int]], known: list, view: github.View,
+                        ) -> tuple[dict[str, dict], dict[str, str]]:
+        """Fetch Authored PR nodes and their confirmed Forward-ports, as (nodes, links)."""
+        nodes = self.gh.nodes(refs, view)
+        # GitHub refuses author:fw-bot searches, so Forward-ports are found from their source.
+        candidates = {c for node in nodes.values() for c in derive.forward_port_candidates(node)}
+        candidates -= nodes.keys() | {r["id"] for r in known}
+        fw_nodes = {}
+        if candidates:
+            self._phase(f"Checking {len(candidates)} forward-ports...")
+            fw_refs = (c.rpartition("#") for c in sorted(candidates))
+            fw_nodes = self.gh.nodes([(repo, int(n)) for repo, _, n in fw_refs], view)
+        sources = nodes.keys() - {r["id"] for r in known if r["source_id"]}
+        links = {}
+        for fw_id, node in fw_nodes.items():
+            # A Forward-port of a Forward-port names every ancestor, its Source PR among them.
+            source = next((a for a in derive.forward_port_ancestors(node["body"]) if a in sources),
+                          None)
+            if source:
+                links[fw_id] = source
+                nodes[fw_id] = node
+        return nodes, links
+
+    def _store_authored(self, nodes: dict[str, dict], links: dict[str, str], now: str) -> int:
+        """Write fetched Authored PRs and their Forward-port links, returning how many are new."""
+        added = 0
+        for pr_id, node in nodes.items():
+            repo, _, number = pr_id.rpartition("#")
+            added += db.add_mine(self.conn, pr_id, repo, int(number), node["url"], now)
+            row, comments = derive.mine_row_from_node(node, now)
+            db.update_tab_state(self.conn, "mine", pr_id, row)
+            db.replace_tab_comments(self.conn, "mine", pr_id, comments)
+        for fw_id, source in links.items():
+            db.link_mine_forward_port(self.conn, fw_id, source)
+        return added
+
+    def _read_mergebot(self, pr_ids: list[str]) -> dict[str, mergebot.MergebotState]:
+        """Read the Mergebot page of each `owner/repo#n` id."""
+        self._phase(f"Reading {len(pr_ids)} Mergebot pages...")
+        refs = [pr_id.rpartition("#") for pr_id in pr_ids]
+        # A page takes about a second, a few in flight keep the tick short without loading the bot.
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            pages = pool.map(lambda ref: self.read_mergebot(ref[0], int(ref[2])), refs)
+            return dict(zip(pr_ids, pages, strict=True))
 
     def _store_node(self, node: dict, *, force: bool, cached=None) -> None:
         """Persist a queue node, its diff and complexity, keeping `cached`'s review state."""

@@ -1,11 +1,13 @@
 import pytest
 
-from pr_dash import db, hidden
+from pr_dash import db, github, hidden, render
 from pr_dash.config import Config
 from pr_dash.sync import Sync
-from tests.fakes import T0, FakeClock, FakeGitHub, FakeReviewer, insert_pr
+from tests.fakes import T0, FakeClock, FakeGitHub, FakeMergebot, FakeReviewer, insert_pr
 
 ODOO, ENT = "odoo/odoo#1", "odoo/enterprise#2"
+# The call that shows each refresh phase ran, the Tracked one being its nodes view.
+QUEUE, TRACKED, MINE = "review_requested", "tracked", "authored_open"
 
 
 def _difffile(path, body):
@@ -16,18 +18,25 @@ CODE = _difffile("m/models/x.py", "+code\n")
 
 
 class World:
-    """A cache, the fake GitHub and reviewer behind it, and one clock for both."""
+    """A cache, the fake GitHub, Mergebot and reviewer behind it, and one clock for all."""
 
     def __init__(self, tmp_path):
         self.cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
         self.conn = db.connect(self.cfg.db_path)
         self.clock = FakeClock()
         self.gh = FakeGitHub(self.clock)
+        self.mergebot = FakeMergebot()
         self.reviewer = FakeReviewer()
-        self.sync = Sync(self.conn, self.cfg, self.gh, reviewer=self.reviewer, clock=self.clock)
+        self.sync = Sync(self.conn, self.cfg, self.gh, read_mergebot=self.mergebot,
+                         reviewer=self.reviewer, clock=self.clock)
 
     def refresh(self, *, force=False, cron=False):
-        return self.sync.refresh_queue(force=force, cron=cron)
+        return self.sync.refresh(force=force, cron=cron)
+
+    def mine(self, *, include_dismissed=False):
+        sets, _ = render.build_mine_payload(self.conn, "me", include_dismissed=include_dismissed,
+                                            now=self.clock().isoformat())
+        return sets
 
     def row(self, pr_id):
         return db.get_cached_pr(self.conn, pr_id)
@@ -39,6 +48,48 @@ class World:
 @pytest.fixture
 def w(tmp_path):
     return World(tmp_path)
+
+
+# --- gates and failures ------------------------------------------------------
+
+def test_timer_ticks_search_the_queue_hourly_and_each_tab_when_stale(w):
+    w.gh.add("odoo/odoo", 1, author="me")
+    w.gh.add("odoo/odoo", 2, subscribed=True)
+
+    def tick(*, cron=True, force=False):
+        w.gh.calls.clear()
+        w.refresh(cron=cron, force=force)
+        return {c[2] if c[0] == "nodes" else c[0] for c in w.gh.calls} & {QUEUE, TRACKED, MINE}
+
+    assert tick() == {QUEUE, TRACKED, MINE}
+    assert tick() == set()
+    assert tick(cron=False) == {QUEUE}
+    # Each gate keeps a minute of slack but the tracked one, a tick lands seconds short.
+    w.clock.advance(minutes=14)
+    assert tick() == {MINE}
+    w.clock.advance(minutes=45)
+    assert tick() == {QUEUE, MINE}
+    w.clock.advance(hours=6)
+    assert tick() == {QUEUE, TRACKED, MINE}
+    assert tick(force=True) == {QUEUE, TRACKED, MINE}
+
+
+def test_a_tab_failure_is_a_warning_and_a_queue_failure_skips_the_tabs(w):
+    w.gh.fail("manual_subscriptions")
+    w.gh.fail("authored_open")
+    report = w.refresh()
+    assert report.warnings == ["Could not read subscriptions: manual_subscriptions: HTTP 502",
+                               "Authored PR refresh failed: authored_open: HTTP 502"]
+    assert report.mine_refreshed is None
+
+    stamped = db.get_meta(w.conn, "last_refresh")
+    w.gh.fail("review_requested")
+    w.gh.calls.clear()
+    w.clock.advance(hours=1)
+    with pytest.raises(github.GithubError):
+        w.refresh(force=True)
+    assert [c[0] for c in w.gh.calls] == ["review_requested"]
+    assert db.get_meta(w.conn, "last_refresh") == stamped
 
 
 # --- archived rows -----------------------------------------------------------
@@ -55,7 +106,7 @@ def test_an_archived_row_follows_its_pr_on_github(w):
     # Nothing moved on GitHub, so nothing is fetched beyond the activity check.
     w.gh.calls.clear()
     assert w.refresh().refreshed == 0
-    assert "nodes" not in [c[0] for c in w.gh.calls]
+    assert not [c for c in w.gh.calls if c[0] == "nodes" and c[2] == "queue"]
 
     # A comment alone bumps updatedAt, which refetches the row in place without a push marker.
     w.clock.advance(hours=1)
@@ -205,6 +256,112 @@ def test_an_archived_prs_stored_migration_is_rechecked_not_searched(w):
     assert (row["number"], row["state"]) == (800, "MERGED")
 
 
+# --- Mine and the history import ---------------------------------------------
+
+def test_mine_keeps_resolved_members_and_stops_reading_their_final_page(w):
+    for repo, number in (("odoo/odoo", 10), ("odoo/upgrade", 20)):
+        w.gh.add(repo, number, author="me", head_branch="master-x-6396725-andg")
+    w.mergebot.pages = {"odoo/odoo#10": "blocked"}
+    w.refresh()
+    w.refresh()
+    assert sorted(w.mergebot.reads) == ["odoo/odoo#10", "odoo/upgrade#20"]
+
+    # Both left the open search and closed, the Mergebot telling Merged from closed.
+    w.gh.close("odoo/odoo#10")
+    w.gh.close("odoo/upgrade#20")
+    w.mergebot.pages = {"odoo/odoo#10": "merged", "odoo/upgrade#20": "closed"}
+    w.refresh(force=True)
+    w.refresh(force=True)
+    assert sorted(w.mergebot.reads) == ["odoo/odoo#10"] * 2 + ["odoo/upgrade#20"] * 2
+    assert [(s["key"], s["band"], [(m["num"], m["state"]) for m in s["members"]])
+            for s in w.mine()] == [
+        ("master-x-6396725-andg", "done", [(10, "MERGED"), (20, "CLOSED")])]
+
+
+def test_mine_hangs_confirmed_forward_ports_under_their_source(w):
+    src_id = "odoo/odoo#290657"
+    source = w.gh.add("odoo/odoo", 290657, author="me",
+                      head_branch="saas-19.1-l10n_ar-company-arca-6470810-andg")
+    w.refresh()
+    w.gh.close(src_id)
+    source.cross_refs = [("odoo/odoo", 291857, "fw-bot"), ("odoo/enterprise", 133776, "me"),
+                         ("odoo/odoo", 291981, "fw-bot"), ("odoo/odoo", 291000, "fw-bot")]
+    body = "The new company now gets the contact's responsibility.\r\n\r\ntask-6470810\n\n"
+    w.gh.add("odoo/odoo", 291857, state="CLOSED", base="20.0",
+             body=body + "Forward-Port-Of: odoo/odoo#290657")
+    w.gh.add("odoo/odoo", 291981, base="master",
+             body=body + "Forward-Port-Of: odoo/odoo#291857\nForward-Port-Of: odoo/odoo#290657")
+    w.gh.add("odoo/odoo", 291000, body="Forward-Port-Of: odoo/odoo#280000")
+    w.mergebot.pages = {src_id: "merged", "odoo/odoo#291857": "merged",
+                        "odoo/odoo#291981": "blocked"}
+
+    def fetched():
+        return [sorted(n for _, n in c[1]) for c in w.gh.calls
+                if c[0] == "nodes" and c[2] == "mine"]
+
+    w.gh.calls.clear()
+    w.refresh(force=True)
+    # Only bot cross-references are candidates, and only a matching Forward-Port-Of line joins.
+    assert fetched() == [[290657], [291000, 291857, 291981]]
+    [s] = w.mine()
+    [member] = s["members"]
+    assert (s["band"], s["fyi"], [(f["base"], f["ref"], f["state"]) for f in member["fw"]]) == (
+        "open", ["source merged", "fw 1/2 merged"],
+        [("20.0", "odoo#291857", "MERGED"), ("master", "odoo#291981", "OPEN")])
+
+    # Linked Forward-ports ride in the members' batch from then on.
+    w.gh.calls.clear()
+    w.refresh(force=True)
+    assert fetched()[0] == [290657, 291857, 291981]
+
+
+def test_the_history_import_dismisses_resolved_sets_once(w):
+    w.gh.add("odoo/odoo", 100, author="me", head_branch="master-live")
+    w.gh.add("odoo/odoo", 10, author="me", state="CLOSED", head_branch="19.0-old")
+    w.gh.add("odoo/odoo", 290657, author="me", state="CLOSED", head_branch="saas-19.1-arca",
+             cross_refs=[("odoo/odoo", 291981, "fw-bot")])
+    w.gh.add("odoo/odoo", 291981, base="master", body="Forward-Port-Of: odoo/odoo#290657")
+    w.mergebot.pages = {"odoo/odoo#100": "blocked", "odoo/odoo#10": "merged",
+                        "odoo/odoo#290657": "merged", "odoo/odoo#291981": "blocked"}
+    w.refresh()
+
+    w.gh.calls.clear()
+    report = w.sync.import_history()
+    assert (report.closed, report.forward_ports, report.dismissed, report.left_open,
+            report.unread) == (2, 1, 1, 1, 0)
+    # Closed PRs are fetched through the narrow history batches, never the Mine ones.
+    assert {c[2] for c in w.gh.calls if c[0] == "nodes"} == {"history"}
+    # The Chain with an open Forward-port stays visible, the pre-existing open set is untouched.
+    assert [(s["key"], s["band"]) for s in w.mine()] == [
+        ("master-live", "needs"), ("saas-19.1-arca", "open")]
+    assert [(s["key"], s["band"]) for s in w.mine(include_dismissed=True)] == [
+        ("master-live", "needs"), ("saas-19.1-arca", "open"), ("19.0-old", "done")]
+
+    before = [tuple(r) for r in w.conn.execute("SELECT * FROM mine ORDER BY id")]
+    w.gh.calls.clear()
+    assert w.sync.import_history() is None
+    assert [tuple(r) for r in w.conn.execute("SELECT * FROM mine ORDER BY id")] == before
+    assert w.gh.calls == []
+
+
+def test_a_failed_history_import_stores_nothing_and_can_rerun(w):
+    w.gh.add("odoo/odoo", 10, author="me", state="CLOSED", cross_refs=[("odoo/odoo", 11, "fw-bot")])
+    w.gh.add("odoo/odoo", 11, state="CLOSED", body="Forward-Port-Of: odoo/odoo#10")
+    w.mergebot.pages = {"odoo/odoo#10": "merged", "odoo/odoo#11": "merged"}
+    # The source batch succeeds and the Forward-port batch fails, so a partial write would show.
+    w.gh.fail("nodes", lambda refs, view: refs == [("odoo/odoo", 11)])
+    with pytest.raises(github.GithubError):
+        w.sync.import_history()
+    assert (db.list_mine(w.conn, include_dismissed=True),
+            db.get_meta(w.conn, "mine_history_imported")) == ([], None)
+
+    w.gh.fail("nodes", lambda *args: False)
+    w.sync.import_history()
+    assert [(r["id"], r["source_id"], r["dismissed_at"] is not None)
+            for r in db.list_mine(w.conn, include_dismissed=True)] == [
+        ("odoo/odoo#10", None, True), ("odoo/odoo#11", "odoo/odoo#10", False)]
+
+
 # --- diffs and the AI pass ---------------------------------------------------
 
 def test_an_oversized_file_is_stubbed_and_the_code_around_it_kept(w):
@@ -272,6 +429,7 @@ def test_the_cron_cap_takes_the_cheapest_first_and_the_rest_next_tick(w):
     w.gh.add("odoo/odoo", 2, requested=["me"], head_branch="two", head_sha="small", patch=CODE)
     w.refresh(cron=True)
     assert w.reviewed() == ["small"]
+    w.clock.advance(hours=1)
     w.refresh(cron=True)
     assert w.reviewed() == ["small", "big"]
 

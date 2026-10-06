@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from pr_dash import ai, github
+from pr_dash import ai, github, mergebot
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -17,6 +17,7 @@ _TIMELINE = {
     "queue": {"ReviewRequestedEvent", "PullRequestReview"},
     "tracked": set(),
     "mine": {"ReviewRequestedEvent", "ReviewRequestRemovedEvent"},
+    "history": {"ReviewRequestedEvent", "ReviewRequestRemovedEvent"},
     "activity": {"ReviewRequestedEvent"},
 }
 _EVENT_TYPES = {"requested": "ReviewRequestedEvent", "removed": "ReviewRequestRemovedEvent"}
@@ -287,6 +288,18 @@ class FakeGitHub:
     def patch(self, repo, number):
         self._call("patch", repo, number)
         return next((pr.patch for pr in self._found([(repo, number)])), None)
+
+
+class FakeMergebot:
+    """`mergebot.fetch` stand-in answering each seeded page state, "unknown" for the rest."""
+
+    def __init__(self):
+        self.pages: dict[str, str] = {}
+        self.reads: list[str] = []
+
+    def __call__(self, repo: str, number: int) -> mergebot.MergebotState:
+        self.reads.append(f"{repo}#{number}")
+        return mergebot.MergebotState(self.pages.get(f"{repo}#{number}", "unknown"))
 
 
 class FakeReviewer:

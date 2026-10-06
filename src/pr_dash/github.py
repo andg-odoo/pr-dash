@@ -844,7 +844,7 @@ def fetch_patch(repo: str, number: int) -> str | None:
         return None
 
 
-View = Literal["queue", "tracked", "mine"]
+View = Literal["queue", "tracked", "mine", "history"]
 
 
 class GitHub(Protocol):
@@ -908,7 +908,10 @@ class GhGitHub:
         if view == "queue":
             return {f"{n['repository']['nameWithOwner']}#{n['number']}": n
                     for n in fetch_pr_nodes(_with_ids(refs))}
-        return fetch_nodes(refs, TRACKED_NODE_FRAGMENT if view == "tracked" else MINE_NODE_FRAGMENT)
+        if view == "tracked":
+            return fetch_nodes(refs, TRACKED_NODE_FRAGMENT)
+        # A closed PR carries its whole discussion, and 50 of them overran GitHub's 10 s limit.
+        return fetch_nodes(refs, MINE_NODE_FRAGMENT, chunk_size=10 if view == "history" else 50)
 
     def authored_open(self, login):
         return search_authored_open(login)
