@@ -9,6 +9,7 @@
   --border: #2a2f3a;
   --chip-bg: #20242e;
   --chip-active: #3a86ff;
+  --unresolved-bg: #33290f;
   --green: #6ad08a;
   --yellow: #e0c060;
   --orange: #e0904a;
@@ -630,13 +631,6 @@ body {
   margin-right: 8px;
 }
 
-.thread-where {
-  font-family: ui-monospace, monospace;
-  color: var(--fg-faint);
-  font-size: 10px;
-  margin-right: 4px;
-}
-
 .detail-header .crumbs {
   font-size: 13px;
   color: var(--fg-dim);
@@ -1120,50 +1114,6 @@ body {
   overflow-wrap: anywhere;
 }
 
-.thread {
-  background: var(--bg-elev2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 6px 10px;
-  margin-bottom: 4px;
-  font-size: 11px;
-  display: flex;
-  justify-content: space-between;
-}
-
-.thread .who { color: var(--orange); }
-.thread.resolved { opacity: 0.5; }
-
-.thread-count {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--fg-faint);
-}
-
-.thread-snippets {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.thread-snippet {
-  display: block;
-  background: var(--bg-elev2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 6px 10px;
-  font-size: 11px;
-  text-decoration: none;
-  color: var(--fg-dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.thread-snippet:hover { border-color: var(--accent); }
-.thread-snippet .who { color: var(--orange); margin-right: 4px; }
-.thread-snippet .snippet-text { color: var(--fg); }
-
 .ping-notice {
   display: flex;
   align-items: baseline;
@@ -1366,7 +1316,7 @@ body {
 .tab.is-active .tab-count { color: var(--fg-dim); }
 
 .tr-empty,
-.tr-none {
+.disc-none {
   color: var(--fg-faint);
   font-size: 13px;
   padding: 16px 12px;
@@ -1400,27 +1350,24 @@ body {
 .look-resolved { background: #2a1f36; color: #c08ae0; }
 .look-reopened { background: #331d1d; color: var(--red); }
 
-.tr-verdict,
-.tr-onpath,
-.tr-unresolved {
+.disc-verdict,
+.disc-onpath,
+.disc-unresolved {
   border-radius: 3px;
   font-size: 10px;
   font-weight: 600;
   padding: 1px 4px;
 }
 
-.tr-verdict-ok  { background: #1d2b1f; color: var(--green); }
-.tr-verdict-no  { background: #331d1d; color: var(--red); }
-.tr-verdict-dim { background: var(--chip-bg); color: var(--fg-faint); }
-.tr-onpath      { background: var(--chip-bg); color: var(--fg-dim); font-weight: 400; }
-.tr-unresolved  { background: #33290f; color: var(--yellow); }
-
-/* Inline thread replies read as secondary to top-level review activity. */
-.tr-comment-thread { border-left: 2px solid var(--border); }
+.disc-verdict-ok  { background: #1d2b1f; color: var(--green); }
+.disc-verdict-no  { background: #331d1d; color: var(--red); }
+.disc-verdict-dim { background: var(--chip-bg); color: var(--fg-faint); }
+.disc-onpath      { background: var(--chip-bg); color: var(--fg-dim); font-weight: 400; }
+.disc-unresolved  { background: var(--unresolved-bg); color: var(--yellow); }
 
 /* Discussion tree. Top-level entries (reviews, conversation comments) are
    cards; the threads they opened nest inside, folded unless unresolved. */
-.tr-entry {
+.disc-entry {
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1428,11 +1375,11 @@ body {
   padding: 8px 10px;
 }
 
-.tr-entry-orphan { background: none; border-style: dashed; }
+.disc-entry-orphan { background: none; border-style: dashed; }
 
-.tr-msg + .tr-msg { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; }
+.disc-msg + .disc-msg { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; }
 
-.tr-msg header {
+.disc-msg header {
   align-items: baseline;
   color: var(--fg-faint);
   display: flex;
@@ -1442,19 +1389,19 @@ body {
   margin-bottom: 3px;
 }
 
-.tr-msg header a { color: var(--fg-faint); text-decoration: none; }
-.tr-msg header a:hover { color: var(--accent); }
-.tr-comment-author { color: var(--fg-dim); font-weight: 600; }
+.disc-msg header a { color: var(--fg-faint); text-decoration: none; }
+.disc-msg header a:hover { color: var(--accent); }
+.disc-comment-author { color: var(--fg-dim); font-weight: 600; }
 
-.tr-msg-body { font-size: 13px; }
-.tr-msg-body :first-child { margin-top: 0; }
-.tr-msg-body :last-child { margin-bottom: 0; }
+.disc-msg-body { font-size: 13px; }
+.disc-msg-body :first-child { margin-top: 0; }
+.disc-msg-body :last-child { margin-bottom: 0; }
 /* Screenshots pasted into review comments are frequently huge. */
-.tr-msg-body img { max-width: 100%; height: auto; }
+.disc-msg-body img { max-width: 100%; height: auto; }
 
-.tr-threads { margin-top: 8px; }
+.disc-threads { margin-top: 8px; }
 
-.tr-threads > summary {
+.disc-threads > summary {
   color: var(--fg-faint);
   cursor: pointer;
   font-size: 11px;
@@ -1463,26 +1410,26 @@ body {
   user-select: none;
 }
 
-.tr-threads > summary::-webkit-details-marker { display: none; }
-.tr-threads > summary::before { content: "▸ "; }
-.tr-threads[open] > summary::before { content: "▾ "; }
-.tr-threads > summary:hover { color: var(--fg-dim); }
+.disc-threads > summary::-webkit-details-marker { display: none; }
+.disc-threads > summary::before { content: "▸ "; }
+.disc-threads[open] > summary::before { content: "▾ "; }
+.disc-threads > summary:hover { color: var(--fg-dim); }
 
-.tr-thread {
+.disc-thread {
   border-left: 2px solid var(--border);
   margin: 16px 0 0 4px;
   padding-left: 10px;
 }
 
-.tr-replies {
+.disc-replies {
   border-left: 1px solid var(--border);
   margin: 8px 0 0 14px;
   padding-left: 12px;
 }
 
-.tr-thread-open { border-left-color: var(--yellow); }
+.disc-thread-open { border-left-color: var(--yellow); }
 
-.tr-thread-head {
+.disc-thread-head {
   align-items: baseline;
   display: flex;
   gap: 6px;

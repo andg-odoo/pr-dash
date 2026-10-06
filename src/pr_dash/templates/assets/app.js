@@ -1232,7 +1232,7 @@
           <span class="tr-branch">${escapeHTML(t.target_branch)}</span>
           ${ci}
           <span>${discussionParts(t).join(" · ") || "no discussion"}</span>
-          ${t.unresolved_threads ? `<span class="tr-unresolved">${t.unresolved_threads} unresolved</span>` : ""}
+          ${t.unresolved_threads ? `<span class="disc-unresolved">${t.unresolved_threads} unresolved</span>` : ""}
           <span>open ${t.age_days}d · ${when}</span>
         </span>`;
       li.addEventListener("click", (e) => {
@@ -1294,23 +1294,23 @@
   }
 
   const VERDICT = {
-    APPROVED: ["approved", "tr-verdict-ok"],
-    CHANGES_REQUESTED: ["requested changes", "tr-verdict-no"],
-    DISMISSED: ["dismissed", "tr-verdict-dim"],
-    COMMENTED: ["reviewed", "tr-verdict-dim"],
+    APPROVED: ["approved", "disc-verdict-ok"],
+    CHANGES_REQUESTED: ["requested changes", "disc-verdict-no"],
+    DISMISSED: ["dismissed", "disc-verdict-dim"],
+    COMMENTED: ["reviewed", "disc-verdict-dim"],
   };
 
   function commentHTML(c, { badge = "" } = {}) {
     const body = (c.body || "").trim();
     return `
-      <div class="tr-msg">
+      <div class="disc-msg">
         <header>
-          <span class="tr-comment-author">@${escapeHTML(c.author || "?")}</span>
+          <span class="disc-comment-author">@${escapeHTML(c.author || "?")}</span>
           ${badge}
-          <span class="tr-comment-when">${daysAgo(c.created_at)}</span>
+          <span class="disc-comment-when">${daysAgo(c.created_at)}</span>
           ${c.url ? `<a href="${escapeHTML(c.url)}" target="_blank" rel="noopener">link</a>` : ""}
         </header>
-        ${body ? `<div class="tr-msg-body markdown-body">${md.render(body)}</div>` : ""}
+        ${body ? `<div class="disc-msg-body markdown-body">${md.render(body)}</div>` : ""}
       </div>`;
   }
 
@@ -1319,20 +1319,20 @@
     const unresolved = threads.filter(t => t.state === "UNRESOLVED").length;
     const n = threads.length;
     return `
-      <details class="tr-threads"${unresolved ? " open" : ""}>
+      <details class="disc-threads"${unresolved ? " open" : ""}>
         <summary>
           ${n} thread${n === 1 ? "" : "s"}
-          ${unresolved ? `<span class="tr-unresolved">${unresolved} unresolved</span>` : ""}
+          ${unresolved ? `<span class="disc-unresolved">${unresolved} unresolved</span>` : ""}
         </summary>
         ${threads.map(t => `
-          <div class="tr-thread${t.state === "UNRESOLVED" ? " tr-thread-open" : ""}">
-            <div class="tr-thread-head">
+          <div class="disc-thread${t.state === "UNRESOLVED" ? " disc-thread-open" : ""}">
+            <div class="disc-thread-head">
               ${showMember ? memberTag(t.comments[0]) : ""}
-              <span class="tr-onpath" title="${escapeHTML(t.path || "")}">${escapeHTML((t.path || "?").split("/").pop())}</span>
-              ${t.state === "UNRESOLVED" ? '<span class="tr-unresolved">unresolved</span>' : ""}
+              <span class="disc-onpath" title="${escapeHTML(t.path || "")}">${escapeHTML((t.path || "?").split("/").pop())}</span>
+              ${t.state === "UNRESOLVED" ? '<span class="disc-unresolved">unresolved</span>' : ""}
             </div>
             ${commentHTML(t.comments[0])}
-            ${t.comments.length > 1 ? `<div class="tr-replies">${
+            ${t.comments.length > 1 ? `<div class="disc-replies">${
               t.comments.slice(1).map(c => commentHTML(c)).join("")}</div>` : ""}
           </div>`).join("")}
       </details>`;
@@ -1340,7 +1340,7 @@
 
   // The Branch set member a comment came from.
   function memberTag(c) {
-    return `<span class="tr-onpath">${escapeHTML(c.member || "")}</span>`;
+    return `<span class="disc-onpath">${escapeHTML(c.member || "")}</span>`;
   }
 
   // The Discussion tree with bot entries hidden, newest group first.
@@ -1350,17 +1350,17 @@
         .filter(t => t.comments.length);
       return (g.entry ? g.entry.is_bot : !threads.length) ? [] : [{ ...g, threads }];
     });
-    if (!groups.length) return `<div class="tr-none">${empty}</div>`;
+    if (!groups.length) return `<div class="disc-none">${empty}</div>`;
     return groups.map(g => {
       if (g.kind === "orphan") {
-        return `<article class="tr-entry tr-entry-orphan">${threadsHTML(g.threads, showMember)}</article>`;
+        return `<article class="disc-entry disc-entry-orphan">${threadsHTML(g.threads, showMember)}</article>`;
       }
       const c = g.entry;
       const v = c.kind === "review" ? VERDICT[c.state] : null;
       const badge = (showMember ? memberTag(c) : "")
-        + (v ? `<span class="tr-verdict ${v[1]}">${v[0]}</span>` : "");
+        + (v ? `<span class="disc-verdict ${v[1]}">${v[0]}</span>` : "");
       return `
-        <article class="tr-entry">
+        <article class="disc-entry">
           ${commentHTML(c, { badge })}
           ${threadsHTML(g.threads, showMember)}
         </article>`;
@@ -1403,7 +1403,7 @@
               ? `${t.state === "MERGED" ? "merged" : "closed"} ${daysAgo(t.merged_at || t.closed_at)}`
               : `last activity ${daysAgo(t.updated_at)}`}</dd>
             <dt>Discussion</dt><dd>${discussionParts(t).join(" · ") || "<em>(none)</em>"}${
-              t.unresolved_threads ? ` · <span class="tr-unresolved">${t.unresolved_threads} unresolved</span>` : ""}</dd>
+              t.unresolved_threads ? ` · <span class="disc-unresolved">${t.unresolved_threads} unresolved</span>` : ""}</dd>
             <dt>Tracked</dt><dd>${t.source === "manual" ? "manually" : "via subscription"}</dd>
           </dl>
         </section>
