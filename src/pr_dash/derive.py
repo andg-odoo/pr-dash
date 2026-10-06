@@ -905,7 +905,8 @@ def branch_sets(
                            key=lambda r: branch_order(r["target_branch"]))
             m["fw"] = [_forward_port(r, mergebot_states.get(r["id"])) for r in chain]
             for r, f in zip(chain, m["fw"], strict=True):
-                actions += _forward_port_attention(r, f, streams.get(f["id"], []), login)
+                actions += _forward_port_attention(
+                    r, f, streams.get(f["id"], []), mergebot_states.get(r["id"]), login)
                 chains.append((r, f))
             fyi += _chain_labels(m)
         actions.sort(key=lambda a: parse_iso(a["since"]))
@@ -1003,13 +1004,22 @@ def _member_attention(
                 blockers = ", ".join(pr["blockers"]) or "not ready"
                 act("linked", f"linked {pr['repo']}#{pr['number']}: {blockers}", head_at)
 
+        for kind, text, since in _bot_attention(row, m, stream, mergebot, login):
+            act(kind, text, since)
+
     if prev is None or not prev["fetched_at"]:
         return actions, fyi
     mark = parse_iso(prev["fetched_at"])
     for c in stream:
-        if c["author"] == login or is_bot(c["author"]) or parse_iso(c["created_at"]) <= mark:
+        if c["author"] == login or parse_iso(c["created_at"]) <= mark:
             continue
-        if c["kind"] == "review" and c["state"] == "APPROVED":
+        if c["author"] in _BOT_LOGINS:
+            kind, text = _bot_comment(c, stream, login)
+            if kind == "fyi" and text:
+                fyi.append(text)
+        elif is_bot(c["author"]):
+            continue
+        elif c["kind"] == "review" and c["state"] == "APPROVED":
             fyi.append("approved · r+ missing" if m["r_plus"] is False else "approved")
         else:
             fyi.append("new reply")
@@ -1036,21 +1046,126 @@ def _forward_port(row: dict, mergebot: dict | None) -> dict:
     return {**{k: m[k] for k in keep}, "base": row["target_branch"], "flag": flag}
 
 
-def _forward_port_attention(row: dict, f: dict, stream: list[dict], login: str) -> list[dict]:
-    """Action items of one open Forward-port: a conflict, red CI or a human waiting on the user."""
+def _forward_port_attention(
+    row: dict, f: dict, stream: list[dict], mergebot: dict | None, login: str,
+) -> list[dict]:
+    """Action items of one open Forward-port: conflict, red CI, a bot failure or a human waiting."""
     if f["state"] != "OPEN":
         return []
     head_at = row["head_committed_at"] or row["fetched_at"]
     items = []
     if f["conflict"]:
-        items.append(("merge conflict", head_at))
+        items.append(("fw", "merge conflict", head_at))
     if f["ci"] == "red":
-        items.append(("CI red: " + ", ".join(f["ci_failing"]), head_at))
+        items.append(("fw", "CI red: " + ", ".join(f["ci_failing"]), head_at))
     humans = [c for c in stream if not is_bot(c["author"])]
     if humans and humans[-1]["author"] != login:
-        items.append((f"{humans[-1]['author']} commented", humans[-1]["created_at"]))
-    return [{"member": f["ref"], "kind": "fw", "text": f"forward-port to {f['base']}: {text}",
-             "since": since} for text, since in items]
+        items.append(("fw", f"{humans[-1]['author']} commented", humans[-1]["created_at"]))
+    for kind, text, since in _bot_attention(row, f, stream, mergebot, login):
+        items.append(("command" if kind == "command" else "fw", text, since))
+    return [{"member": f["ref"], "kind": kind, "text": f"forward-port to {f['base']}: {text}",
+             "since": since} for kind, text, since in items]
+
+
+# Bot phrases, see odoo/runbot runbot_merge/data/runbot_merge.pull_requests.feedback.template.csv
+_BOT_ACTION_RE = re.compile(
+    r"staging failed|failed on this reviewed PR|has failed CI|unable to stage|how to merge it"
+    r"|cherrypicking of pull request \S+ failed|is in conflict|did not succeed"
+    r"|can't be used as a forward port target",
+    re.IGNORECASE,
+)
+_BOT_REJECTION_RE = re.compile(
+    r"I'm afraid I can't do that|you can't review\+|already reviewed"
+    r"|I can only do this on unmodified forward-port PRs",
+    re.IGNORECASE,
+)
+_BOT_FYI = [
+    (re.compile(p, re.IGNORECASE), label) for p, label in (
+        ("Pull request status dashboard", None),
+        (r"linked pull request\(s\) .* not ready", None),
+        ("Currently available commands", None),
+        ("of the forward-port chain", None),
+        ("Merge method set to", "merge method set"),
+        ("Forward-porting to '([^']+)'", "forward-porting to {}"),
+        ("Starting forward-port", "forward-port started"),
+        ("Disabled forward-porting", "forward-porting disabled"),
+        ("forward-port PRs awaiting action", "forward-ports awaiting action"),
+        ("has become a normal PR", "forward-port detached"),
+    )
+]
+_BOT_ADDRESS_RE = re.compile(r"^(?:I'm sorry, )?(?:@[\w-]+[\s.:,]*)+")
+_MENTION_RE = re.compile(r"@([\w-]+)")
+
+
+def _bot_sentence(body: str | None) -> str:
+    """The first sentence of a bot comment, without its leading @mentions or runbot link."""
+    line = _BOT_ADDRESS_RE.sub("", (body or "").strip().partition("\n")[0])
+    line = re.split(r"\.(?:\s|$)| \(view more", line)[0].rstrip(":")
+    return re.sub(r"\b([0-9a-f]{7})[0-9a-f]{33}\b", r"\1", " ".join(line.split()))
+
+
+def _bot_comment(c: dict, stream: list[dict], login: str) -> tuple[str, str | None]:
+    """Classify a robodoo or fw-bot comment as ("bot" | "command" | "fyi", text or None)."""
+    body = c["body"] or ""
+    if _BOT_REJECTION_RE.search(body):
+        commander = (_MENTION_RE.findall(body) or [""])[0]
+        mention = f"@{c['author']}".lower()
+        command = next((
+            e for e in reversed(stream[:stream.index(c)])
+            if e["author"] == commander and mention in (e["body"] or "").lower()
+        ), None)
+        if commander == login and command:
+            cmd = next(ln for ln in command["body"].splitlines() if mention in ln.lower())
+            return "command", f"{c['author']} rejected \"{cmd.strip()}\": {_bot_sentence(body)}"
+        return "fyi", f"{c['author']} rejected {commander}'s command"
+    if _BOT_ACTION_RE.search(body):
+        return "bot", f"{c['author']}: {_bot_sentence(body)}"
+    for pattern, label in _BOT_FYI:
+        if found := pattern.search(body):
+            return "fyi", label and label.format(*found.groups())
+    return "fyi", f"{c['author']} commented"
+
+
+def _bot_attention(
+    row: dict, m: dict, stream: list[dict], mergebot: dict | None, login: str,
+) -> list[tuple[str, str, str]]:
+    """(kind, text, since) of each bot failure that no push, command or page has settled."""
+    managed = mergebot is not None and mergebot["state"] not in ("unmanaged", "unknown")
+    checks = {c["name"] for c in row["checks"]} | {
+        c["name"] for c in (mergebot["checks"] if managed else [])}
+    out: dict[tuple[str, str], str] = {}
+    for i, c in enumerate(stream):
+        if c["author"] not in _BOT_LOGINS:
+            continue
+        kind, text = _bot_comment(c, stream, login)
+        if kind == "fyi" or (managed and mergebot["state"] == "staged"):
+            continue
+        later = stream[i + 1:]
+        if kind == "command":
+            mention = f"@{c['author']}".lower()
+            if not any(e["author"] == login and mention in (e["body"] or "").lower()
+                       for e in later):
+                out.setdefault((kind, text), c["created_at"])
+            continue
+        if row["head_committed_at"] and parse_iso(row["head_committed_at"]) > parse_iso(
+                c["created_at"]):
+            continue
+        phrase = _BOT_ACTION_RE.search(c["body"]).group(0).lower()
+        failed_check = re.search(r"'([^']+)' failed on this reviewed PR", c["body"])
+        # The page and the GitHub checks answer CI, conflicts and readiness, so they win.
+        settled = {
+            "staging failed": managed and mergebot["state"] != "error",
+            "failed on this reviewed pr": failed_check and failed_check.group(1) in checks,
+            "has failed ci": m["ci"] is not None,
+            "unable to stage": m["conflict"],
+            "how to merge it": managed and mergebot["merge_method"],
+            "can't be used as a forward port target": any(
+                e["author"] in _BOT_LOGINS and "Forward-porting to" in (e["body"] or "")
+                for e in later),
+        }.get(phrase, phrase.startswith("cherrypicking") and m["conflict"])
+        if not settled:
+            out.setdefault((kind, text), c["created_at"])
+    return [(kind, text, since) for (kind, text), since in out.items()]
 
 
 def _chain_labels(m: dict) -> list[str]:

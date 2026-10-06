@@ -630,9 +630,9 @@ def _sets(rows, pages, *, streams=None, acks=None, seen=None, now="2026-10-05T00
                               acks=acks or {}, seen=seen or {}, now=now)
 
 
-def _entry(kind, author, at, *, state=None, thread=None, path=None):
+def _entry(kind, author, at, *, state=None, thread=None, path=None, body=None):
     return {"kind": kind, "author": author, "created_at": at, "state": state,
-            "thread_id": thread, "path": path}
+            "thread_id": thread, "path": path, "body": body}
 
 
 def _actions(s):
@@ -828,6 +828,12 @@ def test_acknowledge_holds_until_a_push_a_comment_or_a_ci_change():
         assert (back["band"], back["acknowledged"]) == ("needs", False)
 
 
+_DASHBOARD = ("[![Pull request status dashboard](https://mergebot.odoo.com/odoo/odoo/pull/1.png)]"
+              "(https://mergebot.odoo.com/odoo/odoo/pull/1)")
+_FW_CHAIN = ("This PR targets master and is part of the forward-port chain. Further PRs will be"
+             " created up to master.\n\nMore info at https://github.com/odoo/odoo/wiki/Mergebot")
+
+
 def test_fyi_labels_are_movement_since_the_last_look():
     events = {"nodes": [
         {"__typename": "ReviewRequestedEvent", "createdAt": "2026-10-04T00:00:00Z",
@@ -842,7 +848,7 @@ def test_fyi_labels_are_movement_since_the_last_look():
         _entry("issue", "clbr-odoo", "2026-10-02T00:00:00Z"),
         _entry("review", "jco-odoo", "2026-10-04T00:00:00Z", state="APPROVED"),
         _entry("issue", "andg", "2026-10-04T00:00:00Z"),
-        _entry("issue", "robodoo", "2026-10-04T00:00:00Z"),
+        _entry("issue", "robodoo", "2026-10-04T00:00:00Z", body=_DASHBOARD),
         _entry("issue", "clbr-odoo", "2026-10-04T01:00:00Z"),
     ]}
     seen = {"odoo/odoo#1": {"fetched_at": "2026-10-03T00:00:00+00:00", "r_plus": 0}}
@@ -911,13 +917,124 @@ def test_conflicted_or_red_forward_port_lifts_its_source():
 def test_human_comment_on_a_forward_port_lifts_until_the_user_answers():
     rows = [_SOURCE, _fw(291981, "master")]
     pages = {"odoo/odoo#290657": _page("odoo_odoo_290657_merged")}
-    stream = [_entry("issue", "fw-bot", "2026-10-03T00:00:00Z"),
+    stream = [_entry("issue", "fw-bot", "2026-10-03T00:00:00Z", body=_FW_CHAIN),
               _entry("issue", "clbr-odoo", "2026-10-04T00:00:00Z")]
     [s] = _sets(rows, pages, streams={"odoo/odoo#291981": stream})
     assert (s["band"], _actions(s), s["actions"][0]["since"]) == (
         "needs", [("odoo#291981", "fw", "forward-port to master: clbr-odoo commented")],
         "2026-10-04T00:00:00Z")
     answered = [*stream, _entry("issue", "andg", "2026-10-04T01:00:00Z"),
-                _entry("issue", "fw-bot", "2026-10-04T02:00:00Z")]
+                _entry("issue", "fw-bot", "2026-10-04T02:00:00Z", body=_FW_CHAIN)]
     [s] = _sets(rows, pages, streams={"odoo/odoo#291981": answered})
     assert (s["band"], s["actions"]) == ("open", [])
+
+
+# Real robodoo and fw-bot bodies from the user's PRs, the user's login shortened to andg.
+_BOT_ACTIONS = [
+    ("robodoo", ("@andg @jorenvo staging failed: ci/runbot (view more at "
+                 "https://runbot.odoo.com/runbot/batch/2698708/build/121407522)"),
+     "robodoo: staging failed: ci/runbot"),
+    ("robodoo", "@andg @clbr-odoo 'ci/runbot' failed on this reviewed PR.",
+     "robodoo: 'ci/runbot' failed on this reviewed PR"),
+    ("robodoo", "@jorenvo you may want to rebuild or fix this PR as it has failed CI.",
+     "robodoo: you may want to rebuild or fix this PR as it has failed CI"),
+    ("robodoo", "@andg @william-andre unable to stage: merge conflict",
+     "robodoo: unable to stage: merge conflict"),
+    ("robodoo", ("@andg @clbr-odoo because this PR has multiple commits, I need to know how to "
+                 "merge it:\n\n* `merge` to merge directly, using the PR as merge commit message"),
+     "robodoo: because this PR has multiple commits, I need to know how to merge it"),
+    ("fw-bot", ("@andg @william-andre cherrypicking of pull request odoo/enterprise#37939 failed."
+                "\n\nstdout:\n```\nCONFLICT (content): Merge conflict in account/x.py\n```"),
+     "fw-bot: cherrypicking of pull request odoo/enterprise#37939 failed"),
+    ("fw-bot", ("@andg @william-andre the next pull request (odoo/enterprise#38761) is in "
+                "conflict. You can merge the chain up to here by saying\n> @fw-bot r+\n"),
+     "fw-bot: the next pull request (odoo/enterprise#38761) is in conflict"),
+    ("fw-bot", ("@andg @william-andre while this was properly forward-ported, at least one "
+                "co-dependent PR (odoo/enterprise#38761) did not succeed. You will need to fix "
+                "it before this can be merged."),
+     ("fw-bot: while this was properly forward-ported, at least one co-dependent PR "
+      "(odoo/enterprise#38761) did not succeed")),
+    ("fw-bot", ("@xavierbol there is no branch 'saas~15.2', it can't be used as a forward port "
+                "target."),
+     "fw-bot: there is no branch 'saas~15.2', it can't be used as a forward port target"),
+]
+_BOT_FYI = [
+    ("robodoo", _DASHBOARD, None),
+    ("robodoo", ("@andg @jorenvo linked pull request(s) odoo/upgrade#10698 not ready. Linked PRs "
+                 "are not staged until all of them are ready."), None),
+    ("robodoo", ("Currently available commands for @andg:\n\n|command||\n|-|-|\n|`help`|displays "
+                 "this help|\n|`r(eview)-`|removes approval of a previously approved PR|"), None),
+    ("fw-bot", _FW_CHAIN, None),
+    ("robodoo", "Merge method set to rebase and fast-forward.", "merge method set"),
+    ("robodoo", "Forward-porting to 'saas-18.2'.", "forward-porting to saas-18.2"),
+    ("robodoo", "Starting forward-port. Not waiting for merge to create followup forward-ports.",
+     "forward-port started"),
+    ("robodoo", "Disabled forward-porting.", "forward-porting disabled"),
+    ("fw-bot", ("@andg @william-andre this pull request has forward-port PRs awaiting action (not "
+                "merged or closed):\nodoo/enterprise#38753\n- odoo/enterprise#38761"),
+     "forward-ports awaiting action"),
+    ("fw-bot", ("child PR odoo/enterprise#119039 has become a normal PR because head updated from "
+                "98fe2e68f5b3ac5fb95ebdd518ebcddbfbdc0913 to "
+                "69d2fadc709d20cfbb90b4724e6a957c347d80a4. This PR (and any of its parents) will "
+                "need to be merged independently as approvals won't cross."),
+     "forward-port detached"),
+]
+
+
+def _bot_set(stream, *, pages=None, **over):
+    row = _mine_row("odoo/odoo", 1, "a", checks=(), **over)
+    seen = {"odoo/odoo#1": {"fetched_at": "2026-10-02T12:00:00+00:00", "r_plus": 0}}
+    [s] = _sets([row], pages or {}, streams={"odoo/odoo#1": stream}, seen=seen)
+    return s
+
+
+def test_bot_failures_lift_and_the_other_bot_templates_are_fyi_at_most():
+    for bot, body, text in _BOT_ACTIONS:
+        s = _bot_set([_entry("issue", bot, "2026-10-03T00:00:00Z", body=body)])
+        assert (s["band"], _actions(s), s["fyi"]) == ("needs", [("odoo#1", "bot", text)], []), body
+    for bot, body, label in _BOT_FYI:
+        s = _bot_set([_entry("issue", bot, "2026-10-03T00:00:00Z", body=body)])
+        assert (s["band"], s["fyi"]) == ("open", [label] if label else []), body
+
+
+def test_a_rejected_command_lifts_only_when_the_user_sent_it():
+    def rejected(commander, reply):
+        return _bot_set([
+            _entry("issue", commander, "2026-10-03T00:00:00Z", body="@robodoo r+"),
+            _entry("issue", "robodoo", "2026-10-03T00:01:00Z", body=reply)])
+
+    mine = rejected("andg", "I'm sorry, @andg: you can't review+.")
+    assert (mine["band"], _actions(mine)) == ("needs", [
+        ("odoo#1", "command", 'robodoo rejected "@robodoo r+": you can\'t review+')])
+    theirs = rejected("jorenvo", "I'm sorry, @jorenvo. I'm afraid I can't do that.")
+    assert (theirs["band"], theirs["fyi"]) == (
+        "open", ["new reply", "robodoo rejected jorenvo's command"])
+
+
+def test_a_bot_failure_clears_on_a_push_or_once_the_page_moved_on():
+    failed = [_entry("issue", "robodoo", "2026-10-03T00:00:00Z", body=_BOT_ACTIONS[0][1])]
+    assert _bot_set(failed)["band"] == "needs"
+    assert _bot_set(failed, pushed="2026-10-04T00:00:00Z")["actions"] == []
+    for state in ("error", "ready"):
+        page = dataclasses.asdict(mergebot.MergebotState(state, merge_method=True))
+        assert bool(_bot_set(failed, pages={"odoo/odoo#1": page})["actions"]) is (state == "error")
+
+
+def test_a_ci_failure_comment_on_an_overridden_check_raises_nothing():
+    stream = [_entry("issue", "robodoo", "2026-10-03T00:00:00Z", body=body)
+              for _, body, _ in _BOT_ACTIONS[1:3]]
+    row = _mine_row("odoo/odoo", 290109, "b", checks=[("ci/style", "ERROR")])
+    [s] = _sets([row], {"odoo/odoo#290109": _page("odoo_odoo_290109_blocked_linked")},
+                streams={"odoo/odoo#290109": stream})
+    assert (s["band"], s["actions"]) == ("open", [])
+
+
+def test_a_cherry_pick_failure_on_a_forward_port_lifts_its_source():
+    rows = [_SOURCE, _fw(291981, "master")]
+    body = ("cherrypicking of pull request odoo/odoo#290657 failed.\n\nstdout:\n```\n"
+            "CONFLICT (content): Merge conflict in addons/account/models/account_move.py\n```")
+    [s] = _sets(rows, {"odoo/odoo#290657": _page("odoo_odoo_290657_merged")}, streams={
+        "odoo/odoo#291981": [_entry("issue", "fw-bot", "2026-10-03T00:00:00Z", body=body)]})
+    assert (s["band"], _actions(s)) == ("needs", [(
+        "odoo#291981", "fw",
+        "forward-port to master: fw-bot: cherrypicking of pull request odoo/odoo#290657 failed")])
