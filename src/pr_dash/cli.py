@@ -1221,15 +1221,10 @@ def _reconcile_sibling_states(conn, cfg, kept_ids: set[str]) -> None:
         node = activity.get(p["id"]) or {}
         return node.get("headRefOid") or p["head_sha"]
 
-    # A hide is keyed on every member's sha (hidden.item_sha), so pseudo items carry the whole set.
-    set_of = {m["id"]: s for s in branch_set.group(prs) for m in s.members}
+    live_sets = branch_set.group({**p, "head_sha": _live_sha(p)} for p in prs)
+    set_of = {m["id"]: s for s in live_sets for m in s.members}
     hidden_ids = set(hidden.prune(hidden.load(cfg), [
-        {
-            "id": p["id"],
-            "head_sha": _live_sha(p),
-            "members": [{"head_sha": _live_sha(m)} for m in set_of[p["id"]].members],
-        }
-        for p in stale
+        {"id": p["id"], "heads_key": set_of[p["id"]].heads_key} for p in stale
     ]))
 
     closed = pinged = pushed = 0

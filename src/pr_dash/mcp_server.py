@@ -12,7 +12,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from pr_dash import ai, config, db, derive, github, hidden, query
+from pr_dash import ai, branch_set, config, db, derive, github, hidden, query
 
 # stderr only: stdout is the MCP protocol channel, so a single stray print or
 # rich.Console write there corrupts the stream. Everything human-facing goes to
@@ -455,8 +455,8 @@ def get_mine(ref: str) -> dict:
 @mcp.tool()
 def hide_pr(ref: str) -> dict:
     """Hide a PR from the pending queue (same as the dashboard's × button). It
-    stays hidden until a head commit changes - a push to either half of a pair
-    auto-unhides it.
+    stays hidden until a head commit changes - a push to any code half of its
+    Branch set auto-unhides it.
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
     Returns {id, hidden: true, hidden_count}.
@@ -475,11 +475,12 @@ def hide_pr(ref: str) -> dict:
             )
         except (github.GithubError, ValueError):
             pass
-        members.append({**member, "head_sha": live or member.get("head_sha")})
+        members.append({**member, "head_sha": live or member["head_sha"]})
+    live_set = branch_set.BranchSet((item["author"], item["head_branch"]), tuple(members))
     mapping = hidden.apply_ops(cfg, [{
         "op": "hide",
         "pr_id": item["id"],
-        "head_sha": hidden.item_sha({**item, "members": members}),
+        "head_sha": live_set.heads_key,
         "hidden_at": derive.now_utc(),
     }])
     return {"id": item["id"], "hidden": True, "hidden_count": len(mapping)}

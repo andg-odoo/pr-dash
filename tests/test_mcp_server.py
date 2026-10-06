@@ -52,7 +52,7 @@ def _cfg(tmp_path: Path, **kw) -> Config:
 
 def _item(pr_id, head_sha, **over):
     repo, num = pr_id.split("#")
-    item = {"id": pr_id, "head_sha": head_sha,
+    item = {"id": pr_id, "head_sha": head_sha, "heads_key": head_sha,
             "members": [{"repo_short": repo.split("/")[-1], "number": int(num),
                          "head_sha": head_sha}]}
     item.update(over)
@@ -173,14 +173,15 @@ def test_hide_pr_records_live_sha(tmp_path, monkeypatch):
     from pr_dash.config import Config
 
     cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
-    items = [{"id": "odoo/odoo#1", "head_sha": "stale",
-              "members": [{"repo": "odoo/odoo", "number": 1}]}]
+    items = [{"id": "odoo/odoo#1", "author": "a", "head_branch": "b",
+              "members": [{"repo": "odoo/odoo", "number": 1, "head_sha": "stale"},
+                          {"repo": "odoo/enterprise", "number": 2, "head_sha": "stale"}]}]
     mcp_server = _patch_cfg_and_items(monkeypatch, cfg, items)
     # The cached sha of an archived row can predate pushes; the hide must
     # record the live sha or it expires against it on the next reconcile.
-    monkeypatch.setattr(github, "fetch_head_sha", lambda repo, number: "live")
+    monkeypatch.setattr(github, "fetch_head_sha", lambda repo, number: f"live{number}")
     mcp_server.hide_pr("odoo/odoo#1")
-    assert hidden.load(cfg)["odoo/odoo#1"]["head_sha"] == "live"
+    assert hidden.load(cfg)["odoo/odoo#1"]["head_sha"] == "live1+live2"
 
 
 def test_hide_pr_falls_back_to_cached_sha(tmp_path, monkeypatch):
@@ -188,8 +189,8 @@ def test_hide_pr_falls_back_to_cached_sha(tmp_path, monkeypatch):
     from pr_dash.config import Config
 
     cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
-    items = [{"id": "odoo/odoo#1", "head_sha": "stale",
-              "members": [{"repo": "odoo/odoo", "number": 1}]}]
+    items = [{"id": "odoo/odoo#1", "author": "a", "head_branch": "b",
+              "members": [{"repo": "odoo/odoo", "number": 1, "head_sha": "stale"}]}]
     mcp_server = _patch_cfg_and_items(monkeypatch, cfg, items)
 
     def _boom(repo, number):
@@ -243,6 +244,17 @@ def _seeded_cfg(tmp_path, monkeypatch, seed, rerenders=None):
     monkeypatch.setattr(mcp_server, "_run_rerender", _fake_rerender)
     monkeypatch.setattr(mcp_server, "_RERENDER_DEBOUNCE_S", 0.01)
     return cfg, mcp_server
+
+
+def test_a_pair_hide_holds_until_either_half_moves(tmp_path, monkeypatch):
+    def seed(conn):
+        _seed_pr(conn, "odoo/odoo#1", "bbb")
+        _seed_pr(conn, "odoo/enterprise#2", "aaa")
+    cfg, mcp_server = _seeded_cfg(tmp_path, monkeypatch, seed)
+    hidden.save(cfg, {"odoo/odoo#1": {"head_sha": "aaa+bbb", "hidden_at": "t"}})
+    assert mcp_server.list_prs()["prs"] == []
+    hidden.save(cfg, {"odoo/odoo#1": {"head_sha": "bbb+ccc", "hidden_at": "t"}})
+    assert [p["id"] for p in mcp_server.list_prs()["prs"]] == ["odoo/odoo#1"]
 
 
 def test_set_ai_review_writes_and_reads_back(tmp_path, monkeypatch):

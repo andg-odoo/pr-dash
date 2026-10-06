@@ -37,3 +37,18 @@ def test_another_author_or_branch_makes_a_set_of_one():
         ["odoo/odoo#1"], ["odoo/enterprise#2"], ["odoo/enterprise#3"]]
     assert sets[1].primary["id"] == "odoo/enterprise#2"
     assert sets[1].companion is None
+
+
+def test_heads_key_joins_the_halves_shas_and_moves_on_any_halfs_push():
+    rows = [_row("odoo/odoo#1"), _row("odoo/enterprise#2"), _row("odoo/upgrade#3")]
+    rows[0]["head_sha"], rows[1]["head_sha"] = "bbb", "aaa"
+    [s] = branch_set.group(rows)
+    assert s.heads_key == "aaa+bbb"
+    rows[1]["head_sha"] = "ccc"
+    [moved] = branch_set.group(rows)
+    assert moved.heads_key == "bbb+ccc"
+
+
+def test_heads_key_of_a_set_of_one_is_its_bare_sha():
+    sets = branch_set.group([_row("odoo/odoo#1"), _row("odoo/upgrade#3", head_branch="mig")])
+    assert [s.heads_key for s in sets] == ["sha-odoo/odoo#1", "sha-odoo/upgrade#3"]

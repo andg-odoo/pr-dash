@@ -70,27 +70,6 @@ def apply_ops(cfg: Config, ops: list[dict]) -> dict:
     return mapping
 
 
-def item_sha(item: dict) -> str | None:
-    """The head state a hide is taken against: every member's head sha, joined.
-
-    A pair is one row on the dashboard, so it has to behave like one - a push to
-    either half changes the thing that was hidden. Keying on the primary member
-    alone (always the odoo/odoo half, per render._make_item's ordering) let an
-    enterprise-side push, and every re-review request that followed it, stay
-    invisible for as long as the odoo half sat still.
-
-    Sorted, so the value never depends on member ordering. A solo PR yields its
-    own sha unchanged, which keeps existing single-sha entries working; a pair's
-    legacy single-sha entry stops matching and expires once - the intended
-    one-time correction for hides taken under the old rule.
-    """
-    members = item.get("members") or []
-    shas = sorted(m["head_sha"] for m in members if m.get("head_sha"))
-    if shas:
-        return "+".join(shas)
-    return item.get("head_sha")
-
-
 def prune(mapping: dict, items: list[dict]) -> dict:
     """Drop entries whose PR no longer exists or whose head_sha moved.
 
@@ -105,7 +84,7 @@ def prune(mapping: dict, items: list[dict]) -> dict:
         if item is None:
             continue
         stored = (entry or {}).get("head_sha")
-        current = item_sha(item)
+        current = item["heads_key"]
         if stored and current and stored != current:
             continue
         out[pr_id] = entry

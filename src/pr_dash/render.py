@@ -408,6 +408,7 @@ def _make_item(bset: branch_set.BranchSet, my_login: str,
         "id": primary["id"],
         "is_pair": len(members) > 1,
         "head_sha": primary["head_sha"],
+        "heads_key": bset.heads_key,
         "members": [
             {"repo": m["repo"], "repo_short": m["repo_short"], "number": m["number"],
              "url": m["url"], "head_sha": m["head_sha"], "title": m["title"],

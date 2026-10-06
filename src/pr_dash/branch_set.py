@@ -43,6 +43,11 @@ class BranchSet:
         """The first code half, or the Companion of a set that has none."""
         return self.members[0]
 
+    @property
+    def heads_key(self) -> str:
+        """Code halves' head shas sorted and joined with "+", a lone Companion keyed on its own."""
+        return "+".join(sorted(m["head_sha"] for m in self.halves or self.members))
+
 
 def group(rows: Iterable[Mapping]) -> list[BranchSet]:
     """Group rows on (author, head branch), in the order each set's first row came.
