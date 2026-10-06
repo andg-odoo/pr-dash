@@ -4,7 +4,7 @@ import json
 import logging
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pr_dash import derive
 
@@ -134,9 +134,7 @@ Target branch: {branch}
 Description:
 {body}
 
-Companion half (CONTEXT - do not review): {sibling_title} ({sibling_repo}#{sibling_number})
-Companion diff (context):
-{sibling_diff}
+{context}
 {migration}
 Target diff (REVIEW THIS):
 {diff}
@@ -149,6 +147,19 @@ Respond with JSON ONLY, no preamble:
   "verdict": "looks-good|minor|major"}}
 
 If you have no concerns, return concerns: []. Max 5 concerns, most important first."""
+
+CONTEXT_HALF = """Companion half (CONTEXT - do not review): {title} ({repo}#{number})
+Companion diff (context):
+{diff}"""
+
+
+@dataclass
+class ContextHalf:
+    """Another code half of the Branch set, shown to the model as context only."""
+    repo: str
+    number: int
+    title: str
+    diff: str
 
 
 @dataclass
@@ -176,11 +187,7 @@ class ReviewRequest:
     diff: str
     repo: str = ""
     number: int = 0
-    sibling_head_sha: str = ""
-    sibling_repo: str | None = None
-    sibling_number: int | None = None
-    sibling_title: str | None = None
-    sibling_diff: str | None = None
+    context: list[ContextHalf] = field(default_factory=list)
     companion: Companion | None = None
     # The repo the companion lookup searched. Empty means it did not run at all
     # (disabled, or unreachable), and the prompt then says nothing either way -
@@ -252,10 +259,9 @@ def _migration_section(req: ReviewRequest, cap: int) -> str:
 
 def _build_prompt(req: ReviewRequest, cap: int) -> str:
     migration = _migration_section(req, cap)
-    if req.sibling_diff is not None:
-        # The reviewed half gets the whole budget it was gated on; the companion
-        # is context, so it gets half of one - a big sibling must not crowd out
-        # the code actually under review.
+    if req.context:
+        # The context halves share half the budget, so a big one never crowds out the reviewed half.
+        context_cap = cap // 2 // len(req.context)
         return REVIEW_PROMPT_PAIRED.format(
             title=req.title,
             repo=req.repo,
@@ -265,13 +271,13 @@ def _build_prompt(req: ReviewRequest, cap: int) -> str:
             branch=req.branch,
             migration=migration,
             diff=_diff_for_prompt(req.diff, cap, repo=req.repo, number=req.number),
-            sibling_repo=req.sibling_repo,
-            sibling_number=req.sibling_number,
-            sibling_title=req.sibling_title or "(unknown)",
-            sibling_diff=_diff_for_prompt(
-                req.sibling_diff, cap // 2,
-                repo=req.sibling_repo or "", number=req.sibling_number or 0,
-            ) if req.sibling_diff else "(no diff)",
+            context="\n\n".join(
+                CONTEXT_HALF.format(
+                    title=h.title or "(unknown)", repo=h.repo, number=h.number,
+                    diff=_diff_for_prompt(h.diff, context_cap, repo=h.repo, number=h.number),
+                )
+                for h in req.context
+            ),
         )
     return REVIEW_PROMPT_SINGLE.format(
         title=req.title,

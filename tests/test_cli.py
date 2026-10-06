@@ -713,6 +713,27 @@ def test_review_queue_carries_the_companion_and_rekeys_the_cache(tmp_path):
     assert reqs == []
 
 
+def test_review_queue_reviews_each_half_against_the_others_and_the_sets_companion(tmp_path):
+    conn = db.connect(_companion_cfg(tmp_path).db_path)
+    for pr_id, sha in (("odoo/odoo#1", "sha1"), ("odoo/enterprise#2", "sha2"),
+                       ("odoo/design-themes#3", "sha3")):
+        _insert_pr(conn, pr_id, head_branch="feat-x", head_sha=sha)
+        db.upsert_diff(conn, sha, _difffile("m/models/x.py", f"+{sha}\n"), False, "t")
+    # Stored on one half only, the Companion still belongs to the whole set.
+    db.upsert_companion(conn, "odoo/design-themes#3", {
+        "repo": "odoo/upgrade", "number": 900, "url": "u", "title": "mig",
+        "author": "x", "state": "OPEN", "is_draft": 0, "head_branch": "feat-x",
+        "head_sha": "usha", "fetched_at": "t",
+    })
+
+    reqs, ctx = cli._build_review_queue(
+        conn, {"odoo/odoo#1", "odoo/enterprise#2", "odoo/design-themes#3"}, 50_000)
+    assert ctx == {"sha1": ("sha2+sha3", "usha"), "sha2": ("sha1+sha3", "usha"),
+                   "sha3": ("sha1+sha2", "usha")}
+    odoo = next(r for r in reqs if r.head_sha == "sha1")
+    assert [(h.number, h.diff.splitlines()[-1]) for h in odoo.context] == [(2, "+sha2"), (3, "+sha3")]
+
+
 # --- _run_mine_refresh -------------------------------------------------------
 
 def _mine_node(repo, number, state):

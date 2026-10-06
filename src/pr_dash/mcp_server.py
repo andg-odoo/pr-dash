@@ -56,44 +56,17 @@ def _hidden_ids(cfg: config.Config, items: list[dict]) -> set[str]:
 
 
 def _ai_review_shas(item: dict, ref: str) -> tuple[str, str, str]:
-    """(head_sha, sibling_head_sha, companion_head_sha) identifying the ai_review
-    row `ref` names.
-
-    The pipeline reviews each half of a pair separately, so a fully reviewed pair
-    has one row per half. `ref` therefore selects the half to write: resolve_item
-    collapses either number onto the shared item, so without re-matching here
-    every write would land on the primary and the pair could never be completed.
-
-    sibling_head_sha is the pair context the half was reviewed against - the
-    composite cache key cli._build_review_queue looks a review up by. That queue
-    only counts a sibling as context when the sibling's diff is actually cached,
-    since that is the only case where it had a companion diff to put in the
-    prompt. Same rule here: an unpaired PR, or a pair whose other half has no
-    cached diff (it blew the diff size gates), is stored pair-blind ('') - which
-    is exactly what the next refresh will look the row up by, so a manual review
-    reads as a cache hit instead of being recomputed over.
-
-    companion_head_sha is the bundle's migration PR, shared by both halves and
-    keyed on existence rather than on a cached diff - the same rule the queue
-    uses, for the same reason.
-    """
-    companion_sha = (item.get("companion") or {}).get("head_sha") or ""
-    members = item.get("members") or []
-    if len(members) != 2:
-        return item["head_sha"], "", companion_sha
+    """(head_sha, context_heads, companion_head_sha) of the half `ref` names, else the primary's."""
     repo_full, repo_short, number = query._parse_ref(ref)
-    idx = next(
-        (i for i, m in enumerate(members)
-         if query._member_matches(m, repo_full, repo_short, number)),
-        0,  # an item-level ref names no single half; fall back to the primary
+    bset = branch_set.BranchSet((item["author"], item["head_branch"]), tuple(item["members"]))
+    target = next(
+        (m for m in bset.halves if query._member_matches(m, repo_full, repo_short, number)),
+        bset.primary,
     )
-    target, sibling = members[idx], members[1 - idx]
-    diffs = {(d.get("repo_short"), d.get("number")): d.get("diff")
-             for d in item.get("diffs") or []}
-    sibling_diff = diffs.get((sibling.get("repo_short"), sibling.get("number")))
+    cached = {(d["repo_short"], d["number"]) for d in item["diffs"] if d["diff"]}
     return (target["head_sha"],
-            sibling["head_sha"] if sibling_diff else "",
-            companion_sha)
+            bset.context_heads(target, lambda h: (h["repo_short"], h["number"]) in cached),
+            (item["companion"] or {}).get("head_sha") or "")
 
 
 # --- dashboard re-render -----------------------------------------------------

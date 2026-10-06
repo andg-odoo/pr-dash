@@ -106,19 +106,6 @@ def _build_pr_record(
                 "companion_head_sha": attempt["companion_head_sha"] or "",
             }
 
-    companion_row = db.get_companion(conn, pr["id"])
-    companion = {
-        "repo": companion_row["repo"],
-        "repo_short": companion_row["repo"].split("/")[-1],
-        "number": companion_row["number"],
-        "url": companion_row["url"],
-        "title": companion_row["title"],
-        "author": companion_row["author"],
-        "state": companion_row["state"],
-        "is_draft": bool(companion_row["is_draft"]),
-        "head_sha": companion_row["head_sha"],
-    } if companion_row else None
-
     try:
         ci_failures = json.loads(pr["ci_failures"]) if pr["ci_failures"] else []
     except (json.JSONDecodeError, TypeError):
@@ -202,7 +189,6 @@ def _build_pr_record(
         "ping_snippet": pr.get("ping_snippet"),
         "push_at": pr.get("push_at"),
         "push_sha": pr.get("push_sha"),
-        "companion": companion,
         "ai_review": ai_review,
         "ai_failed": ai_failed,
     }
@@ -214,7 +200,7 @@ def _make_item(bset: branch_set.BranchSet, my_login: str,
     """Build one renderable item from a Branch set of PR records."""
     from pr_dash.commands import PRForCommands, build as build_cmds
 
-    members = bset.members
+    members = bset.halves
     primary = bset.primary
 
     # Aggregate sums
@@ -295,9 +281,13 @@ def _make_item(bset: branch_set.BranchSet, my_login: str,
     if is_archived and push_member and "PUSH" not in flags:
         flags.append("PUSH")
 
-    # Both halves of a bundle carry the same migration, so take whichever member
-    # has one - a pair whose odoo half was never cached still shows it.
-    companion = next((m["companion"] for m in members if m.get("companion")), None)
+    comp = bset.companion
+    companion = comp and {
+        **{k: comp[k] for k in ("repo", "number", "url", "title", "author", "state", "head_sha")},
+        "repo_short": comp["repo"].split("/")[-1],
+        "is_draft": bool(comp["is_draft"]),
+    }
+    expected_companion = companion["head_sha"] if companion else ""
 
     runbot_url = next((m["runbot_url"] for m in members if m["runbot_url"]), None)
     task_member = next((m for m in members if m["linked_task"]), None)
@@ -345,35 +335,22 @@ def _make_item(bset: branch_set.BranchSet, my_login: str,
     ai_reviews = []
     ai_failed = None
     for m in members:
-        # Demand sibling context exactly when _build_review_queue would have
-        # recorded it: when the partner's diff was cached, since that is the only
-        # case where there was a companion diff to put in the prompt. Keying on
-        # archived_at instead used to hide two reviews that were computed
-        # correctly - an active partner whose diff blew the size gates (stored
-        # pair-blind, expected a sha) and an archived-but-primed partner whose
-        # diff was cached (stored with context, expected pair-blind).
-        sib = (next(h for h in bset.halves if h is not m)
-               if len(bset.halves) == 2 and m in bset.halves else None)
-        expected_sibling = sib["head_sha"] if sib and sib["diff"] else ""
-        # The companion needs no such diff condition: it goes in the prompt on
-        # existence alone, so its presence is what the review was written under.
-        expected_companion = (m.get("companion") or {}).get("head_sha") or ""
+        expected_context = bset.context_heads(m, lambda h: bool(h["diff"]))
         # Same context check for a failure: one tried under a moved context is queued again.
         failed = m.get("ai_failed")
         if (ai_failed is None and failed
-                and failed["sibling_head_sha"] == expected_sibling
+                and failed["sibling_head_sha"] == expected_context
                 and failed["companion_head_sha"] == expected_companion):
             ai_failed = {"attempts": failed["attempts"], "error": failed["error"]}
         review = m.get("ai_review")
         if not review:
             continue
-        cached_sibling = review.get("sibling_head_sha") or ""
         # A hand-written review is exempt: it says what a human read, so it does
         # not go stale when the pair state moves, and the automatic pass will not
         # replace it either. Dropping it here would hide it with nothing to
         # re-derive it.
         if review.get("source") != "manual" and (
-            cached_sibling != expected_sibling
+            (review.get("sibling_head_sha") or "") != expected_context
             or (review.get("companion_head_sha") or "") != expected_companion
         ):
             continue
@@ -526,8 +503,8 @@ def build_payload(
         )
         records[pr["id"]]["since_last_look"] = delta_map.get(pr["id"], [])
 
-    items = [_make_item(s, my_login, repos, command_templates)
-             for s in branch_set.group(records.values())]
+    sets = branch_set.group(records.values(), db.list_companion_rows(conn, records))
+    items = [_make_item(s, my_login, repos, command_templates) for s in sets]
 
     items.sort(key=lambda p: (
         BUCKET_RANK.get(p["bucket"], 1),

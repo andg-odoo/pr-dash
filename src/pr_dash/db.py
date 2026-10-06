@@ -755,6 +755,14 @@ def list_companions(conn: sqlite3.Connection) -> dict[str, dict]:
     }
 
 
+def list_companion_rows(conn: sqlite3.Connection, pr_ids) -> list[dict]:
+    """The Companions stored for `pr_ids` as Branch set rows, with an id shaped like a PR row's."""
+    return [
+        {**row, "id": f"{row['repo']}#{row['number']}"}
+        for pr_id, row in list_companions(conn).items() if pr_id in pr_ids
+    ]
+
+
 def upsert_complexity(conn: sqlite3.Connection, row: dict) -> None:
     _upsert(conn, "complexity", row, ["head_sha"])
 

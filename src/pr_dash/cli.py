@@ -1318,10 +1318,8 @@ def _refresh_companions(conn, cfg, kept_ids: set[str]) -> str:
     repo, which appears in no addons diff and requests no reviewer - so "this
     data move has no migration" keeps being raised against changes that have one.
     robodoo groups a bundle by head branch name and runbot matches its members
-    the same way, so that name is the key.
-
-    The author deliberately is not part of it: the migration is regularly written
-    by someone other than the author of the half it migrates.
+    the same way, so that name is the key. Which Branch set it joins is decided
+    by branch_set.group.
 
     Discovery is limited to the branches of the active queue, which is what the
     batched search is asked about. An archived PR therefore stops *gaining* a
@@ -1423,10 +1421,10 @@ def _refresh_companions(conn, cfg, kept_ids: set[str]) -> str:
     return repo
 
 
-def _ai_attempt_exhausted(conn, head_sha: str, sibling_head_sha: str,
+def _ai_attempt_exhausted(conn, head_sha: str, context_heads: str,
                           companion_head_sha: str, max_attempts: int, now) -> bool:
     """Whether this review context has failed too often, or too recently."""
-    row = db.get_ai_attempt(conn, head_sha, sibling_head_sha, companion_head_sha)
+    row = db.get_ai_attempt(conn, head_sha, context_heads, companion_head_sha)
     if row is None:
         return False
     if row["attempts"] >= max_attempts:
@@ -1444,8 +1442,8 @@ def _build_review_queue(
     max_attempts: int = 3,
     limit: int | None = None,
 ) -> tuple[list, dict[str, tuple[str, str]]]:
-    """Build the AI sanity-check queue *after* all PR data is settled so pair
-    detection is accurate. Gates per-PR on the actual diff size - a small-code
+    """Build the AI sanity-check queue *after* all PR data is settled so Branch
+    sets are accurate. Gates per-PR on the actual diff size - a small-code
     breadth-XL reviews fine; a size-L with a huge diff would just truncate to
     noise.
 
@@ -1464,19 +1462,26 @@ def _build_review_queue(
     one that failed fewer waits out its backoff. `limit` keeps a scheduled tick
     to the cheapest few, the rest landing on the next tick or a manual run.
 
-    Returns (requests, head_sha -> (sibling_head_sha, companion_head_sha)) - the
+    Returns (requests, head_sha -> (context_heads, companion_head_sha)) - the
     latter is the review's cache key, needed when persisting the result since
     ReviewRequest itself doesn't survive the AI call.
     """
     now = datetime.now(timezone.utc)
     pr_rows = {pr_id: db.get_cached_pr(conn, pr_id) for pr_id in kept_ids}
     pr_rows = {k: v for k, v in pr_rows.items() if v is not None}
-    sibling_of = {}
-    for s in branch_set.group(pr_rows.values()):
-        if len(s.halves) == 2:
-            a, b = s.halves
-            sibling_of[a["id"]], sibling_of[b["id"]] = b, a
+    set_of = {
+        m["id"]: s
+        for s in branch_set.group(pr_rows.values(), db.list_companion_rows(conn, pr_rows))
+        for m in s.halves
+    }
     modules_by_pr = db.list_modules(conn)
+
+    def patch_text(sha: str) -> str:
+        row = db.get_diff(conn, sha)
+        return (row["patch_text"] if row else None) or ""
+
+    def diff_cached(half) -> bool:
+        return bool(patch_text(half["head_sha"]))
 
     # (size, head_sha, request), sorted so a capped run takes the cheapest, in a fixed order.
     sized: list[tuple[int, str, ai.ReviewRequest]] = []
@@ -1484,8 +1489,7 @@ def _build_review_queue(
 
     for pr_id, pr_row in pr_rows.items():
         head_sha = pr_row["head_sha"]
-        diff_row = db.get_diff(conn, head_sha)
-        diff_text = (diff_row["patch_text"] if diff_row else None) or ""
+        diff_text = patch_text(head_sha)
         if not diff_text:
             continue
         # The raw text travels on: _diff_for_prompt compacts it again (a no-op
@@ -1497,44 +1501,29 @@ def _build_review_queue(
         if not compacted.text or len(compacted.text) > max_diff_chars:
             continue
 
-        sibling_head_sha = ""
-        sibling_kwargs: dict = {}
-        if sib := sibling_of.get(pr_id):
-            sib_diff_row = db.get_diff(conn, sib["head_sha"])
-            sib_diff = (sib_diff_row["patch_text"] if sib_diff_row else None) or ""
-            if sib_diff:
-                sibling_head_sha = sib["head_sha"]
-                sibling_kwargs = {
-                    "sibling_head_sha": sibling_head_sha,
-                    "sibling_repo": sib["repo"],
-                    "sibling_number": sib["number"],
-                    "sibling_title": sib["title"],
-                    "sibling_diff": sib_diff,
-                }
+        bset = set_of[pr_id]
+        context_heads = bset.context_heads(pr_row, diff_cached)
 
-        # Unlike the sibling, a companion counts as context whether or not its
-        # diff could be cached: the prompt changes on its mere existence, since
-        # that is what decides whether a missing migration is worth flagging.
-        companion_row = db.get_companion(conn, pr_id)
+        # Unlike a code half, the Companion is context on existence alone, cached diff or not.
+        companion_row = bset.companion
         companion_head_sha = companion_row["head_sha"] if companion_row else ""
         companion = None
         if companion_row:
-            comp_diff_row = db.get_diff(conn, companion_row["head_sha"])
             companion = ai.Companion(
                 repo=companion_row["repo"],
                 number=companion_row["number"],
                 title=companion_row["title"],
                 state=companion_row["state"],
-                diff=(comp_diff_row["patch_text"] if comp_diff_row else None) or "",
+                diff=patch_text(companion_row["head_sha"]),
             )
 
         if db.has_manual_ai_review(conn, head_sha):
             continue
         if db.get_ai_review(
-            conn, head_sha, sibling_head_sha, companion_head_sha,
+            conn, head_sha, context_heads, companion_head_sha,
         ) is not None:
             continue
-        if _ai_attempt_exhausted(conn, head_sha, sibling_head_sha,
+        if _ai_attempt_exhausted(conn, head_sha, context_heads,
                                  companion_head_sha, max_attempts, now):
             continue
 
@@ -1547,11 +1536,14 @@ def _build_review_queue(
             diff=diff_text,
             repo=pr_row["repo"],
             number=pr_row["number"],
+            context=[
+                ai.ContextHalf(h["repo"], h["number"], h["title"], patch_text(h["head_sha"]))
+                for h in bset.context(pr_row, diff_cached)
+            ],
             companion=companion,
             companion_repo=companion_repo,
-            **sibling_kwargs,
         )))
-        review_context[head_sha] = (sibling_head_sha, companion_head_sha)
+        review_context[head_sha] = (context_heads, companion_head_sha)
 
     sized.sort(key=lambda item: (item[0], item[1]))
     if limit is not None:

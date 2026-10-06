@@ -224,3 +224,15 @@ def test_prompt_annotates_a_truncated_migration_diff():
     # A quarter of the budget, and cut with the same note the rest of the prompt
     # uses - a migration stopping mid-hunk must not read as one that stops there.
     assert "[diff truncated at 25 characters]" in ai._build_prompt(req, 100)
+
+
+def test_prompt_shows_each_context_half_on_a_split_budget():
+    req = _req()
+    req.context = [
+        ai.ContextHalf("odoo/enterprise", 2, "ent", _difffile("m/models/e.py", "+e\n" * 400)),
+        ai.ContextHalf("odoo/design-themes", 3, "themes", _difffile("m/models/t.py", "+t\n" * 400)),
+    ]
+    prompt = ai._build_prompt(req, 400)
+    assert "Companion half (CONTEXT - do not review): ent (odoo/enterprise#2)" in prompt
+    assert "Companion half (CONTEXT - do not review): themes (odoo/design-themes#3)" in prompt
+    assert prompt.count("[diff truncated at 100 characters]") == 2
