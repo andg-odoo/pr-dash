@@ -6,6 +6,7 @@ import re
 import subprocess
 import time
 from dataclasses import dataclass
+from typing import Literal, Protocol
 
 log = logging.getLogger("pr_dash.github")
 
@@ -841,3 +842,82 @@ def fetch_patch(repo: str, number: int) -> str | None:
         )
     except GithubError:
         return None
+
+
+View = Literal["queue", "tracked", "mine"]
+
+
+class GitHub(Protocol):
+    """Every question the dashboard asks GitHub, each named for what its answer is for."""
+
+    def review_requested(self, login: str) -> tuple[list[dict], RateLimit | None]: ...
+
+    def reviewed_by(self, login: str, *, limit: int = 1000,
+                    since: str | None = None) -> tuple[list[dict], RateLimit | None]: ...
+
+    def reviewed_among(self, refs: list[tuple[str, int]], login: str) -> set[str]: ...
+
+    def archived_activity(self, refs: list[tuple[str, int]]) -> dict[str, dict]: ...
+
+    def head_sha(self, repo: str, number: int) -> str | None: ...
+
+    def open_prs_by_head_branch(self, repo: str, branches: list[str]) -> dict[str, dict]: ...
+
+    def pr_states(self, repo: str, numbers: list[int]) -> dict[int, str]: ...
+
+    def nodes(self, refs: list[tuple[str, int]], view: View) -> dict[str, dict]: ...
+
+    def authored_open(self, login: str) -> list[tuple[str, int]]: ...
+
+    def authored_closed(self, login: str) -> list[tuple[str, int]]: ...
+
+    def manual_subscriptions(self) -> list[dict]: ...
+
+    def patch(self, repo: str, number: int) -> str | None: ...
+
+
+def _with_ids(refs: list[tuple[str, int]]) -> list[tuple[str, int, str]]:
+    return [(repo, number, f"{repo}#{number}") for repo, number in refs]
+
+
+class GhGitHub:
+    """`GitHub` over the `gh` CLI, through the module functions above."""
+
+    def review_requested(self, login):
+        return search_personal_review_requested(login)
+
+    def reviewed_by(self, login, *, limit=1000, since=None):
+        return search_reviewed_by(login, limit=limit, since=since)
+
+    def reviewed_among(self, refs, login):
+        return fetch_reviewed_prs(_with_ids(refs), login)
+
+    def archived_activity(self, refs):
+        return fetch_archived_activity(_with_ids(refs))
+
+    def head_sha(self, repo, number):
+        return fetch_head_sha(repo, number)
+
+    def open_prs_by_head_branch(self, repo, branches):
+        return search_open_prs_by_head_branch(repo, branches)
+
+    def pr_states(self, repo, numbers):
+        return fetch_pr_states(repo, numbers)
+
+    def nodes(self, refs, view):
+        if view == "queue":
+            return {f"{n['repository']['nameWithOwner']}#{n['number']}": n
+                    for n in fetch_pr_nodes(_with_ids(refs))}
+        return fetch_nodes(refs, TRACKED_NODE_FRAGMENT if view == "tracked" else MINE_NODE_FRAGMENT)
+
+    def authored_open(self, login):
+        return search_authored_open(login)
+
+    def authored_closed(self, login):
+        return search_authored_closed(login)
+
+    def manual_subscriptions(self):
+        return list_manual_subscriptions()
+
+    def patch(self, repo, number):
+        return fetch_patch(repo, number)

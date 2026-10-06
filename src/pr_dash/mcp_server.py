@@ -24,6 +24,7 @@ mcp = FastMCP("pr-dash")
 
 _CONFIG_PATH: Path | None = None
 _cfg: config.Config | None = None
+_github: github.GitHub = github.GhGitHub()
 
 
 def set_config_path(path: Path | None) -> None:
@@ -443,9 +444,7 @@ def hide_pr(ref: str) -> dict:
     for member in item.get("members") or []:
         live = None
         try:
-            live = github.fetch_head_sha(
-                member.get("repo") or "", member.get("number") or 0,
-            )
+            live = _github.head_sha(member.get("repo") or "", member.get("number") or 0)
         except (github.GithubError, ValueError):
             pass
         members.append({**member, "head_sha": live or member["head_sha"]})

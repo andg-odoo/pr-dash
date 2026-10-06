@@ -7,6 +7,7 @@ import pytest
 
 from pr_dash import cli, db, derive, github, mcp_server, mergebot, render
 from pr_dash import query as prquery
+from tests.fakes import FakePR, pr_node
 
 
 def _conn(tmp_path: Path) -> sqlite3.Connection:
@@ -142,39 +143,19 @@ def test_since_last_look_flags_reopen():
 
 # --- derive.tracked_row_from_node --------------------------------------------
 
-def _node(**over):
-    node = {
-        "title": "[FIX] sale: x",
-        "author": {"login": "someone"},
-        "state": "OPEN",
-        "isDraft": False,
-        "baseRefName": "master",
-        "headRefOid": "abc123",
-        "body": "desc",
-        "createdAt": "2026-07-01T00:00:00Z",
-        "updatedAt": "2026-08-01T00:00:00Z",
-        "closedAt": None,
-        "mergedAt": None,
-        "comments": {
-            "totalCount": 4,
-            "nodes": [
-                {"author": {"login": "robodoo"}, "createdAt": "2026-07-02T00:00:00Z",
-                 "body": "ci", "url": "u1"},
-                {"author": {"login": "human"}, "createdAt": "2026-07-03T00:00:00Z",
-                 "body": "lgtm", "url": "u2"},
-            ],
-        },
-        "commits": {"nodes": [{"commit": {"statusCheckRollup": {
-            "state": "SUCCESS", "contexts": {"nodes": []}}}}]},
-    }
-    node.update(over)
-    return node
+_TRACKED = FakePR(
+    "odoo/odoo", 1, title="[FIX] sale: x", author="someone", base="master", head_sha="abc123",
+    body="desc", updated_at="2026-08-01T00:00:00Z", checks={"ci/runbot": "SUCCESS"},
+    comments=[{"author": "robodoo", "at": "2026-07-02T00:00:00Z", "body": "ci"},
+              {"author": "human", "at": "2026-07-03T00:00:00Z", "body": "lgtm"}],
+)
 
 
 def test_tracked_row_merges_reviews_and_threads_in_time_order():
     # The bug this pins: an Odoo PR keeps almost nothing in `comments`. Fetching
     # only those made a PR with an approval and 20 inline threads look silent.
-    node = _node(
+    node = pr_node(
+        _TRACKED, "tracked",
         comments={"totalCount": 1, "nodes": [
             {"author": {"login": "someone"}, "createdAt": "2026-07-01T00:00:00Z",
              "body": "opening note", "url": "u-issue"},
@@ -227,11 +208,13 @@ def test_tracked_row_merges_reviews_and_threads_in_time_order():
 
 
 def test_activity_count_moves_when_only_a_review_lands():
-    before = derive.tracked_row_from_node(_node(
+    before = derive.tracked_row_from_node(pr_node(
+        _TRACKED, "tracked",
         comments={"totalCount": 2, "nodes": []},
         reviews={"totalCount": 1, "nodes": []},
         reviewThreads={"totalCount": 0, "nodes": []}), "t")[0]
-    after = derive.tracked_row_from_node(_node(
+    after = derive.tracked_row_from_node(pr_node(
+        _TRACKED, "tracked",
         comments={"totalCount": 2, "nodes": []},
         reviews={"totalCount": 2, "nodes": []},
         reviewThreads={"totalCount": 0, "nodes": []}), "t")[0]
@@ -243,7 +226,9 @@ def test_activity_count_moves_when_only_a_review_lands():
 
 
 def test_tracked_row_from_node_flattens_state_and_comments():
-    row, comments = derive.tracked_row_from_node(_node(), "2026-08-03T00:00:00+00:00")
+    node = pr_node(_TRACKED, "tracked")
+    node["comments"]["totalCount"] = 4
+    row, comments = derive.tracked_row_from_node(node, "2026-08-03T00:00:00+00:00")
     assert row["title"] == "[FIX] sale: x"
     assert row["author"] == "someone"
     assert row["state"] == "OPEN"
@@ -257,7 +242,7 @@ def test_tracked_row_from_node_flattens_state_and_comments():
 
 def test_tracked_row_from_node_tolerates_missing_ci_and_author():
     row, comments = derive.tracked_row_from_node(
-        _node(author=None, commits={"nodes": []}, comments={}), "t",
+        pr_node(_TRACKED, "tracked", author=None, commits={"nodes": []}, comments={}), "t",
     )
     assert row["author"] == ""
     assert row["ci_state"] is None

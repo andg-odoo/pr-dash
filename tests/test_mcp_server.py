@@ -12,6 +12,7 @@ import pytest
 
 from pr_dash import hidden
 from pr_dash.config import Config
+from tests.fakes import FakeGitHub
 
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("mcp") is None,
@@ -169,7 +170,7 @@ def test_hidden_listener_second_bind_returns_none(tmp_path):
 
 
 def test_hide_pr_records_live_sha(tmp_path, monkeypatch):
-    from pr_dash import github, hidden
+    from pr_dash import hidden
     from pr_dash.config import Config
 
     cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
@@ -179,23 +180,26 @@ def test_hide_pr_records_live_sha(tmp_path, monkeypatch):
     mcp_server = _patch_cfg_and_items(monkeypatch, cfg, items)
     # The cached sha of an archived row can predate pushes; the hide must
     # record the live sha or it expires against it on the next reconcile.
-    monkeypatch.setattr(github, "fetch_head_sha", lambda repo, number: f"live{number}")
+    gh = FakeGitHub()
+    gh.add("odoo/odoo", 1, head_sha="live1")
+    gh.add("odoo/enterprise", 2, head_sha="live2")
+    monkeypatch.setattr(mcp_server, "_github", gh)
     mcp_server.hide_pr("odoo/odoo#1")
     assert hidden.load(cfg)["odoo/odoo#1"]["head_sha"] == "live1+live2"
 
 
 def test_hide_pr_falls_back_to_cached_sha(tmp_path, monkeypatch):
-    from pr_dash import github, hidden
+    from pr_dash import hidden
     from pr_dash.config import Config
 
     cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
     items = [{"id": "odoo/odoo#1", "author": "a", "head_branch": "b",
               "members": [{"repo": "odoo/odoo", "number": 1, "head_sha": "stale"}]}]
     mcp_server = _patch_cfg_and_items(monkeypatch, cfg, items)
-
-    def _boom(repo, number):
-        raise github.GithubError("offline")
-    monkeypatch.setattr(github, "fetch_head_sha", _boom)
+    gh = FakeGitHub()
+    gh.add("odoo/odoo", 1, head_sha="live1")
+    gh.fail("head_sha")
+    monkeypatch.setattr(mcp_server, "_github", gh)
     mcp_server.hide_pr("odoo/odoo#1")
     assert hidden.load(cfg)["odoo/odoo#1"]["head_sha"] == "stale"
 

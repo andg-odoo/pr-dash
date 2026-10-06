@@ -3,6 +3,7 @@ import json
 from click.testing import CliRunner
 
 from pr_dash import cli, config, db, github, mergebot
+from tests.fakes import FakeGitHub, FakePR, branch_hit, pr_node
 
 # --- _reviewed_open_halves -------------------------------------------------
 
@@ -109,39 +110,10 @@ def _insert_pr(conn, pr_id, *, author="a", head_branch="feat", state="OPEN",
     )
 
 
-def _fake_node(repo, number, *, author="a", head_branch="feat", head="sha2",
-               updated="2026-07-10T00:00:00Z"):
-    return {
-        "repository": {"nameWithOwner": repo},
-        "number": number,
-        "title": "T",
-        "url": f"https://github.com/{repo}/pull/{number}",
-        "state": "OPEN",
-        "isDraft": False,
-        "createdAt": "2026-07-01T00:00:00Z",
-        "updatedAt": updated,
-        "mergeable": "MERGEABLE",
-        "additions": 1, "deletions": 0, "changedFiles": 1,
-        "body": "b",
-        "baseRefName": "18.0",
-        "headRefName": head_branch,
-        "headRefOid": head,
-        "author": {"login": author},
-        "reviewRequests": {"nodes": []},
-        "latestReviews": {"nodes": []},
-        "reviews": {"nodes": []},
-        "comments": {"nodes": []},
-        "reviewThreads": {"nodes": [
-            {"id": "T1", "isResolved": False, "comments": {"nodes": [
-                {"author": {"login": "someone"}, "createdAt": "2026-07-05T00:00:00Z",
-                 "body": "why?", "path": "sale/x.py", "databaseId": 55,
-                 "url": "https://c/55"},
-            ]}},
-        ]},
-        "commits": {"nodes": []},
-        "timelineItems": {"nodes": []},   # deliberately no review by "me"
-        "files": {"nodes": [{"path": "sale/x.py"}]},
-    }
+# A reviewed half with an open thread by someone else and no review by "me" in its timeline.
+_HALF = {"head_sha": "sha2", "updated_at": "2026-07-10T00:00:00Z", "files": ["sale/x.py"],
+         "threads": [{"path": "sale/x.py", "comments": [
+             {"author": "someone", "at": "2026-07-05T00:00:00Z", "body": "why?"}]}]}
 
 
 def test_prime_reviewed_halves_caches_comments_and_preserves_reviewed(tmp_path, monkeypatch):
@@ -155,7 +127,7 @@ def test_prime_reviewed_halves_caches_comments_and_preserves_reviewed(tmp_path, 
     kept = {"odoo/odoo#1"}
 
     monkeypatch.setattr(github, "fetch_pr_nodes",
-                        lambda refs, **kw: [_fake_node("odoo/enterprise", 2)])
+                        lambda refs, **kw: [pr_node(FakePR("odoo/enterprise", 2, **_HALF))])
     cli._prime_reviewed_halves(conn, cfg, kept, force=False)
 
     assert "odoo/enterprise#2" in kept                     # sweep will leave it
@@ -184,9 +156,7 @@ def test_prime_reviewed_halves_shortcircuits_when_unchanged(tmp_path, monkeypatc
 
     # Node matches cached head/updated and comments already exist -> no re-persist.
     monkeypatch.setattr(github, "fetch_pr_nodes",
-                        lambda refs, **kw: [_fake_node("odoo/enterprise", 2,
-                                                       head="sha2",
-                                                       updated="2026-07-10T00:00:00Z")])
+                        lambda refs, **kw: [pr_node(FakePR("odoo/enterprise", 2, **_HALF))])
     cli._prime_reviewed_halves(conn, cfg, kept, force=False)
 
     assert "odoo/enterprise#2" in kept
@@ -206,7 +176,7 @@ def test_prime_reviewed_halves_keeps_archived_at(tmp_path, monkeypatch):
     kept = {"odoo/odoo#1"}
 
     monkeypatch.setattr(github, "fetch_pr_nodes",
-                        lambda refs, **kw: [_fake_node("odoo/enterprise", 2)])
+                        lambda refs, **kw: [pr_node(FakePR("odoo/enterprise", 2, **_HALF))])
     cli._prime_reviewed_halves(conn, cfg, kept, force=False)
 
     assert db.has_comments(conn, "odoo/enterprise#2") is True
@@ -218,14 +188,8 @@ def test_prime_reviewed_halves_keeps_archived_at(tmp_path, monkeypatch):
 
 # --- _reconcile_archived_states: ping detection & clearing ---------------------
 
-def _activity_node(state="OPEN", *, ping=True):
-    reviews = [{"author": {"login": "me"}, "submittedAt": "2026-07-01T00:00:00Z",
-                "state": "APPROVED"}]
-    comments = ([{"author": {"login": "alice"}, "createdAt": "2026-07-02T00:00:00Z",
-                  "body": "done, ready for r+"}] if ping else [])
-    return {"state": state, "comments": {"nodes": comments},
-            "reviewThreads": {"nodes": []}, "reviews": {"nodes": reviews},
-            "timelineItems": {"nodes": []}}
+_MY_REVIEW = {"author": "me", "state": "APPROVED", "at": "2026-07-01T00:00:00Z", "commit": "sha1"}
+_PING = {"author": "alice", "at": "2026-07-02T00:00:00Z", "body": "done, ready for r+"}
 
 
 def test_reconcile_sets_ping_on_archived_open(tmp_path, monkeypatch):
@@ -236,7 +200,8 @@ def test_reconcile_sets_ping_on_archived_open(tmp_path, monkeypatch):
     conn = db.connect(cfg.db_path)
     _insert_pr(conn, "odoo/odoo#1", archived_at="2026-07-01T00:00:00Z")
     monkeypatch.setattr(github, "fetch_archived_activity",
-                        lambda refs, **kw: {"odoo/odoo#1": _activity_node()})
+                        lambda refs, **kw: {"odoo/odoo#1": pr_node(FakePR(
+                            "odoo/odoo", 1, reviews=[_MY_REVIEW], comments=[_PING]), "activity")})
 
     cli._reconcile_archived_states(conn, cfg, set())
     row = db.get_cached_pr(conn, "odoo/odoo#1")
@@ -254,7 +219,8 @@ def test_reconcile_hidden_pr_never_pinged(tmp_path, monkeypatch):
     _insert_pr(conn, "odoo/odoo#1", archived_at="2026-07-01T00:00:00Z", head_sha="sha1")
     hidden.save(cfg, {"odoo/odoo#1": {"head_sha": "sha1", "hidden_at": "t"}})
     monkeypatch.setattr(github, "fetch_archived_activity",
-                        lambda refs, **kw: {"odoo/odoo#1": _activity_node()})
+                        lambda refs, **kw: {"odoo/odoo#1": pr_node(FakePR(
+                            "odoo/odoo", 1, reviews=[_MY_REVIEW], comments=[_PING]), "activity")})
 
     cli._reconcile_archived_states(conn, cfg, set())
     assert db.get_cached_pr(conn, "odoo/odoo#1")["ping_at"] is None
@@ -269,7 +235,9 @@ def test_reconcile_closed_clears_state_and_ping(tmp_path, monkeypatch):
     _insert_pr(conn, "odoo/odoo#1", archived_at="2026-07-01T00:00:00Z")
     db.set_ping(conn, "odoo/odoo#1", "2026-07-02T00:00:00Z", "alice", "old ping")
     monkeypatch.setattr(github, "fetch_archived_activity",
-                        lambda refs, **kw: {"odoo/odoo#1": _activity_node(state="MERGED")})
+                        lambda refs, **kw: {"odoo/odoo#1": pr_node(FakePR(
+                            "odoo/odoo", 1, state="MERGED", reviews=[_MY_REVIEW], comments=[_PING]),
+                            "activity")})
 
     cli._reconcile_archived_states(conn, cfg, set())
     row = db.get_cached_pr(conn, "odoo/odoo#1")
@@ -279,26 +247,6 @@ def test_reconcile_closed_clears_state_and_ping(tmp_path, monkeypatch):
 
 # --- _reconcile_archived_states: push detection & stale-row refresh ------------
 
-def _push_activity_node(*, head="sha2", reviewed="sha1", updated="2026-07-01T00:00:00Z"):
-    """Archived-activity node where my review sits on `reviewed` and the live
-    head is `head`."""
-    return {
-        "state": "OPEN",
-        "headRefOid": head,
-        "updatedAt": updated,
-        "author": {"login": "a"},
-        "comments": {"nodes": []},
-        "reviewThreads": {"nodes": []},
-        "reviews": {"nodes": [{
-            "author": {"login": "me"}, "submittedAt": "2026-07-01T00:00:00Z",
-            "state": "APPROVED", "commit": {"oid": reviewed},
-        }]},
-        "commits": {"nodes": [{"commit": {"oid": head,
-                                          "committedDate": "2026-07-05T00:00:00Z"}}]},
-        "timelineItems": {"nodes": []},
-    }
-
-
 def test_reconcile_sets_push_on_archived_open(tmp_path, monkeypatch):
     from pr_dash import db
     from pr_dash.config import Config
@@ -306,10 +254,10 @@ def test_reconcile_sets_push_on_archived_open(tmp_path, monkeypatch):
     cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
     conn = db.connect(cfg.db_path)
     _insert_pr(conn, "odoo/odoo#1", archived_at="2026-07-01T00:00:00Z", head_sha="sha1")
+    pr = FakePR("odoo/odoo", 1, **_HALF, pushed_at="2026-07-05T00:00:00Z", reviews=[_MY_REVIEW])
     monkeypatch.setattr(github, "fetch_archived_activity",
-                        lambda refs, **kw: {"odoo/odoo#1": _push_activity_node()})
-    monkeypatch.setattr(github, "fetch_pr_nodes",
-                        lambda refs, **kw: [_fake_node("odoo/odoo", 1)])
+                        lambda refs, **kw: {"odoo/odoo#1": pr_node(pr, "activity")})
+    monkeypatch.setattr(github, "fetch_pr_nodes", lambda refs, **kw: [pr_node(pr)])
     monkeypatch.setattr(github, "fetch_patch", lambda repo, number: "diff --git a b")
 
     cli._reconcile_archived_states(conn, cfg, set())
@@ -325,10 +273,10 @@ def test_reconcile_refreshes_stale_archived_row_in_place(tmp_path, monkeypatch):
     cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
     conn = db.connect(cfg.db_path)
     _insert_pr(conn, "odoo/odoo#1", archived_at="2026-07-01T00:00:00Z", head_sha="sha1")
+    pr = FakePR("odoo/odoo", 1, **_HALF, pushed_at="2026-07-05T00:00:00Z", reviews=[_MY_REVIEW])
     monkeypatch.setattr(github, "fetch_archived_activity",
-                        lambda refs, **kw: {"odoo/odoo#1": _push_activity_node()})
-    monkeypatch.setattr(github, "fetch_pr_nodes",
-                        lambda refs, **kw: [_fake_node("odoo/odoo", 1)])
+                        lambda refs, **kw: {"odoo/odoo#1": pr_node(pr, "activity")})
+    monkeypatch.setattr(github, "fetch_pr_nodes", lambda refs, **kw: [pr_node(pr)])
     monkeypatch.setattr(github, "fetch_patch", lambda repo, number: "diff --git a b")
 
     cli._reconcile_archived_states(conn, cfg, set())
@@ -356,12 +304,11 @@ def test_reconcile_refreshes_on_bumped_updated_at_alone(tmp_path, monkeypatch):
                updated="2026-07-01T00:00:00Z")
     # Same head, later updatedAt: a review or comment landed. This is the case a
     # sha comparison alone misses - my own review is what bumps it first.
-    node = _push_activity_node(head="sha1", reviewed="sha1",
-                               updated="2026-07-09T00:00:00Z")
-    monkeypatch.setattr(github, "fetch_archived_activity", lambda refs, **kw: {"odoo/odoo#1": node})
-    monkeypatch.setattr(github, "fetch_pr_nodes",
-                        lambda refs, **kw: [_fake_node("odoo/odoo", 1, head="sha1",
-                                                       updated="2026-07-09T00:00:00Z")])
+    pr = FakePR("odoo/odoo", 1, reviews=[_MY_REVIEW],
+                **{**_HALF, "head_sha": "sha1", "updated_at": "2026-07-09T00:00:00Z"})
+    monkeypatch.setattr(github, "fetch_archived_activity",
+                        lambda refs, **kw: {"odoo/odoo#1": pr_node(pr, "activity")})
+    monkeypatch.setattr(github, "fetch_pr_nodes", lambda refs, **kw: [pr_node(pr)])
     monkeypatch.setattr(github, "fetch_patch", lambda repo, number: "d")
 
     cli._reconcile_archived_states(conn, cfg, set())
@@ -377,7 +324,7 @@ def test_reconcile_leaves_fresh_archived_row_alone(tmp_path, monkeypatch):
     cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
     conn = db.connect(cfg.db_path)
     _insert_pr(conn, "odoo/odoo#1", archived_at="2026-07-01T00:00:00Z", head_sha="sha1")
-    node = _push_activity_node(head="sha1", reviewed="sha1")
+    node = pr_node(FakePR("odoo/odoo", 1, reviews=[_MY_REVIEW]), "activity")
     monkeypatch.setattr(github, "fetch_archived_activity", lambda refs, **kw: {"odoo/odoo#1": node})
 
     def _boom(*a, **kw):
@@ -396,7 +343,8 @@ def test_reconcile_clears_push_once_i_review_the_new_head(tmp_path, monkeypatch)
     conn = db.connect(cfg.db_path)
     _insert_pr(conn, "odoo/odoo#1", archived_at="2026-07-01T00:00:00Z", head_sha="sha2")
     db.set_push(conn, "odoo/odoo#1", "2026-07-05T00:00:00Z", "sha2")
-    node = _push_activity_node(head="sha2", reviewed="sha2")
+    node = pr_node(FakePR("odoo/odoo", 1, head_sha="sha2",
+                          reviews=[{**_MY_REVIEW, "commit": "sha2"}]), "activity")
     monkeypatch.setattr(github, "fetch_archived_activity", lambda refs, **kw: {"odoo/odoo#1": node})
 
     cli._reconcile_archived_states(conn, cfg, set())
@@ -583,10 +531,8 @@ def test_timer_ticks_search_the_review_queue_hourly(tmp_path, monkeypatch):
 
 # --- _refresh_companions -----------------------------------------------------
 
-def _upgrade_pr(branch, *, number=900, sha="usha"):
-    return {"number": number, "title": "[IMP] base: merge modules", "state": "open",
-            "draft": False, "url": f"https://github.com/odoo/upgrade/pull/{number}",
-            "head_branch": branch, "head_sha": sha, "author": "someone-else"}
+_UPGRADE = FakePR("odoo/upgrade", 900, title="[IMP] base: merge modules", head_branch="feat-x",
+                  head_sha="usha", author="someone-else")
 
 
 def _companion_cfg(tmp_path):
@@ -605,7 +551,7 @@ def test_refresh_companions_matches_on_branch_only(tmp_path, monkeypatch):
     _insert_pr(conn, "odoo/odoo#3", author="jdoe", head_branch="other")
 
     monkeypatch.setattr(github, "search_open_prs_by_head_branch",
-                        lambda repo, branches: {"feat-x": _upgrade_pr("feat-x")})
+                        lambda repo, branches: {"feat-x": branch_hit(_UPGRADE)})
     monkeypatch.setattr(cli, "_store_patch", lambda *a, **kw: None)
 
     assert cli._refresh_companions(conn, cfg, {"odoo/odoo#1"}) == "odoo/upgrade"
@@ -644,7 +590,7 @@ def test_refresh_companions_survives_an_unreachable_repo(tmp_path, monkeypatch):
 
     cfg.companion.enabled = False
     monkeypatch.setattr(github, "search_open_prs_by_head_branch",
-                        lambda repo, branches: {"feat-x": _upgrade_pr("feat-x")})
+                        lambda repo, branches: {"feat-x": branch_hit(_UPGRADE)})
     assert cli._refresh_companions(conn, cfg, {"odoo/odoo#1"}) == ""
 
 
@@ -736,12 +682,6 @@ def test_review_queue_reviews_each_half_against_the_others_and_the_sets_companio
 
 # --- _run_mine_refresh -------------------------------------------------------
 
-def _mine_node(repo, number, state):
-    return {"url": f"https://github.com/{repo}/pull/{number}", "title": f"PR {number}",
-            "state": state, "headRefName": "master-x-6396725-andg",
-            "createdAt": "2026-10-01T00:00:00Z", "updatedAt": "2026-10-05T00:00:00Z"}
-
-
 def test_mine_refresh_keeps_resolved_members_and_stops_reading_their_final_page(
         tmp_path, monkeypatch):
     config_path = tmp_path / "config.toml"
@@ -750,12 +690,14 @@ def test_mine_refresh_keeps_resolved_members_and_stops_reading_their_final_page(
         f'\n[paths]\ncache_dir = "{tmp_path}"\n',
     )
     cfg = config.load(config_path)
-    gh = {"open": [("odoo/odoo", 10), ("odoo/upgrade", 20)], "state": "OPEN"}
+    gh = FakeGitHub()
+    for repo, number in (("odoo/odoo", 10), ("odoo/upgrade", 20)):
+        gh.add(repo, number, author="me", head_branch="master-x-6396725-andg")
     pages = {"odoo/odoo": "blocked", "odoo/upgrade": "unknown"}
     reads = []
-    monkeypatch.setattr(github, "search_authored_open", lambda login: gh["open"])
-    monkeypatch.setattr(github, "fetch_nodes", lambda refs, fragment, **kw: {
-        f"{r}#{n}": _mine_node(r, n, gh["state"]) for r, n in refs})
+    monkeypatch.setattr(github, "search_authored_open", gh.authored_open)
+    monkeypatch.setattr(github, "fetch_nodes",
+                        lambda refs, fragment, **kw: gh.nodes(refs, "mine"))
     monkeypatch.setattr(mergebot, "fetch", lambda repo, n: reads.append(repo)
                         or mergebot.MergebotState(pages[repo]))
 
@@ -766,8 +708,9 @@ def test_mine_refresh_keeps_resolved_members_and_stops_reading_their_final_page(
     assert sorted(reads) == ["odoo/odoo", "odoo/upgrade"]
 
     # Both left the open search and closed, the Mergebot telling Merged from closed.
-    gh["open"] = []
-    gh["state"], pages["odoo/odoo"], pages["odoo/upgrade"] = "CLOSED", "merged", "closed"
+    gh.close("odoo/odoo#10")
+    gh.close("odoo/upgrade#20")
+    pages["odoo/odoo"], pages["odoo/upgrade"] = "merged", "closed"
     cli._run_mine_refresh(conn, cfg, force=True)
     cli._run_mine_refresh(conn, cfg, force=True)
     assert sorted(reads) == ["odoo/odoo"] * 2 + ["odoo/upgrade"] * 2
@@ -779,11 +722,6 @@ def test_mine_refresh_keeps_resolved_members_and_stops_reading_their_final_page(
         ("master-x-6396725-andg", "done", [(10, "MERGED"), (20, "CLOSED")])]
 
 
-def _xref(repo, number, author):
-    return {"source": {"number": number, "author": {"login": author},
-                       "repository": {"nameWithOwner": repo}}}
-
-
 def test_mine_refresh_hangs_confirmed_forward_ports_under_their_source(tmp_path, monkeypatch):
     config_path = tmp_path / "config.toml"
     config_path.write_text(
@@ -792,23 +730,18 @@ def test_mine_refresh_hangs_confirmed_forward_ports_under_their_source(tmp_path,
     )
     cfg = config.load(config_path)
     body = "The new company now gets the contact's responsibility.\r\n\r\ntask-6470810\n\n"
-    nodes = {
-        "odoo/odoo#290657": {**_mine_node("odoo/odoo", 290657, "CLOSED"),
-                             "headRefName": "saas-19.1-l10n_ar-company-arca-6470810-andg",
-                             "crossReferences": {"nodes": [
-                                 _xref("odoo/odoo", 291857, "fw-bot"),
-                                 _xref("odoo/enterprise", 133776, "andg-odoo"),
-                                 _xref("odoo/odoo", 291981, "fw-bot"),
-                                 _xref("odoo/odoo", 291000, "fw-bot"),
-                             ]}},
-        "odoo/odoo#291857": {**_mine_node("odoo/odoo", 291857, "CLOSED"), "baseRefName": "20.0",
-                             "body": body + "Forward-Port-Of: odoo/odoo#290657"},
-        "odoo/odoo#291981": {**_mine_node("odoo/odoo", 291981, "OPEN"), "baseRefName": "master",
-                             "body": body + "Forward-Port-Of: odoo/odoo#291857\n"
-                                            "Forward-Port-Of: odoo/odoo#290657"},
-        "odoo/odoo#291000": {**_mine_node("odoo/odoo", 291000, "OPEN"),
-                             "body": "Forward-Port-Of: odoo/odoo#280000"},
-    }
+    nodes = {pr.id: pr_node(pr, "mine") for pr in (
+        FakePR("odoo/odoo", 290657, state="CLOSED",
+               head_branch="saas-19.1-l10n_ar-company-arca-6470810-andg",
+               cross_refs=[("odoo/odoo", 291857, "fw-bot"),
+                           ("odoo/enterprise", 133776, "andg-odoo"),
+                           ("odoo/odoo", 291981, "fw-bot"), ("odoo/odoo", 291000, "fw-bot")]),
+        FakePR("odoo/odoo", 291857, state="CLOSED", base="20.0",
+               body=body + "Forward-Port-Of: odoo/odoo#290657"),
+        FakePR("odoo/odoo", 291981, base="master", updated_at="2026-10-05T00:00:00Z",
+               body=body + "Forward-Port-Of: odoo/odoo#291857\nForward-Port-Of: odoo/odoo#290657"),
+        FakePR("odoo/odoo", 291000, body="Forward-Port-Of: odoo/odoo#280000"),
+    )}
     fetched = []
     monkeypatch.setattr(github, "search_authored_open", lambda login: [("odoo/odoo", 290657)])
     monkeypatch.setattr(github, "fetch_nodes", lambda refs, fragment, **kw: fetched.append(
@@ -845,15 +778,13 @@ def _history_cfg(tmp_path):
 
 def test_import_history_dismisses_resolved_sets_once(tmp_path, monkeypatch):
     config_path = _history_cfg(tmp_path)
-    nodes = {
-        "odoo/odoo#100": {**_mine_node("odoo/odoo", 100, "OPEN"), "headRefName": "master-live"},
-        "odoo/odoo#10": {**_mine_node("odoo/odoo", 10, "CLOSED"), "headRefName": "19.0-old"},
-        "odoo/odoo#290657": {**_mine_node("odoo/odoo", 290657, "CLOSED"),
-                             "headRefName": "saas-19.1-arca",
-                             "crossReferences": {"nodes": [_xref("odoo/odoo", 291981, "fw-bot")]}},
-        "odoo/odoo#291981": {**_mine_node("odoo/odoo", 291981, "OPEN"), "baseRefName": "master",
-                             "body": "Forward-Port-Of: odoo/odoo#290657"},
-    }
+    nodes = {pr.id: pr_node(pr, "mine") for pr in (
+        FakePR("odoo/odoo", 100, head_branch="master-live"),
+        FakePR("odoo/odoo", 10, state="CLOSED", head_branch="19.0-old"),
+        FakePR("odoo/odoo", 290657, state="CLOSED", head_branch="saas-19.1-arca",
+               cross_refs=[("odoo/odoo", 291981, "fw-bot")]),
+        FakePR("odoo/odoo", 291981, base="master", body="Forward-Port-Of: odoo/odoo#290657"),
+    )}
     fetched = []
     monkeypatch.setattr(github, "search_authored_open", lambda login: [("odoo/odoo", 100)])
     monkeypatch.setattr(github, "search_authored_closed",
@@ -894,9 +825,10 @@ def test_import_history_failure_stores_nothing_and_can_rerun(tmp_path, monkeypat
     monkeypatch.setattr(github, "search_authored_closed", lambda login: [("odoo/odoo", 10)])
     monkeypatch.setattr(mergebot, "fetch", lambda repo, n: mergebot.MergebotState("merged"))
 
-    source = {**_mine_node("odoo/odoo", 10, "CLOSED"),
-              "crossReferences": {"nodes": [_xref("odoo/odoo", 11, "fw-bot")]}}
-    fw = {**_mine_node("odoo/odoo", 11, "CLOSED"), "body": "Forward-Port-Of: odoo/odoo#10"}
+    source = pr_node(FakePR("odoo/odoo", 10, state="CLOSED",
+                            cross_refs=[("odoo/odoo", 11, "fw-bot")]), "mine")
+    fw = pr_node(FakePR("odoo/odoo", 11, state="CLOSED", body="Forward-Port-Of: odoo/odoo#10"),
+                 "mine")
 
     def fail_on_forward_ports(refs, fragment, **kw):
         if refs == [("odoo/odoo", 11)]:
