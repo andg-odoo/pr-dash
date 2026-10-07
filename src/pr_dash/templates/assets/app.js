@@ -16,14 +16,12 @@
     tokens[idx].attrSet("rel", "noopener");
     return _defaultLinkOpen(tokens, idx, options, env, self);
   };
-  const listEl = document.getElementById("queue-list");
   const detailEl = document.getElementById("detail");
   const visibleCountEl = document.getElementById("visible-count");
   const totalCountEl = document.getElementById("total-count");
   const kpiEl = document.getElementById("kpi");
   const lookCountEl = document.getElementById("look-count");
   const lastRefreshEl = document.getElementById("last-refresh");
-  const sortEl = document.getElementById("queue-sort");
   const resetBtn = document.getElementById("reset-filters");
   const searchEl = document.getElementById("search");
 
@@ -31,44 +29,17 @@
 
   const STATE_KEY = "pr-dash:filters:v1";
   const TAB_KEY = "pr-dash:tab:v1";
-  const SORT_KEY = "pr-dash:sort:v1";
   const HIDDEN_KEY = "pr-dash:hidden:v1";
   const HIDDEN_QUEUE_KEY = "pr-dash:hidden-queue:v1";
   const HIDDEN_SERVER = window.HIDDEN_SERVER || {};
   const HIDDEN_SYNC_PORT = window.HIDDEN_SYNC_PORT || null;
 
-  const FLAGS = ["RE", "MSG", "CI!", "CFL", "OLD"];
-  const BUCKETS = ["S", "M", "L", "XL"];
-  const STATES = [
-    { id: "updated", label: "updated since visit" },
-    { id: "ball-in-my-court", label: "ball in my court" },
-    { id: "awaiting-my-reply", label: "awaiting my reply" },
-    { id: "stale", label: "stale 7d+" },
-    { id: "re-review", label: "re-review" },
-    { id: "ci-failed", label: "CI failed" },
-    { id: "pinged", label: "pinged" },
-    { id: "pushed", label: "pushed since review" },
-    { id: "drafts", label: "drafts (backlog)" },
-    { id: "archived", label: "archived" },
-    { id: "show-hidden", label: "show hidden" },
-  ];
-
-  const LOOK_BADGES = { pushed: "↑push", reply: "reply", ci: "ci", new: "new" };
-
   /** Hidden map: { pr_id: { head_sha, hidden_at } }. Auto-unhide if head_sha changed. */
-  function loadHidden() {
-    const raw = localStorage.getItem(HIDDEN_KEY);
-    if (!raw) return {};
-    try { return JSON.parse(raw); } catch { return {}; }
-  }
+  const loadHidden = () => loadJSON(HIDDEN_KEY) || {};
   function saveHidden(h) { localStorage.setItem(HIDDEN_KEY, JSON.stringify(h)); }
 
   // Unsynced listener ops, each posted to its route (`hidden` when unset) once it answers.
-  function loadQueue() {
-    const raw = localStorage.getItem(HIDDEN_QUEUE_KEY);
-    if (!raw) return [];
-    try { const q = JSON.parse(raw); return Array.isArray(q) ? q : []; } catch { return []; }
-  }
+  function loadQueue() { const q = loadJSON(HIDDEN_QUEUE_KEY); return Array.isArray(q) ? q : []; }
   function saveQueue(q) { localStorage.setItem(HIDDEN_QUEUE_KEY, JSON.stringify(q)); }
   function enqueueOp(op) { const q = loadQueue(); q.push(op); saveQueue(q); }
   function flushQueue() {
@@ -135,33 +106,12 @@
     flushQueue();
   }
 
-  let filters = loadJSON(STATE_KEY) || {};
-  // Backfill any group missing from a stored payload written before it existed,
-  // so an older localStorage entry can't leave a group undefined.
-  for (const g of ["repo", "bucket", "branch", "state", "tracked-state", "mine-state"]) {
-    if (!(g in filters)) filters[g] = [];
-  }
-  // localStorage roundtrips Set as array
-  for (const k of Object.keys(filters)) {
-    if (!(filters[k] instanceof Set)) filters[k] = new Set(filters[k] || []);
-  }
-
-  let sortMode = localStorage.getItem(SORT_KEY) || "default";
-  sortEl.value = sortMode;
+  // localStorage roundtrips Set as array, and the engine adds any group the stored payload lacks.
+  const filters = Object.fromEntries(Object.entries(loadJSON(STATE_KEY) || {}).map(([k, v]) => [k, new Set(v || [])]));
 
   // Search is transient (not persisted): a "find it right now" lookup, unlike
   // the chip filters which persist across reloads.
   let searchQuery = "";
-
-  /** Lazily-built, lowercased searchable text for a PR. */
-  function searchHaystack(pr) {
-    if (pr._haystack === undefined) {
-      const parts = [pr.title, pr.author, pr.target_branch, pr.head_branch, pr.bucket, ...pr.modules];
-      pr.members.forEach(m => parts.push(`${m.repo_short}#${m.number}`, m.repo, String(m.number)));
-      pr._haystack = parts.join(" ").toLowerCase();
-    }
-    return pr._haystack;
-  }
 
   function matchesSearch(hay) {
     if (!searchQuery) return true;
@@ -169,10 +119,6 @@
     // text contains both, in any order.
     return searchQuery.split(/\s+/).every(t => !t || hay.includes(t));
   }
-
-  // Current keyboard selection + the visible (filtered+sorted) order it walks.
-  let selectedId = null;
-  let visiblePRs = [];
 
   function saveFilters() {
     const payload = {};
@@ -185,34 +131,12 @@
     catch { return null; }
   }
 
-  function uniqueValues(field) {
-    const set = new Set();
-    PRS.forEach(p => set.add(p[field]));
-    return [...set].sort();
-  }
-
-  function buildChips(groupId, values, getLabel) {
-    const host = document.querySelector(`.filter-group[data-group="${groupId}"] .chips`);
-    host.innerHTML = "";
-    values.forEach(v => {
-      const chip = document.createElement("button");
-      chip.className = "chip";
-      chip.type = "button";
-      chip.dataset.group = groupId;
-      chip.dataset.value = String(v);
-      chip.textContent = getLabel ? getLabel(v) : v;
-      if (filters[groupId].has(String(v))) chip.classList.add("active");
-      chip.addEventListener("click", () => toggleChip(groupId, String(v)));
-      host.appendChild(chip);
-    });
-  }
-
   function toggleChip(group, value) {
     if (filters[group].has(value)) filters[group].delete(value);
     else filters[group].add(value);
     saveFilters();
     refreshChipStates();
-    rerenderActive();
+    rerender();
   }
 
   function refreshChipStates() {
@@ -222,71 +146,7 @@
     });
   }
 
-  function setupFilters() {
-    buildChips("repo", ["odoo/odoo", "odoo/enterprise"], v => v.split("/")[1]);
-    buildChips("bucket", BUCKETS);
-    buildChips("branch", uniqueValues("target_branch"));
-    buildChips("state", STATES.map(s => s.id), id => STATES.find(s => s.id === id).label);
-  }
-
-  function passesFilters(pr) {
-    if (!matchesSearch(searchHaystack(pr))) return false;
-
-    const showHidden = filters.state.has("show-hidden");
-    const itemHidden = isHidden(pr);
-    if (itemHidden && !showHidden) return false;
-
-    // Archived: only show when the 'archived' chip is explicitly selected.
-    // 'pinged'/'pushed' only ever apply to archived rows, so they imply the
-    // archived view - otherwise picking one alone would filter down to nothing.
-    const showArchived = filters.state.has("archived")
-      || filters.state.has("pinged") || filters.state.has("pushed");
-    if (pr.is_archived && !showArchived) return false;
-    if (!pr.is_archived && showArchived) return false;
-
-    // Drafts: kept out of the default "ready to review" queue. The 'drafts'
-    // chip flips into the backlog view of just the drafts.
-    const showDrafts = filters.state.has("drafts");
-    if (pr.is_draft && !showDrafts) return false;
-    if (!pr.is_draft && showDrafts) return false;
-
-    if (filters.repo.size && !pr.members.some(m => filters.repo.has(m.repo))) return false;
-    if (filters.bucket.size && !filters.bucket.has(pr.bucket)) return false;
-    if (filters.branch.size && !filters.branch.has(pr.target_branch)) return false;
-    if (filters.state.size) {
-      const checks = {
-        "updated": (pr.since_last_look || []).length > 0,
-        "ball-in-my-court": pr.my_review_state === "PENDING",
-        "awaiting-my-reply": pr.awaiting_my_reply,
-        "stale": pr.flags.includes("OLD"),
-        "re-review": pr.previously_reviewed,
-        "ci-failed": pr.ci_state === "FAILURE" || pr.ci_state === "ERROR",
-        "pinged": !!pr.ping_at,
-        "pushed": !!pr.push_at,
-        "drafts": pr.is_draft,
-        "archived": pr.is_archived,
-        "show-hidden": true,
-      };
-      for (const s of filters.state) {
-        if (!checks[s]) return false;
-      }
-    }
-    return true;
-  }
-
-  function sortKey(pr) {
-    const bRank = { S: 0, M: 1, L: 2, XL: 3 }[pr.bucket] ?? 1;
-    switch (sortMode) {
-      case "req_age_desc": return -pr.req_age_days;
-      case "req_age_asc": return pr.req_age_days;
-      case "bucket": return bRank;
-      case "size": return -(pr.additions + pr.deletions);
-      default: return bRank * 10000 - pr.req_age_days;
-    }
-  }
-
   function updateKpi() {
-    if (!kpiEl) return;
     const archived = PRS.filter(p => p.is_archived && p.archived_at);
     if (!archived.length) { kpiEl.textContent = ""; return; }
     const now = new Date();
@@ -366,7 +226,7 @@
       <div class="stats">
         <div class="stats-head">
           <h2>Review stats</h2>
-          ${selectedId ? `<button class="stats-back" type="button">← back to PR</button>` : ""}
+          ${VIEWS.queue.selected ? `<button class="stats-back" type="button">← back to PR</button>` : ""}
         </div>
         <div class="stat-headline">
           ${headline.map(([label, n]) => `
@@ -385,122 +245,7 @@
         <div class="stats-note">Based on ${arch.length} PRs you reviewed (archived).</div>
       </div>`;
 
-    const back = detailEl.querySelector(".stats-back");
-    if (back) back.addEventListener("click", () => selectPR(selectedId));
-  }
-
-  function renderList() {
-    const visible = PRS.filter(passesFilters);
-    visible.sort((a, b) => sortKey(a) - sortKey(b));
-    visiblePRs = visible;
-    const hiddenCount = PRS.filter(p => isHidden(p)).length;
-    // The default "ready" queue excludes both archived and draft PRs; each has
-    // its own exclusive view (chip) with its own total.
-    const archivedTotal = PRS.filter(p => p.is_archived).length;
-    const draftTotal = PRS.filter(p => p.is_draft && !p.is_archived).length;
-    const activeTotal = PRS.filter(p => !p.is_archived && !p.is_draft).length;
-    const view = filters.state.has("archived") ? "archived"
-      : filters.state.has("drafts") ? "drafts" : "active";
-    const denom = view === "archived" ? archivedTotal
-      : view === "drafts" ? draftTotal : activeTotal;
-    visibleCountEl.textContent = hiddenCount
-      ? `${visible.length} / ${denom}  ·  ${hiddenCount} hidden`
-      : `${visible.length} / ${denom}`;
-    if (totalCountEl) totalCountEl.textContent = `${view} PRs`;
-    if (lookCountEl) {
-      const n = PRS.filter(p => !p.is_archived && !p.is_draft && (p.since_last_look || []).length).length;
-      lookCountEl.textContent = n ? `${n} updated` : "";
-      lookCountEl.title = n ? "Show only PRs updated since your last visit" : "";
-    }
-
-    listEl.innerHTML = "";
-    visible.forEach(pr => {
-      const li = document.createElement("li");
-      const itemHidden = isHidden(pr);
-      li.className = "pr-row"
-        + (itemHidden ? " hidden-row" : "")
-        + (pr.is_archived ? " archived-row" : "");
-      li.dataset.id = pr.id;
-      const idBlock = pr.members.map(m => {
-        const cls = m.closed ? " pr-id-closed"
-          : (m.reviewed && !pr.is_archived) ? " pr-id-reviewed" : "";
-        const title = m.closed ? ' title="closed on GitHub"'
-          : (m.reviewed && !pr.is_archived) ? ' title="already reviewed by you - still open on GitHub"' : "";
-        return `<span class="pr-id${cls}"${title}>${escapeHTML(m.repo_short)}#${m.number}</span>`;
-      }).join('<span class="pair-sep">+</span>');
-      const closedMemberCount = pr.members.filter(m => m.closed).length;
-      const doneMemberCount = pr.is_archived ? 0
-        : pr.members.filter(m => !m.closed && m.reviewed).length;
-      const openMemberCount = pr.members.length - closedMemberCount;
-      const mixedPair = pr.is_pair
-        && (closedMemberCount + doneMemberCount) > 0
-        && (closedMemberCount + doneMemberCount) < pr.members.length;
-      const pairTag = pr.is_pair
-        ? (mixedPair
-            ? (closedMemberCount
-                ? `<span class="pair-tag pair-tag-partial" title="Only ${openMemberCount} of ${pr.members.length} halves still open on GitHub">${openMemberCount}/${pr.members.length} OPEN</span>`
-                : `<span class="pair-tag pair-tag-partial" title="${doneMemberCount} of ${pr.members.length} halves already reviewed by you - both still open on GitHub">${doneMemberCount}/${pr.members.length} REVIEWED</span>`)
-            : '<span class="pair-tag">PAIR</span>')
-        : "";
-      // The migration ships in a third repo, so nothing else on this row (or in
-      // the diff below it) can tell you it exists.
-      const companionTag = pr.companion
-        ? `<span class="companion-tag" title="Migration ships in ${escapeHTML(pr.companion.repo_short)}#${pr.companion.number} (${escapeHTML((pr.companion.state || "").toLowerCase())}) - ${escapeHTML(pr.companion.title || "")}">MIG</span>`
-        : "";
-      const draftTag = pr.is_draft ? '<span class="draft-tag">DRAFT</span>' : "";
-      const archivedTag = pr.is_archived ? '<span class="archived-tag">ARCHIVED</span>' : "";
-      const reviewedCount = (pr.ai_reviews || []).length;
-      const isPartialReview = pr.is_pair && reviewedCount > 0 && reviewedCount < pr.members.length;
-      // A clean verdict is normally left untagged - a quiet row means nothing to
-      // look at. That is wrong for a half-reviewed pair: the verdict only covers
-      // the half that was analyzed, so an untagged row claims the whole pair
-      // passed when the other half was never read. Tag those regardless.
-      const analyzed = (pr.ai_reviews || []).map(r => r.repo_short + "#" + r.number).join(", ");
-      const verdictTitle = isPartialReview
-        ? `only ${reviewedCount} of ${pr.members.length} halves analyzed - ${pr.ai_review_verdict} covers ${analyzed} only`
-        : `claude flagged ${pr.ai_review_verdict} concerns`;
-      const verdictTag = (pr.ai_review_verdict === "minor" || pr.ai_review_verdict === "major" || isPartialReview)
-        ? `<span class="verdict-tag verdict-tag-${pr.ai_review_verdict}" title="${escapeHTML(verdictTitle)}">${pr.ai_review_verdict.toUpperCase()}${isPartialReview ? ' <span class="verdict-partial">' + reviewedCount + '/' + pr.members.length + '</span>' : ''}</span>`
-        : "";
-      // No review and no badge reads as "too big to review"; say it was tried.
-      const failedTag = pr.ai_failed
-        ? `<span class="ai-failed-tag" title="AI first pass gave up after ${pr.ai_failed.attempts} attempts (${escapeHTML(pr.ai_failed.error)})">AI ✕${pr.ai_failed.attempts}</span>`
-        : "";
-      const hideLabel = itemHidden ? "↺" : "×";
-      const hideTitle = itemHidden ? "Unhide" : "Hide until next push";
-      const lookBadges = (pr.since_last_look || [])
-        .map(t => `<span class="look-badge look-${t}">${LOOK_BADGES[t] || t}</span>`)
-        .join("");
-      li.innerHTML = `
-        <span class="pr-id-group">${idBlock}${pairTag}${companionTag}${draftTag}${archivedTag}${verdictTag}${failedTag}${lookBadges}</span>
-        <span class="pr-title" title="${escapeHTML(pr.title)}">${escapeHTML(pr.title)}</span>
-        <span class="pr-bucket ${pr.bucket}">${pr.bucket}</span>
-        <button class="pr-hide" type="button" title="${hideTitle}" data-hide-id="${escapeHTML(pr.id)}">${hideLabel}</button>
-        <span class="pr-sub">
-          <span class="pr-author">@${escapeHTML(pr.author)}</span>
-          <span class="pr-flags">${pr.flags.map(f => `<span class="pr-flag ${cssClass(f)}">${escapeHTML(f)}</span>`).join("")}</span>
-          <span>+${pr.additions}/−${pr.deletions} · ${pr.changed_files}f</span>
-          <span class="pr-modules">${pr.modules.slice(0, 3).map(escapeHTML).join(" ")}${pr.modules.length > 3 ? ` (+${pr.modules.length - 3})` : ""}</span>
-          <span>req ${pr.req_age_days}d / open ${pr.age_days}d</span>
-        </span>
-      `;
-      li.addEventListener("click", (e) => {
-        if (e.target.classList.contains("pr-hide")) return;
-        selectPR(pr.id);
-      });
-      const hideBtn = li.querySelector(".pr-hide");
-      hideBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        setHidden(pr, !isHidden(pr));
-        renderList();
-      });
-      listEl.appendChild(li);
-    });
-
-    const hash = parseHash();
-    if (hash && visible.some(p => p.id === hash)) {
-      highlightSelected(hash);
-    }
+    detailEl.querySelector(".stats-back")?.addEventListener("click", () => select(VIEWS.queue, VIEWS.queue.selected));
   }
 
   function escapeHTML(s) {
@@ -513,77 +258,7 @@
     return flag.replace(/!/g, "\\!");
   }
 
-  function selectPR(id) {
-    selectedId = id;
-    history.replaceState(null, "", "#pr=" + encodeURIComponent(id));
-    highlightSelected(id);
-    renderDetail(PRS.find(p => p.id === id));
-  }
-
-  function scrollRowIntoView(id) {
-    const row = listEl.querySelector(`.pr-row[data-id="${CSS.escape(id)}"]`);
-    if (row) row.scrollIntoView({ block: "nearest" });
-  }
-
-  /** Move keyboard selection through the visible list by `delta` rows. */
-  function moveSelection(delta) {
-    const d = VIEWS[activeTab];
-    if (d) return moveListSelection(d.visible.map(r => r.id), d.selected, delta, id => select(d, id), d.list);
-    if (!visiblePRs.length) return;
-    const cur = visiblePRs.findIndex(p => p.id === selectedId);
-    const next = cur === -1
-      ? (delta > 0 ? 0 : visiblePRs.length - 1)
-      : Math.max(0, Math.min(visiblePRs.length - 1, cur + delta));
-    const pr = visiblePRs[next];
-    if (pr) { selectPR(pr.id); scrollRowIntoView(pr.id); }
-  }
-
-  function moveListSelection(ids, currentId, delta, select, host) {
-    if (!ids.length) return;
-    const cur = ids.indexOf(currentId);
-    const next = cur === -1
-      ? (delta > 0 ? 0 : ids.length - 1)
-      : Math.max(0, Math.min(ids.length - 1, cur + delta));
-    select(ids[next]);
-    const row = host.querySelector(`.pr-row[data-id="${CSS.escape(ids[next])}"]`);
-    if (row) row.scrollIntoView({ block: "nearest" });
-  }
-
-  function openSelectedOnGithub() {
-    const d = VIEWS[activeTab];
-    if (d) {
-      const row = viewRow(d, d.selected);
-      if (row) window.open(row.url, "_blank", "noopener");
-      return;
-    }
-    const pr = PRS.find(p => p.id === selectedId);
-    if (pr) window.open(pr.url, "_blank", "noopener");
-  }
-
-  /** Hide/unhide the selection; if it drops out of view, take the next row. */
-  function hideSelected() {
-    const pr = PRS.find(p => p.id === selectedId);
-    if (!pr) return;
-    const wasIdx = visiblePRs.findIndex(p => p.id === selectedId);
-    setHidden(pr, !isHidden(pr));
-    renderList();
-    if (!visiblePRs.some(p => p.id === selectedId) && visiblePRs.length) {
-      const ni = Math.min(Math.max(wasIdx, 0), visiblePRs.length - 1);
-      selectPR(visiblePRs[ni].id);
-      scrollRowIntoView(visiblePRs[ni].id);
-    }
-  }
-
-  function highlightSelected(id) {
-    document.querySelectorAll(".pr-row").forEach(r => {
-      r.classList.toggle("selected", r.dataset.id === id);
-    });
-  }
-
-  /** Build the Discord hand-off message: a star line for reviewer difficulty
-   *  followed by one masked link per still-open PR. A paired PR with both
-   *  halves open bundles both links under a single star line; closed halves
-   *  (no longer reviewable) are dropped. */
+  // A star line for reviewer difficulty, then one masked link per still-open half.
   function buildDiscordMessage(pr, rating) {
     const stars = "★".repeat(rating) + "☆".repeat(5 - rating);
     const open = pr.members.filter(m => !m.closed);
@@ -592,11 +267,9 @@
     return stars + "\n" + links.join("\n");
   }
 
-  /** Star-picker popover on the "discord" button: hover previews the rating,
-   *  click copies the formatted message to the clipboard. */
+  // Star-picker popover on the "discord" button: hover previews the rating, click copies the message.
   function wireDiscordCopy(root, pr) {
     const wrap = root.querySelector(".discord-copy");
-    if (!wrap) return;
     const btn = wrap.querySelector(".discord-btn");
     const pop = wrap.querySelector(".discord-pop");
     const stars = [...wrap.querySelectorAll(".ds-star")];
@@ -641,282 +314,6 @@
     });
     wrap.querySelector(".discord-stars")
       .addEventListener("mouseleave", () => paint(0));
-  }
-
-  function renderDetail(pr) {
-    if (!pr) { detailEl.innerHTML = '<div class="empty">Select a PR on the left.</div>'; return; }
-
-    const taskLink = pr.task_url
-      ? `<a href="${escapeHTML(pr.task_url)}" target="_blank" rel="noopener">${escapeHTML(pr.linked_task_label || ("task-" + pr.linked_task))} ↗</a>`
-      : `<a class="unavailable">No task</a>`;
-    const runbotLink = pr.runbot_url
-      ? `<a href="${escapeHTML(pr.runbot_url)}" target="_blank" rel="noopener">Runbot ↗</a>`
-      : `<a class="unavailable">No runbot</a>`;
-    const ghLinks = pr.members.map(m => {
-      const attrs = m.closed ? ' class="gh-link-closed" title="This half is closed on GitHub"'
-        : (m.reviewed && !pr.is_archived) ? ' title="Already reviewed by you - still open on GitHub"' : "";
-      const suffix = m.closed ? " (closed)"
-        : (m.reviewed && !pr.is_archived) ? " (reviewed)" : "";
-      return `<a href="${escapeHTML(m.url)}" target="_blank" rel="noopener"${attrs}>GitHub: ${escapeHTML(m.repo_short)}#${m.number}${suffix} ↗</a>`;
-    }).join("");
-    const companionLink = pr.companion
-      ? `<a href="${escapeHTML(pr.companion.url)}" target="_blank" rel="noopener" class="companion-link" title="The upgrade script for this change (${escapeHTML((pr.companion.state || "").toLowerCase())}) - it lives in a third repo, so it is in none of the diffs below${pr.companion.title ? " · " + escapeHTML(pr.companion.title) : ""}">Migration: ${escapeHTML(pr.companion.repo_short)}#${pr.companion.number} ↗</a>`
-      : "";
-    const closedMembers = pr.members.filter(m => m.closed);
-    const reviewedMembers = pr.is_archived ? []
-      : pr.members.filter(m => !m.closed && m.reviewed);
-    const activeMembers = pr.members.filter(
-      m => !m.closed && !reviewedMembers.includes(m));
-    const names = ms => ms.map(m => escapeHTML(m.repo_short) + "#" + m.number).join(", ");
-    const noticeParts = [];
-    if (closedMembers.length) {
-      noticeParts.push(`<strong>${names(closedMembers)} ${closedMembers.length === 1 ? "is" : "are"} closed on GitHub.</strong>`);
-    }
-    if (reviewedMembers.length) {
-      noticeParts.push(`You already reviewed ${names(reviewedMembers)} - still open, just no longer in your review queue.`);
-    }
-    const mixedNotice = (pr.is_pair && noticeParts.length && activeMembers.length)
-      ? `<div class="pair-mixed-notice" title="A paired PR whose other half left your review queue">
-          ${noticeParts.join(" ")} The diff and stats below still cover both halves.
-        </div>`
-      : "";
-    // Why is a half missing from the AI first-pass? closed > over-budget > not-yet-reviewed.
-    const reviewedKeys = new Set((pr.ai_reviews || []).map(r => r.repo_short + "#" + r.number));
-    const missingHalves = pr.members
-      .filter(m => !reviewedKeys.has(m.repo_short + "#" + m.number))
-      .map(m => {
-        const d = pr.diffs.find(x => x.repo_short === m.repo_short && x.number === m.number);
-        const reason = m.closed ? " is closed"
-          : m.reviewed ? " was already reviewed by you"
-          : (d && !d.available) ? "'s diff was too large to review"
-          : " hasn't been reviewed yet";
-        return escapeHTML(m.repo_short) + "#" + m.number + reason;
-      });
-    const crumbsId = pr.members.map(m => `${escapeHTML(m.repo)}#${m.number}`).join(" + ");
-    const pairBadge = pr.is_pair
-      ? `<span class="pair-badge">paired</span>`
-      : "";
-    const draftBadge = pr.is_draft
-      ? `<span class="draft-badge" title="Marked as a draft - not ready for review yet">draft</span>`
-      : "";
-    const pendBadge = pr.my_pending_review
-      ? `<span class="pend-badge" title="You have an unsent (PENDING) review draft on this PR - it stays invisible to the author until you submit it on GitHub">draft review not sent</span>`
-      : "";
-    const archivedBadge = pr.is_archived
-      ? `<span class="archived-badge" title="No longer requested for review${pr.archived_at ? " · archived " + pr.archived_at.slice(0, 10) : ""}">archived</span>`
-      : "";
-
-    detailEl.innerHTML = `
-      <div class="detail">
-        <div class="detail-header">
-          <h2>${pairBadge}${draftBadge}${pendBadge}${archivedBadge}${escapeHTML(pr.title)}</h2>
-          <div class="crumbs">
-            <span>${crumbsId}</span> ·
-            <span>@${escapeHTML(pr.author)}</span> ·
-            <span>${escapeHTML(pr.target_branch)} ← ${escapeHTML(pr.head_branch)}</span>
-          </div>
-        </div>
-
-        <div class="detail-links">
-          ${ghLinks}
-          ${companionLink}
-          ${runbotLink}
-          ${taskLink}
-          <div class="discord-copy">
-            <button class="discord-btn" type="button" title="Copy a Discord hand-off message with a difficulty rating for the final reviewer">discord ★</button>
-            <div class="discord-pop" hidden>
-              <span class="discord-pop-label">difficulty for final reviewer</span>
-              <span class="discord-stars">
-                ${[1, 2, 3, 4, 5].map(r => `<button class="ds-star" type="button" data-r="${r}" title="${r} / 5">☆</button>`).join("")}
-              </span>
-            </div>
-          </div>
-          <button class="detail-hide" type="button" data-detail-hide="${escapeHTML(pr.id)}">${isHidden(pr) ? "Unhide" : "Hide until next push"}</button>
-        </div>
-
-        ${mixedNotice}
-
-        ${pr.ping_at ? `
-        <div class="ping-notice" title="Informal re-review request after your last review - no formal re-request${pr.ping_at ? " · " + escapeHTML(pr.ping_at.slice(0, 10)) : ""}">
-          <span class="ping-tag">PING</span>
-          <span class="ping-who">@${escapeHTML(pr.ping_author || "?")}</span>
-          <span class="ping-snippet">${escapeHTML(pr.ping_snippet || "asked for a re-review")}</span>
-        </div>
-        ` : ""}
-
-        ${pr.push_at ? `
-        <div class="ping-notice push-notice" title="The author pushed after your last review - no action implied, the diff below is the new head${pr.push_at ? " · " + escapeHTML(pr.push_at.slice(0, 10)) : ""}">
-          <span class="ping-tag">PUSH</span>
-          <span class="ping-who">${escapeHTML((pr.push_sha || "").slice(0, 10))}</span>
-          <span class="ping-snippet">pushed since your review</span>
-        </div>
-        ` : ""}
-
-        <section class="section">
-          <h3>Status</h3>
-          <dl class="kv">
-            <dt>Bucket</dt><dd><span class="pr-bucket ${pr.bucket}">${pr.bucket}</span>
-              ${pr.bucket_score ? `<span class="bucket-note">score ${pr.bucket_score.toFixed(1)}</span>` : ""}</dd>
-            <dt>Size</dt><dd>+${pr.additions} / −${pr.deletions} across ${pr.changed_files} files</dd>
-            <dt>Modules</dt><dd>${pr.modules.length ? pr.modules.map(escapeHTML).join(", ") : "<em>(none)</em>"}</dd>
-            <dt>Open / requested</dt><dd>${pr.age_days}d open, ${pr.req_age_days}d since you were requested</dd>
-            <dt>CI</dt><dd>${escapeHTML(pr.ci_state || "-")} · ${escapeHTML(pr.mergeable || "-")}</dd>
-            ${(pr.ci_failures && pr.ci_failures.length) ? `
-            <dt>Failed</dt><dd class="ci-failures">
-              ${pr.ci_failures.map(f => {
-                const label = (pr.is_pair ? escapeHTML(f.repo_short) + ": " : "") + escapeHTML(f.name);
-                return f.url
-                  ? `<a href="${escapeHTML(f.url)}" target="_blank" rel="noopener">${label} ↗</a>`
-                  : `<span>${label}</span>`;
-              }).join("")}
-            </dd>` : ""}
-            <dt>Flags</dt><dd>${pr.flags.length ? pr.flags.map(f => `<span class="pr-flag ${cssClass(f)}">${escapeHTML(f)}</span>`).join(" ") : "<em>(none)</em>"}</dd>
-          </dl>
-        </section>
-
-        <section class="section">
-          <h3>Reviewers</h3>
-          <div class="reviewer-list">
-            <span class="reviewer me">you <span class="state-${escapeHTML(pr.my_review_state)}">${escapeHTML(pr.my_review_state)}</span></span>
-            ${pr.other_reviewers.map(r => `<span class="reviewer">${r.kind === "team" ? "team " : "@"}${escapeHTML(r.name)} <span class="state-${escapeHTML(r.state)}">${escapeHTML(r.state)}</span></span>`).join("")}
-          </div>
-        </section>
-
-        ${pr.body && pr.body.trim() ? `
-        <section class="section">
-          <h3>Description</h3>
-          <div class="pr-body markdown-body">${md.render(pr.body.trim())}</div>
-        </section>
-        ` : ""}
-
-        ${(pr.ai_reviews && pr.ai_reviews.length) ? `
-        <section class="section">
-          <h3>First-pass review <span class="ai-disclaimer">(claude, sanity-check only)</span></h3>
-          ${pr.is_pair && pr.ai_reviews.length < pr.members.length ? `
-            <div class="ai-partial-notice">
-              Only ${pr.ai_reviews.length} of ${pr.members.length} halves analyzed -
-              ${missingHalves.join("; ")}.
-              Findings below are for ${pr.ai_reviews.map(r => escapeHTML(r.repo_short) + "#" + r.number).join(", ")} only.
-            </div>
-          ` : ""}
-          ${pr.ai_reviews.map(r => `
-            <div class="ai-review">
-              ${pr.is_pair ? `<div class="ai-review-where">${escapeHTML(r.repo_short)}#${r.number}</div>` : ""}
-              <div class="ai-review-head">
-                <span class="ai-verdict ai-verdict-${escapeHTML(r.verdict)}">${escapeHTML(r.verdict)}</span>
-                ${r.summary ? `<span class="ai-summary">${escapeHTML(r.summary)}</span>` : ""}
-              </div>
-              ${r.concerns && r.concerns.length ? `
-                <ul class="ai-concerns">
-                  ${r.concerns.map(c => `
-                    <li class="ai-concern">
-                      <span class="ai-sev ai-sev-${escapeHTML(c.severity)}">${escapeHTML(c.severity)}</span>
-                      <span class="ai-msg">${escapeHTML(c.message)}</span>
-                      ${c.where ? `<code class="ai-where">${escapeHTML(c.where)}</code>` : ""}
-                    </li>
-                  `).join("")}
-                </ul>
-              ` : ""}
-            </div>
-          `).join("")}
-        </section>
-        ` : ""}
-
-        <section class="section">
-          <h3>Discussion ${pr.awaiting_my_reply ? '<button class="disc-awaits disc-awaits-jump" type="button">awaiting your reply ↓</button>' : ""}${pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank" rel="noopener" class="disc-repo-link">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")}</h3>
-          ${discussionHTML(pr.discussion, pr.is_pair, undefined, pr.my_login)}
-        </section>
-
-        ${pr.diffs.map((d, i) => `
-        <section class="diff-section${(d.closed || (d.reviewed && !pr.is_archived)) ? " diff-section-closed" : ""}">
-          <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--fg-dim);">
-            Diff: ${escapeHTML(d.repo_short)}#${d.number}${d.closed ? ' <span class="diff-closed-badge">CLOSED</span>' : (d.reviewed && !pr.is_archived) ? ' <span class="diff-reviewed-badge">REVIEWED</span>' : ""}
-            <span style="color:var(--fg-faint);font-weight:normal;text-transform:none;letter-spacing:0;">
-              · +${d.additions}/−${d.deletions} · ${d.changed_files}f
-            </span>
-          </h3>
-          <div class="diff-container" data-diff-idx="${i}">
-            ${d.available ? "" : `<div class="empty" style="padding:20px;">Diff not available${d.truncated ? " (truncated - too large)" : ""}. <a href="${escapeHTML(d.url)}/files" target="_blank" rel="noopener">View on GitHub ↗</a></div>`}
-          </div>
-        </section>
-        `).join("")}
-      </div>
-    `;
-
-    const detailHideBtn = detailEl.querySelector(".detail-hide");
-    if (detailHideBtn) {
-      detailHideBtn.addEventListener("click", () => {
-        setHidden(pr, !isHidden(pr));
-        renderList();
-        renderDetail(pr);
-      });
-    }
-
-    wireDiscordCopy(detailEl, pr);
-
-    const awaitsBtn = detailEl.querySelector(".disc-awaits-jump");
-    const awaitsThreads = [...detailEl.querySelectorAll(".disc-thread-awaits")];
-    let awaitsIdx = 0;
-    if (awaitsBtn && !awaitsThreads.length) awaitsBtn.disabled = true;
-    // Each click scrolls to the next thread awaiting my reply, wrapping around.
-    awaitsBtn?.addEventListener("click", () => {
-      const thread = awaitsThreads[awaitsIdx++ % awaitsThreads.length];
-      thread.closest("details").open = true;
-      thread.scrollIntoView({ block: "start" });
-    });
-
-    pr.diffs.forEach((d, i) => {
-      if (!d.available || !d.diff) return;
-      const container = detailEl.querySelector(`.diff-container[data-diff-idx="${i}"]`);
-      if (!container) return;
-
-      container.innerHTML = "";
-
-      // A cached diff over the size thresholds keeps its files but not all of
-      // their contents - say so, rather than let the stubs read as the PR's own
-      // doing (they carry a per-file link, this one covers the whole diff).
-      if (d.truncated) {
-        const notice = document.createElement("div");
-        notice.className = "diff-partial-notice";
-        notice.innerHTML = `Partial diff: oversized or generated files were replaced by a pr-dash stub. <a href="${escapeHTML(d.url)}/files" target="_blank" rel="noopener">Full diff on GitHub ↗</a>`;
-        container.appendChild(notice);
-      }
-
-      // Keep files in their original PR order: render consecutive inline files
-      // as one diff2html block, and drop a collapsed stub in place for files
-      // that fold. A file folds when it's unchanged since my last review
-      // ("reviewed"), or just large/noisy ("heavy") - both rendered lazily on
-      // expand (that heavy render is what costs 1-2s).
-      const files = splitDiffFiles(d.diff);
-      // review_changed_paths: files whose content differs from what I reviewed
-      // (or are new). null = no review baseline, so fold purely by size.
-      const changedSet = d.review_changed_paths ? new Set(d.review_changed_paths) : null;
-      const isReviewed = f => changedSet && !changedSet.has(f.path);
-      const willFold = f => isReviewed(f) || isHeavyFile(f);
-      // When folds split the diff into multiple inline blocks, suppress each
-      // block's "Files changed" list (it would repeat once per block).
-      const split = files.some(willFold);
-      let run = [];
-      const flush = () => {
-        if (!run.length) return;
-        const host = document.createElement("div");
-        container.appendChild(host);
-        renderDiffInto(host, run.map(f => f.chunk).join(""), { fileList: !split });
-        run = [];
-      };
-      files.forEach(f => {
-        if (isReviewed(f)) {
-          flush();
-          container.appendChild(buildFileStub(f, "reviewed"));
-        } else if (isHeavyFile(f)) {
-          flush();
-          container.appendChild(buildFileStub(f, changedSet ? "changed" : "heavy"));
-        } else {
-          run.push(f);  // new/changed (or no-baseline) small file → render inline
-        }
-      });
-      flush();
-    });
   }
 
   const DIFF_HEAVY_LINES = 300;
@@ -996,25 +393,12 @@
     return stub;
   }
 
-  function parseHash() {
-    const m = location.hash.match(/^#pr=(.+)$/);
-    return m ? decodeURIComponent(m[1]) : null;
-  }
-
-  const TABS = ["queue", "tracked", "mine"];
-  let activeTab = TABS.includes(localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : "queue";
-
   /** Dismissals are local-first, like hides: the row drops out of the list here
    *  and the op is flushed to the `pr-dash mcp` listener when it happens to be
    *  running, which stamps dismissed_at so the next render bakes it in. Without
    *  the listener the dismissal still holds in this browser. */
   const dismissedKey = tab => `pr-dash:${tab}-dismissed:v1`;
-  function loadDismissed(tab) {
-    const raw = localStorage.getItem(dismissedKey(tab));
-    if (!raw) return {};
-    try { const d = JSON.parse(raw); return d && typeof d === "object" ? d : {}; }
-    catch { return {}; }
-  }
+  function loadDismissed(tab) { const d = loadJSON(dismissedKey(tab)); return d && typeof d === "object" ? d : {}; }
   const dismissed = { tracked: loadDismissed("tracked"), mine: loadDismissed("mine") };
   // A local entry beats the baked stamp, an ISO time dismissing and `false` restoring.
   const isDismissed = (tab, row) => row.id in dismissed[tab]
@@ -1084,7 +468,6 @@
   }
 
   function renderLastRefresh() {
-    if (!lastRefreshEl) return;
     const at = lastRefreshEl.dataset.at;
     if (!at) return;
     const when = new Date(at);
@@ -1248,8 +631,373 @@
 
   const hasMoved = t => ((t.since_last_look || []).length ? 1 : 0);
   const byActivity = (a, b) => (b.updated_at || "").localeCompare(a.updated_at || "");
+  const by = key => (a, b) => key(a) - key(b);
+  const bucketRank = pr => ({ S: 0, M: 1, L: 2, XL: 3 }[pr.bucket] ?? 1);
 
   const VIEWS = {
+    // PRs I was directly requested to review, the obligation the dashboard is built around.
+    queue: {
+      rows: PRS,
+      link: "pr",
+      sortKey: "pr-dash:sort:v1",
+      search: "Search title, #, author, module…  ( / )",
+      placeholder: "Select a PR on the left.",
+      haystack: pr => [pr.title, pr.author, pr.target_branch, pr.head_branch, pr.bucket, ...pr.modules,
+                       ...pr.members.flatMap(m => [`${m.repo_short}#${m.number}`, m.repo, String(m.number)])].join(" "),
+      chips: {
+        repo: { values: ["odoo/odoo", "odoo/enterprise"], label: v => v.split("/")[1], of: pr => pr.members.map(m => m.repo) },
+        bucket: { values: ["S", "M", "L", "XL"], of: pr => [pr.bucket] },
+        branch: { values: [...new Set(PRS.map(p => p.target_branch))].sort(), of: pr => [pr.target_branch] },
+        state: [
+          { id: "updated", label: "updated since visit", test: pr => pr.since_last_look.length },
+          { id: "ball-in-my-court", label: "ball in my court", test: pr => pr.my_review_state === "PENDING" },
+          { id: "awaiting-my-reply", label: "awaiting my reply", test: pr => pr.awaiting_my_reply },
+          { id: "stale", label: "stale 7d+", test: pr => pr.flags.includes("OLD") },
+          { id: "re-review", label: "re-review", test: pr => pr.previously_reviewed },
+          { id: "ci-failed", label: "CI failed", test: pr => pr.ci_state === "FAILURE" || pr.ci_state === "ERROR" },
+          { id: "pinged", label: "pinged", test: pr => pr.ping_at },
+          { id: "pushed", label: "pushed since review", test: pr => pr.push_at },
+          { id: "drafts", label: "drafts (backlog)" },
+          { id: "archived", label: "archived" },
+          { id: "show-hidden", label: "show hidden" },
+        ],
+      },
+      // Archived and drafts are exclusive views, and pinged or pushed only ever apply to archived rows.
+      keep: pr => pr.is_archived === ["archived", "pinged", "pushed"].some(s => filters.state.has(s))
+        && pr.is_draft === filters.state.has("drafts"),
+      lookChip: ["state", "updated"],
+      sorts: {
+        default: by(pr => bucketRank(pr) * 10000 - pr.req_age_days),
+        req_age_desc: by(pr => -pr.req_age_days),
+        req_age_asc: by(pr => pr.req_age_days),
+        bucket: by(bucketRank),
+        size: by(pr => -(pr.additions + pr.deletions)),
+      },
+      marks: { h: { on: isHidden, set: setHidden, show: "show-hidden" } },
+      // A PR hidden with no row left to take stays in the detail, where the other views clear it.
+      keepsDetail: true,
+      first: () => (PRS.find(p => !p.is_archived && !p.is_draft) || PRS[0])?.id,
+      badges: { pushed: "↑push", reply: "reply", ci: "ci", new: "new" },
+      counts(visible) {
+        const hiddenN = PRS.filter(isHidden).length;
+        const view = filters.state.has("archived") ? "archived" : filters.state.has("drafts") ? "drafts" : "active";
+        const total = PRS.filter(p => view === "archived" ? p.is_archived
+          : !p.is_archived && p.is_draft === (view === "drafts")).length;
+        const n = PRS.filter(p => !p.is_archived && !p.is_draft && p.since_last_look.length).length;
+        return [`${visible.length} / ${total}${hiddenN ? `  ·  ${hiddenN} hidden` : ""}`, `${view} PRs`,
+                n ? `${n} updated` : "", n ? "Show only PRs updated since your last visit" : ""];
+      },
+      rowHTML(pr, lookBadges) {
+        const itemHidden = isHidden(pr);
+        const idBlock = pr.members.map(m => {
+          const cls = m.closed ? " pr-id-closed"
+            : (m.reviewed && !pr.is_archived) ? " pr-id-reviewed" : "";
+          const title = m.closed ? ' title="closed on GitHub"'
+            : (m.reviewed && !pr.is_archived) ? ' title="already reviewed by you - still open on GitHub"' : "";
+          return `<span class="pr-id${cls}"${title}>${escapeHTML(m.repo_short)}#${m.number}</span>`;
+        }).join('<span class="pair-sep">+</span>');
+        const closedMemberCount = pr.members.filter(m => m.closed).length;
+        const doneMemberCount = pr.is_archived ? 0
+          : pr.members.filter(m => !m.closed && m.reviewed).length;
+        const openMemberCount = pr.members.length - closedMemberCount;
+        const mixedPair = pr.is_pair
+          && (closedMemberCount + doneMemberCount) > 0
+          && (closedMemberCount + doneMemberCount) < pr.members.length;
+        const pairTag = pr.is_pair
+          ? (mixedPair
+              ? (closedMemberCount
+                  ? `<span class="pair-tag pair-tag-partial" title="Only ${openMemberCount} of ${pr.members.length} halves still open on GitHub">${openMemberCount}/${pr.members.length} OPEN</span>`
+                  : `<span class="pair-tag pair-tag-partial" title="${doneMemberCount} of ${pr.members.length} halves already reviewed by you - both still open on GitHub">${doneMemberCount}/${pr.members.length} REVIEWED</span>`)
+              : '<span class="pair-tag">PAIR</span>')
+          : "";
+        // The migration ships in a third repo, so nothing else on this row can tell you it exists.
+        const companionTag = pr.companion
+          ? `<span class="companion-tag" title="Migration ships in ${escapeHTML(pr.companion.repo_short)}#${pr.companion.number} (${escapeHTML((pr.companion.state || "").toLowerCase())}) - ${escapeHTML(pr.companion.title || "")}">MIG</span>`
+          : "";
+        const draftTag = pr.is_draft ? '<span class="draft-tag">DRAFT</span>' : "";
+        const archivedTag = pr.is_archived ? '<span class="archived-tag">ARCHIVED</span>' : "";
+        const reviewedCount = (pr.ai_reviews || []).length;
+        const isPartialReview = pr.is_pair && reviewedCount > 0 && reviewedCount < pr.members.length;
+        // A half-reviewed pair is tagged even when clean, as its verdict covers only one half.
+        const analyzed = (pr.ai_reviews || []).map(r => r.repo_short + "#" + r.number).join(", ");
+        const verdictTitle = isPartialReview
+          ? `only ${reviewedCount} of ${pr.members.length} halves analyzed - ${pr.ai_review_verdict} covers ${analyzed} only`
+          : `claude flagged ${pr.ai_review_verdict} concerns`;
+        const verdictTag = (pr.ai_review_verdict === "minor" || pr.ai_review_verdict === "major" || isPartialReview)
+          ? `<span class="verdict-tag verdict-tag-${pr.ai_review_verdict}" title="${escapeHTML(verdictTitle)}">${pr.ai_review_verdict.toUpperCase()}${isPartialReview ? ' <span class="verdict-partial">' + reviewedCount + '/' + pr.members.length + '</span>' : ''}</span>`
+          : "";
+        // No review and no badge reads as too big to review, so say it was tried.
+        const failedTag = pr.ai_failed
+          ? `<span class="ai-failed-tag" title="AI first pass gave up after ${pr.ai_failed.attempts} attempts (${escapeHTML(pr.ai_failed.error)})">AI ✕${pr.ai_failed.attempts}</span>`
+          : "";
+        return `<li class="pr-row${itemHidden ? " hidden-row" : ""}${pr.is_archived ? " archived-row" : ""}" data-id="${escapeHTML(pr.id)}">
+          <span class="pr-id-group">${idBlock}${pairTag}${companionTag}${draftTag}${archivedTag}${verdictTag}${failedTag}${lookBadges}</span>
+          <span class="pr-title" title="${escapeHTML(pr.title)}">${escapeHTML(pr.title)}</span>
+          <span class="pr-bucket ${pr.bucket}">${pr.bucket}</span>
+          <button class="pr-hide" type="button" title="${itemHidden ? "Unhide" : "Hide until next push"}" data-key="h">${itemHidden ? "↺" : "×"}</button>
+          <span class="pr-sub">
+            <span class="pr-author">@${escapeHTML(pr.author)}</span>
+            <span class="pr-flags">${pr.flags.map(f => `<span class="pr-flag ${cssClass(f)}">${escapeHTML(f)}</span>`).join("")}</span>
+            <span>+${pr.additions}/−${pr.deletions} · ${pr.changed_files}f</span>
+            <span class="pr-modules">${pr.modules.slice(0, 3).map(escapeHTML).join(" ")}${pr.modules.length > 3 ? ` (+${pr.modules.length - 3})` : ""}</span>
+            <span>req ${pr.req_age_days}d / open ${pr.age_days}d</span>
+          </span>
+        </li>`;
+      },
+      detail(pr) {
+        const taskLink = pr.task_url
+          ? `<a href="${escapeHTML(pr.task_url)}" target="_blank" rel="noopener">${escapeHTML(pr.linked_task_label || ("task-" + pr.linked_task))} ↗</a>`
+          : `<a class="unavailable">No task</a>`;
+        const runbotLink = pr.runbot_url
+          ? `<a href="${escapeHTML(pr.runbot_url)}" target="_blank" rel="noopener">Runbot ↗</a>`
+          : `<a class="unavailable">No runbot</a>`;
+        const ghLinks = pr.members.map(m => {
+          const attrs = m.closed ? ' class="gh-link-closed" title="This half is closed on GitHub"'
+            : (m.reviewed && !pr.is_archived) ? ' title="Already reviewed by you - still open on GitHub"' : "";
+          const suffix = m.closed ? " (closed)"
+            : (m.reviewed && !pr.is_archived) ? " (reviewed)" : "";
+          return `<a href="${escapeHTML(m.url)}" target="_blank" rel="noopener"${attrs}>GitHub: ${escapeHTML(m.repo_short)}#${m.number}${suffix} ↗</a>`;
+        }).join("");
+        const companionLink = pr.companion
+          ? `<a href="${escapeHTML(pr.companion.url)}" target="_blank" rel="noopener" class="companion-link" title="The upgrade script for this change (${escapeHTML((pr.companion.state || "").toLowerCase())}) - it lives in a third repo, so it is in none of the diffs below${pr.companion.title ? " · " + escapeHTML(pr.companion.title) : ""}">Migration: ${escapeHTML(pr.companion.repo_short)}#${pr.companion.number} ↗</a>`
+          : "";
+        const closedMembers = pr.members.filter(m => m.closed);
+        const reviewedMembers = pr.is_archived ? []
+          : pr.members.filter(m => !m.closed && m.reviewed);
+        const activeMembers = pr.members.filter(
+          m => !m.closed && !reviewedMembers.includes(m));
+        const names = ms => ms.map(m => escapeHTML(m.repo_short) + "#" + m.number).join(", ");
+        const noticeParts = [];
+        if (closedMembers.length) {
+          noticeParts.push(`<strong>${names(closedMembers)} ${closedMembers.length === 1 ? "is" : "are"} closed on GitHub.</strong>`);
+        }
+        if (reviewedMembers.length) {
+          noticeParts.push(`You already reviewed ${names(reviewedMembers)} - still open, just no longer in your review queue.`);
+        }
+        const mixedNotice = (pr.is_pair && noticeParts.length && activeMembers.length)
+          ? `<div class="pair-mixed-notice" title="A paired PR whose other half left your review queue">
+              ${noticeParts.join(" ")} The diff and stats below still cover both halves.
+            </div>`
+          : "";
+        // Why is a half missing from the AI first-pass? closed > over-budget > not-yet-reviewed.
+        const reviewedKeys = new Set((pr.ai_reviews || []).map(r => r.repo_short + "#" + r.number));
+        const missingHalves = pr.members
+          .filter(m => !reviewedKeys.has(m.repo_short + "#" + m.number))
+          .map(m => {
+            const d = pr.diffs.find(x => x.repo_short === m.repo_short && x.number === m.number);
+            const reason = m.closed ? " is closed"
+              : m.reviewed ? " was already reviewed by you"
+              : (d && !d.available) ? "'s diff was too large to review"
+              : " hasn't been reviewed yet";
+            return escapeHTML(m.repo_short) + "#" + m.number + reason;
+          });
+        const crumbsId = pr.members.map(m => `${escapeHTML(m.repo)}#${m.number}`).join(" + ");
+        const pairBadge = pr.is_pair
+          ? `<span class="pair-badge">paired</span>`
+          : "";
+        const draftBadge = pr.is_draft
+          ? `<span class="draft-badge" title="Marked as a draft - not ready for review yet">draft</span>`
+          : "";
+        const pendBadge = pr.my_pending_review
+          ? `<span class="pend-badge" title="You have an unsent (PENDING) review draft on this PR - it stays invisible to the author until you submit it on GitHub">draft review not sent</span>`
+          : "";
+        const archivedBadge = pr.is_archived
+          ? `<span class="archived-badge" title="No longer requested for review${pr.archived_at ? " · archived " + pr.archived_at.slice(0, 10) : ""}">archived</span>`
+          : "";
+
+        return `
+          <div class="detail">
+            <div class="detail-header">
+              <h2>${pairBadge}${draftBadge}${pendBadge}${archivedBadge}${escapeHTML(pr.title)}</h2>
+              <div class="crumbs">
+                <span>${crumbsId}</span> ·
+                <span>@${escapeHTML(pr.author)}</span> ·
+                <span>${escapeHTML(pr.target_branch)} ← ${escapeHTML(pr.head_branch)}</span>
+              </div>
+            </div>
+
+            <div class="detail-links">
+              ${ghLinks}
+              ${companionLink}
+              ${runbotLink}
+              ${taskLink}
+              <div class="discord-copy">
+                <button class="discord-btn" type="button" title="Copy a Discord hand-off message with a difficulty rating for the final reviewer">discord ★</button>
+                <div class="discord-pop" hidden>
+                  <span class="discord-pop-label">difficulty for final reviewer</span>
+                  <span class="discord-stars">
+                    ${[1, 2, 3, 4, 5].map(r => `<button class="ds-star" type="button" data-r="${r}" title="${r} / 5">☆</button>`).join("")}
+                  </span>
+                </div>
+              </div>
+              <button class="detail-hide" type="button" data-key="h">${isHidden(pr) ? "Unhide" : "Hide until next push"}</button>
+            </div>
+
+            ${mixedNotice}
+
+            ${pr.ping_at ? `
+            <div class="ping-notice" title="Informal re-review request after your last review - no formal re-request${pr.ping_at ? " · " + escapeHTML(pr.ping_at.slice(0, 10)) : ""}">
+              <span class="ping-tag">PING</span>
+              <span class="ping-who">@${escapeHTML(pr.ping_author || "?")}</span>
+              <span class="ping-snippet">${escapeHTML(pr.ping_snippet || "asked for a re-review")}</span>
+            </div>
+            ` : ""}
+
+            ${pr.push_at ? `
+            <div class="ping-notice push-notice" title="The author pushed after your last review - no action implied, the diff below is the new head${pr.push_at ? " · " + escapeHTML(pr.push_at.slice(0, 10)) : ""}">
+              <span class="ping-tag">PUSH</span>
+              <span class="ping-who">${escapeHTML((pr.push_sha || "").slice(0, 10))}</span>
+              <span class="ping-snippet">pushed since your review</span>
+            </div>
+            ` : ""}
+
+            <section class="section">
+              <h3>Status</h3>
+              <dl class="kv">
+                <dt>Bucket</dt><dd><span class="pr-bucket ${pr.bucket}">${pr.bucket}</span>
+                  ${pr.bucket_score ? `<span class="bucket-note">score ${pr.bucket_score.toFixed(1)}</span>` : ""}</dd>
+                <dt>Size</dt><dd>+${pr.additions} / −${pr.deletions} across ${pr.changed_files} files</dd>
+                <dt>Modules</dt><dd>${pr.modules.length ? pr.modules.map(escapeHTML).join(", ") : "<em>(none)</em>"}</dd>
+                <dt>Open / requested</dt><dd>${pr.age_days}d open, ${pr.req_age_days}d since you were requested</dd>
+                <dt>CI</dt><dd>${escapeHTML(pr.ci_state || "-")} · ${escapeHTML(pr.mergeable || "-")}</dd>
+                ${(pr.ci_failures && pr.ci_failures.length) ? `
+                <dt>Failed</dt><dd class="ci-failures">
+                  ${pr.ci_failures.map(f => {
+                    const label = (pr.is_pair ? escapeHTML(f.repo_short) + ": " : "") + escapeHTML(f.name);
+                    return f.url
+                      ? `<a href="${escapeHTML(f.url)}" target="_blank" rel="noopener">${label} ↗</a>`
+                      : `<span>${label}</span>`;
+                  }).join("")}
+                </dd>` : ""}
+                <dt>Flags</dt><dd>${pr.flags.length ? pr.flags.map(f => `<span class="pr-flag ${cssClass(f)}">${escapeHTML(f)}</span>`).join(" ") : "<em>(none)</em>"}</dd>
+              </dl>
+            </section>
+
+            <section class="section">
+              <h3>Reviewers</h3>
+              <div class="reviewer-list">
+                <span class="reviewer me">you <span class="state-${escapeHTML(pr.my_review_state)}">${escapeHTML(pr.my_review_state)}</span></span>
+                ${pr.other_reviewers.map(r => `<span class="reviewer">${r.kind === "team" ? "team " : "@"}${escapeHTML(r.name)} <span class="state-${escapeHTML(r.state)}">${escapeHTML(r.state)}</span></span>`).join("")}
+              </div>
+            </section>
+
+            ${pr.body && pr.body.trim() ? `
+            <section class="section">
+              <h3>Description</h3>
+              <div class="pr-body markdown-body">${md.render(pr.body.trim())}</div>
+            </section>
+            ` : ""}
+
+            ${(pr.ai_reviews && pr.ai_reviews.length) ? `
+            <section class="section">
+              <h3>First-pass review <span class="ai-disclaimer">(claude, sanity-check only)</span></h3>
+              ${pr.is_pair && pr.ai_reviews.length < pr.members.length ? `
+                <div class="ai-partial-notice">
+                  Only ${pr.ai_reviews.length} of ${pr.members.length} halves analyzed -
+                  ${missingHalves.join("; ")}.
+                  Findings below are for ${pr.ai_reviews.map(r => escapeHTML(r.repo_short) + "#" + r.number).join(", ")} only.
+                </div>
+              ` : ""}
+              ${pr.ai_reviews.map(r => `
+                <div class="ai-review">
+                  ${pr.is_pair ? `<div class="ai-review-where">${escapeHTML(r.repo_short)}#${r.number}</div>` : ""}
+                  <div class="ai-review-head">
+                    <span class="ai-verdict ai-verdict-${escapeHTML(r.verdict)}">${escapeHTML(r.verdict)}</span>
+                    ${r.summary ? `<span class="ai-summary">${escapeHTML(r.summary)}</span>` : ""}
+                  </div>
+                  ${r.concerns && r.concerns.length ? `
+                    <ul class="ai-concerns">
+                      ${r.concerns.map(c => `
+                        <li class="ai-concern">
+                          <span class="ai-sev ai-sev-${escapeHTML(c.severity)}">${escapeHTML(c.severity)}</span>
+                          <span class="ai-msg">${escapeHTML(c.message)}</span>
+                          ${c.where ? `<code class="ai-where">${escapeHTML(c.where)}</code>` : ""}
+                        </li>
+                      `).join("")}
+                    </ul>
+                  ` : ""}
+                </div>
+              `).join("")}
+            </section>
+            ` : ""}
+
+            <section class="section">
+              <h3>Discussion ${pr.awaiting_my_reply ? '<button class="disc-awaits disc-awaits-jump" type="button">awaiting your reply ↓</button>' : ""}${pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank" rel="noopener" class="disc-repo-link">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")}</h3>
+              ${discussionHTML(pr.discussion, pr.is_pair, undefined, pr.my_login)}
+            </section>
+
+            ${pr.diffs.map((d, i) => `
+            <section class="diff-section${(d.closed || (d.reviewed && !pr.is_archived)) ? " diff-section-closed" : ""}">
+              <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--fg-dim);">
+                Diff: ${escapeHTML(d.repo_short)}#${d.number}${d.closed ? ' <span class="diff-closed-badge">CLOSED</span>' : (d.reviewed && !pr.is_archived) ? ' <span class="diff-reviewed-badge">REVIEWED</span>' : ""}
+                <span style="color:var(--fg-faint);font-weight:normal;text-transform:none;letter-spacing:0;">
+                  · +${d.additions}/−${d.deletions} · ${d.changed_files}f
+                </span>
+              </h3>
+              <div class="diff-container" data-diff-idx="${i}">
+                ${d.available ? "" : `<div class="empty" style="padding:20px;">Diff not available${d.truncated ? " (truncated - too large)" : ""}. <a href="${escapeHTML(d.url)}/files" target="_blank" rel="noopener">View on GitHub ↗</a></div>`}
+              </div>
+            </section>
+            `).join("")}
+          </div>
+        `;
+      },
+      wire(pr) {
+        wireDiscordCopy(detailEl, pr);
+
+        const awaitsBtn = detailEl.querySelector(".disc-awaits-jump");
+        const awaitsThreads = [...detailEl.querySelectorAll(".disc-thread-awaits")];
+        let awaitsIdx = 0;
+        if (awaitsBtn && !awaitsThreads.length) awaitsBtn.disabled = true;
+        // Each click scrolls to the next thread awaiting my reply, wrapping around.
+        awaitsBtn?.addEventListener("click", () => {
+          const thread = awaitsThreads[awaitsIdx++ % awaitsThreads.length];
+          thread.closest("details").open = true;
+          thread.scrollIntoView({ block: "start" });
+        });
+
+        pr.diffs.forEach((d, i) => {
+          if (!d.available || !d.diff) return;
+          const container = detailEl.querySelector(`.diff-container[data-diff-idx="${i}"]`);
+          container.innerHTML = "";
+          // A truncated cached diff says so, rather than let its stubs read as the PR's own doing.
+          if (d.truncated) {
+            const notice = document.createElement("div");
+            notice.className = "diff-partial-notice";
+            notice.innerHTML = `Partial diff: oversized or generated files were replaced by a pr-dash stub. <a href="${escapeHTML(d.url)}/files" target="_blank" rel="noopener">Full diff on GitHub ↗</a>`;
+            container.appendChild(notice);
+          }
+
+          // Files keep PR order, unchanged since my review or heavy ones fold into stubs drawn on expand.
+          const files = splitDiffFiles(d.diff);
+          const changedSet = d.review_changed_paths ? new Set(d.review_changed_paths) : null;
+          const isReviewed = f => changedSet && !changedSet.has(f.path);
+          const willFold = f => isReviewed(f) || isHeavyFile(f);
+          // Folds split the diff into several blocks, so each block drops its repeated file list.
+          const split = files.some(willFold);
+          let run = [];
+          const flush = () => {
+            if (!run.length) return;
+            const host = document.createElement("div");
+            container.appendChild(host);
+            renderDiffInto(host, run.map(f => f.chunk).join(""), { fileList: !split });
+            run = [];
+          };
+          files.forEach(f => {
+            if (isReviewed(f)) {
+              flush();
+              container.appendChild(buildFileStub(f, "reviewed"));
+            } else if (isHeavyFile(f)) {
+              flush();
+              container.appendChild(buildFileStub(f, changedSet ? "changed" : "heavy"));
+            } else {
+              run.push(f);  // new/changed (or no-baseline) small file → render inline
+            }
+          });
+          flush();
+        });
+      },
+    },
     // PRs I subscribed to on GitHub or added with `pr-dash track`, watched until they land.
     tracked: {
       rows: TRACKED,
@@ -1480,10 +1228,15 @@
 
   const viewRow = (d, id) => d.rows.find(r => r.id === id);
 
+  // A value group passes on any selected value, a chip list on every active chip with a test.
+  const passesChips = (d, r) => Object.entries(d.chips).every(([g, c]) => c.of
+    ? !filters[g].size || c.of(r).some(v => filters[g].has(v))
+    : c.every(x => !x.test || !filters[g].has(x.id) || x.test(r)));
+
   function renderView(d) {
     const shown = id => Object.keys(d.chips).some(g => filters[g].has(id));
     d.visible = d.rows.filter(r => matchesSearch(r._haystack ??= d.haystack(r).toLowerCase())
-      && Object.entries(d.chips).every(([g, cs]) => cs.every(c => !c.test || !filters[g].has(c.id) || c.test(r)))
+      && (!d.keep || d.keep(r)) && passesChips(d, r)
       && Object.values(d.marks).every(m => !m.show || !m.on(r) || shown(m.show)))
       .sort(d.sorts[d.sort] || Object.values(d.sorts)[0]);
     let tab;
@@ -1491,7 +1244,7 @@
       d.counts(d.visible);
     const tabCountEl = document.getElementById(`${d.key}-tab-count`);
     if (tabCountEl) tabCountEl.textContent = String(tab);
-    d.list.innerHTML = d.visible.length
+    d.list.innerHTML = d.visible.length || !d.empty
       ? d.listHTML(d.visible, r => d.rowHTML(r, (r.since_last_look || []).map(
         x => `<span class="look-badge look-${x}">${d.badges[x] || x}</span>`).join("")))
       : `<li class="tr-empty">${escapeHTML(d.empty())}</li>`;
@@ -1502,35 +1255,57 @@
     d.list.querySelectorAll(".pr-row").forEach(li => li.classList.toggle("selected", li.dataset.id === d.selected));
   }
 
+  const scrollTo = (d, id) => d.list.querySelector(`.pr-row[data-id="${CSS.escape(id)}"]`)
+    ?.scrollIntoView({ block: "nearest" });
+
+  // Show a row in the detail and put it in the URL, so a reload reopens the same view and item.
   function select(d, id) {
     d.selected = id;
     highlight(d);
     const row = viewRow(d, id);
     detailEl.innerHTML = row ? d.detail(row) : `<div class="empty">${d.placeholder}</div>`;
+    if (row) d.wire?.(row);
+    history.replaceState(null, "", id ? `#${d.link}=${encodeURIComponent(id)}` : location.pathname + location.search);
+  }
+
+  function move(delta) {
+    const d = VIEWS[activeTab];
+    const ids = d.visible.map(r => r.id);
+    if (!ids.length) return;
+    const cur = ids.indexOf(d.selected);
+    const next = ids[cur === -1 ? (delta > 0 ? 0 : ids.length - 1) : Math.max(0, Math.min(ids.length - 1, cur + delta))];
+    select(d, next);
+    scrollTo(d, next);
   }
 
   // Toggle a mark, and if the selection left the list take its successor when `advance`.
   function mark(d, key, id, advance) {
     const row = viewRow(d, id);
     if (!row) return;
-    const idx = d.visible.indexOf(row);
+    const idx = Math.max(d.visible.indexOf(row), 0);
     const was = d.marks[key].on(row);
     d.marks[key].set(row, !was);
     if (d.marks[key].on(row) === was) return;
     renderView(d);
     if (d.selected !== id) return;
-    if (d.visible.includes(row)) return select(d, id);
-    select(d, (advance && d.visible[Math.min(idx, d.visible.length - 1)]?.id) || null);
+    const next = d.visible.includes(row) ? id : advance && d.visible[Math.min(idx, d.visible.length - 1)]?.id;
+    select(d, next || (d.keepsDetail ? id : null));
+    if (next && next !== id) scrollTo(d, next);
   }
 
   for (const [key, d] of Object.entries(VIEWS)) {
     Object.assign(d, { key, list: document.getElementById(`${key}-list`), selected: null, visible: [] });
+    d.link ??= key;
     d.listHTML ??= (rows, rowHTML) => rows.map(rowHTML).join("");
-    for (const [g, cs] of Object.entries(d.chips)) {
-      buildChips(g, cs.map(c => c.id), id => cs.find(c => c.id === id).label);
+    for (const [g, c] of Object.entries(d.chips)) {
+      filters[g] ??= new Set();
+      document.querySelector(`.filter-group[data-group="${g}"] .chips`).innerHTML = (c.of ? c.values : c).map(v => {
+        const id = String(v.id ?? v), label = c.of ? (c.label ? c.label(v) : v) : v.label;
+        return `<button class="chip${filters[g].has(id) ? " active" : ""}" type="button" data-group="${g}" data-value="${escapeHTML(id)}">${escapeHTML(label)}</button>`;
+      }).join("");
     }
     const sortEl = document.getElementById(`${key}-sort`);
-    const stored = `pr-dash:${key}-sort:v1`;
+    const stored = d.sortKey || `pr-dash:${key}-sort:v1`;
     d.sort = localStorage.getItem(stored) || Object.keys(d.sorts)[0];
     if (sortEl) sortEl.value = d.sort;
     sortEl?.addEventListener("change", () => { localStorage.setItem(stored, d.sort = sortEl.value); renderView(d); });
@@ -1540,38 +1315,28 @@
       if (li) btn ? mark(d, btn.dataset.key, li.dataset.id, d.clickAdvances) : select(d, li.dataset.id);
     });
   }
+  const TABS = Object.keys(VIEWS);
+  let activeTab = TABS.includes(localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : "queue";
+
   detailEl.addEventListener("click", (e) => {
     const d = VIEWS[activeTab];
     const btn = e.target.closest("[data-key]");
-    if (d && btn) mark(d, btn.dataset.key, d.selected, d.clickAdvances);
+    if (btn) mark(d, btn.dataset.key, d.selected, d.clickAdvances);
   });
 
-  /** Render whichever tab is showing. Shared controls (search, reset, the
-   *  updated-count) call this instead of renderList so they work in both. */
-  function rerenderActive() {
-    if (VIEWS[activeTab]) renderView(VIEWS[activeTab]);
-    else renderList();
-  }
+  const rerender = () => renderView(VIEWS[activeTab]);
 
   function setTab(tab) {
     activeTab = TABS.includes(tab) ? tab : "queue";
     localStorage.setItem(TAB_KEY, activeTab);
-    tabsEl.querySelectorAll(".tab").forEach(b => {
-      b.classList.toggle("is-active", b.dataset.tab === activeTab);
-    });
-    for (const tab of TABS) {
-      for (const part of ["filters", "sort-bar", "list"]) {
-        document.getElementById(`${tab}-${part}`).hidden = tab !== activeTab;
-      }
+    tabsEl.querySelectorAll(".tab").forEach(b => b.classList.toggle("is-active", b.dataset.tab === activeTab));
+    for (const t of TABS) {
+      for (const part of ["filters", "sort-bar", "list"]) document.getElementById(`${t}-${part}`).hidden = t !== activeTab;
     }
     const d = VIEWS[activeTab];
-    searchEl.placeholder = d ? d.search : "Search title, #, author, module…  ( / )";
-    rerenderActive();
-    if (d) {
-      select(d, d.selected ?? d.visible[0]?.id ?? null);
-    } else {
-      renderDetail(PRS.find(p => p.id === selectedId));
-    }
+    searchEl.placeholder = d.search;
+    renderView(d);
+    select(d, d.selected ?? d.first?.() ?? d.visible[0]?.id ?? null);
   }
 
   resetBtn.addEventListener("click", () => {
@@ -1580,12 +1345,12 @@
     refreshChipStates();
     searchQuery = "";
     searchEl.value = "";
-    rerenderActive();
+    rerender();
   });
 
   searchEl.addEventListener("input", () => {
     searchQuery = searchEl.value.trim().toLowerCase();
-    rerenderActive();
+    rerender();
   });
 
   searchEl.addEventListener("keydown", (e) => {
@@ -1593,8 +1358,13 @@
       searchEl.value = "";
       searchQuery = "";
       searchEl.blur();
-      rerenderActive();
+      rerender();
     }
+  });
+
+  document.addEventListener("click", (e) => {
+    const chip = e.target.closest(".chip");
+    if (chip) toggleChip(chip.dataset.group, chip.dataset.value);
   });
 
   tabsEl.addEventListener("click", (e) => {
@@ -1611,43 +1381,29 @@
     if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
 
     const d = VIEWS[activeTab];
-    if (d?.marks[e.key]) return mark(d, e.key, d.selected, true);
+    const row = viewRow(d, d.selected);
+    if (d.marks[e.key]) return mark(d, e.key, d.selected, true);
     switch (e.key) {
-      case "j": case "ArrowDown": e.preventDefault(); moveSelection(1); break;
-      case "k": case "ArrowUp": e.preventDefault(); moveSelection(-1); break;
-      case "o": openSelectedOnGithub(); break;
-      case "Enter":
-        if (/^(BUTTON|A)$/.test(tag)) break;  // let a focused control act normally
-        openSelectedOnGithub(); break;
-      case "h": if (activeTab === "queue") hideSelected(); break;
+      case "j": case "ArrowDown": e.preventDefault(); move(1); break;
+      case "k": case "ArrowUp": e.preventDefault(); move(-1); break;
+      case "o": case "Enter":
+        // Enter on a focused button or link is left to that control.
+        if (row && (e.key === "o" || !/^(BUTTON|A)$/.test(tag))) window.open(row.url, "_blank", "noopener");
+        break;
       case "t": setTab(TABS[(TABS.indexOf(activeTab) + 1) % TABS.length]); break;
     }
   });
 
-  sortEl.addEventListener("change", () => {
-    sortMode = sortEl.value;
-    localStorage.setItem(SORT_KEY, sortMode);
-    renderList();
-  });
-
-  setupFilters();
   updateKpi();
   renderLastRefresh();
   setInterval(renderLastRefresh, 30000);
   flushQueue();
-  if (kpiEl) kpiEl.addEventListener("click", renderStats);
-  if (lookCountEl) lookCountEl.addEventListener("click", () => {
-    toggleChip(...(VIEWS[activeTab]?.lookChip || ["state", "updated"]));
-  });
-  renderList();
+  kpiEl.addEventListener("click", renderStats);
+  lookCountEl.addEventListener("click", () => toggleChip(...(VIEWS[activeTab].lookChip || VIEWS.queue.lookChip)));
 
-  const initial = parseHash();
-  const firstActive = PRS.find(p => !p.is_archived && !p.is_draft);
-  if (initial) selectPR(initial);
-  else if (firstActive) selectPR(firstActive.id);
-  else if (PRS.length) selectPR(PRS[0].id);
-
-  // Restore the last tab. Deep links (#pr=) always mean the queue, so an
-  // incoming link isn't swallowed by a stored `tracked` preference.
-  setTab(initial ? "queue" : activeTab);
+  // A deep link opens its view on that item, an unknown or malformed one leaves the last view.
+  const [, link, raw] = location.hash.match(/^#(\w+)=(.+)$/) || [];
+  const linked = Object.values(VIEWS).find(d => d.link === link);
+  try { if (linked && viewRow(linked, decodeURIComponent(raw))) linked.selected = decodeURIComponent(raw); } catch {}
+  setTab(linked?.selected ? linked.key : activeTab);
 })();
