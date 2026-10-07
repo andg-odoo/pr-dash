@@ -27,15 +27,12 @@
   const resetBtn = document.getElementById("reset-filters");
   const searchEl = document.getElementById("search");
 
-  const trackedListEl = document.getElementById("tracked-list");
   const tabsEl = document.getElementById("tabs");
-  const trackedTabCountEl = document.getElementById("tracked-tab-count");
   const mineListEl = document.getElementById("mine-list");
   const mineTabCountEl = document.getElementById("mine-tab-count");
 
   const STATE_KEY = "pr-dash:filters:v1";
   const TAB_KEY = "pr-dash:tab:v1";
-  const TRACKED_SORT_KEY = "pr-dash:tracked-sort:v1";
   const SORT_KEY = "pr-dash:sort:v1";
   const HIDDEN_KEY = "pr-dash:hidden:v1";
   const HIDDEN_QUEUE_KEY = "pr-dash:hidden-queue:v1";
@@ -59,14 +56,6 @@
   ];
 
   const LOOK_BADGES = { pushed: "↑push", reply: "reply", ci: "ci", new: "new" };
-  const TRACKED_BADGES = {
-    resolved: "done", reopened: "reopened", pushed: "↑push", reply: "reply", new: "new",
-  };
-  const TRACKED_STATES = [
-    { id: "resolved", label: "merged / closed" },
-    { id: "moved", label: "moved since last look" },
-    { id: "show-dismissed", label: "show dismissed" },
-  ];
 
   /** Hidden map: { pr_id: { head_sha, hidden_at } }. Auto-unhide if head_sha changed. */
   function loadHidden() {
@@ -176,9 +165,8 @@
     return pr._haystack;
   }
 
-  function matchesSearch(pr) {
+  function matchesSearch(hay) {
     if (!searchQuery) return true;
-    const hay = searchHaystack(pr);
     // Whitespace-separated terms are ANDed: "l10n_ro name" matches a PR whose
     // text contains both, in any order.
     return searchQuery.split(/\s+/).every(t => !t || hay.includes(t));
@@ -241,13 +229,11 @@
     buildChips("bucket", BUCKETS);
     buildChips("branch", uniqueValues("target_branch"));
     buildChips("state", STATES.map(s => s.id), id => STATES.find(s => s.id === id).label);
-    buildChips("tracked-state", TRACKED_STATES.map(s => s.id),
-               id => TRACKED_STATES.find(s => s.id === id).label);
     buildChips("mine-state", ["show-dismissed"], () => "show dismissed");
   }
 
   function passesFilters(pr) {
-    if (!matchesSearch(pr)) return false;
+    if (!matchesSearch(searchHaystack(pr))) return false;
 
     const showHidden = filters.state.has("show-hidden");
     const itemHidden = isHidden(pr);
@@ -544,10 +530,8 @@
 
   /** Move keyboard selection through the visible list by `delta` rows. */
   function moveSelection(delta) {
-    if (activeTab === "tracked") {
-      return moveListSelection(visibleTracked.map(t => t.id), selectedTrackedId, delta,
-                               selectTracked, trackedListEl);
-    }
+    const d = VIEWS[activeTab];
+    if (d) return moveListSelection(d.visible.map(r => r.id), d.selected, delta, id => select(d, id), d.list);
     if (activeTab === "mine") {
       return moveListSelection(visibleMine.map(s => s.uid), selectedMineKey, delta,
                                selectMine, mineListEl);
@@ -573,9 +557,10 @@
   }
 
   function openSelectedOnGithub() {
-    if (activeTab === "tracked") {
-      const t = TRACKED.find(x => x.id === selectedTrackedId);
-      if (t) window.open(t.url, "_blank", "noopener");
+    const d = VIEWS[activeTab];
+    if (d) {
+      const row = viewRow(d, d.selected);
+      if (row) window.open(row.url, "_blank", "noopener");
       return;
     }
     if (activeTab === "mine") {
@@ -1028,26 +1013,8 @@
     return m ? decodeURIComponent(m[1]) : null;
   }
 
-  // ---------------------------------------------------------------- tracked --
-  // PRs I subscribed to on GitHub myself (notification reason=manual) plus any
-  // added with `pr-dash track`. Read-only watch list: no review state, no diff,
-  // no AI - the question it answers is "did it move, did it land".
-
   const TABS = ["queue", "tracked", "mine"];
   let activeTab = TABS.includes(localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : "queue";
-  let selectedTrackedId = null;
-  let visibleTracked = [];
-
-  const trackedSortEl = document.getElementById("tracked-sort");
-  let trackedSortMode = localStorage.getItem(TRACKED_SORT_KEY) || "active";
-  if (trackedSortEl) {
-    trackedSortEl.value = trackedSortMode;
-    trackedSortEl.addEventListener("change", () => {
-      trackedSortMode = trackedSortEl.value;
-      localStorage.setItem(TRACKED_SORT_KEY, trackedSortMode);
-      renderTrackedList();
-    });
-  }
 
   /** Dismissals are local-first, like hides: the row drops out of the list here
    *  and the op is flushed to the `pr-dash mcp` listener when it happens to be
@@ -1088,26 +1055,6 @@
     }).catch(() => {});
   }
 
-  function trackedHaystack(t) {
-    if (t._haystack === undefined) {
-      t._haystack = [t.title, t.author, t.target_branch, t.repo, t.repo_short,
-                     `${t.repo_short}#${t.number}`, String(t.number)]
-        .join(" ").toLowerCase();
-    }
-    return t._haystack;
-  }
-
-  function trackedPasses(t) {
-    const f = filters["tracked-state"];
-    if (isDismissed("tracked", t) && !f.has("show-dismissed")) return false;
-    if (searchQuery && !searchQuery.split(/\s+/).every(
-      q => !q || trackedHaystack(t).includes(q))) return false;
-    const resolved = t.state === "MERGED" || t.state === "CLOSED";
-    if (f.has("resolved") && !resolved) return false;
-    if (f.has("moved") && !(t.since_last_look || []).length) return false;
-    return true;
-  }
-
   function trackedStateTag(t) {
     if (t.state === "MERGED") return '<span class="tr-state tr-merged">MERGED</span>';
     if (t.state === "CLOSED") return '<span class="tr-state tr-closed">CLOSED</span>';
@@ -1129,107 +1076,6 @@
     push(t.review_count, "review", "reviews");
     push(t.thread_count, "thread", "threads");
     return parts;
-  }
-
-  /** Sort the tracked list in place per the tab's own sort mode.
-   *
-   *  The queue's sort options don't transfer - there is no bucket, no review
-   *  age, no ball-in-my-court - so this tab gets its own dropdown and its own
-   *  persisted mode rather than sharing `sortMode`.
-   *
-   *  Default is active-first, deliberately: a watch list accumulates a long
-   *  tail of things that closed months ago, and resolved-first buries the live
-   *  PRs under it. `resolved` remains available for a catch-up pass. */
-  function sortTracked(list) {
-    const byActivity = (a, b) => (b.updated_at || "").localeCompare(a.updated_at || "");
-    const moved = t => ((t.since_last_look || []).length ? 1 : 0);
-    switch (trackedSortMode) {
-      case "resolved":
-        return list.sort((a, b) => (isResolved(b) - isResolved(a)) || byActivity(a, b));
-      case "moved":
-        return list.sort((a, b) => (moved(b) - moved(a)) || byActivity(a, b));
-      case "age":
-        return list.sort((a, b) => (b.age_days - a.age_days) || byActivity(a, b));
-      case "repo":
-        return list.sort((a, b) => a.repo.localeCompare(b.repo) || a.number - b.number);
-      default:
-        return list.sort((a, b) => (isResolved(a) - isResolved(b)) || byActivity(a, b));
-    }
-  }
-
-  function renderTrackedList() {
-    const visible = sortTracked(TRACKED.filter(trackedPasses));
-    visibleTracked = visible;
-    const dismissedCount = TRACKED.filter(t => isDismissed("tracked", t)).length;
-    visibleCountEl.textContent = dismissedCount
-      ? `${visible.length} / ${TRACKED.length}  ·  ${dismissedCount} dismissed`
-      : `${visible.length} / ${TRACKED.length}`;
-    if (totalCountEl) totalCountEl.textContent = "tracked PRs";
-    if (lookCountEl) {
-      const n = TRACKED.filter(t => !isDismissed("tracked", t) && (t.since_last_look || []).length).length;
-      lookCountEl.textContent = n ? `${n} moved` : "";
-      lookCountEl.title = n ? "Show only tracked PRs that moved since your last visit" : "";
-    }
-    if (trackedTabCountEl) trackedTabCountEl.textContent = String(TRACKED.length - dismissedCount);
-
-    trackedListEl.innerHTML = "";
-    if (!visible.length) {
-      const li = document.createElement("li");
-      li.className = "tr-empty";
-      li.textContent = TRACKED.length
-        ? "Nothing matches. Clear the search or filters."
-        : "Nothing tracked yet. Subscribe to a PR on GitHub, or run `pr-dash track <url>`.";
-      trackedListEl.appendChild(li);
-      return;
-    }
-    visible.forEach(t => {
-      const li = document.createElement("li");
-      const resolved = t.state === "MERGED" || t.state === "CLOSED";
-      const gone = isDismissed("tracked", t);
-      li.className = "pr-row tr-row" + (resolved ? " tr-row-resolved" : "") + (gone ? " hidden-row" : "");
-      li.dataset.id = t.id;
-      const badges = (t.since_last_look || [])
-        .map(x => `<span class="look-badge look-${x}">${TRACKED_BADGES[x] || x}</span>`)
-        .join("");
-      const ci = t.ci_state && t.ci_state !== "SUCCESS"
-        ? `<span class="tr-ci tr-ci-${escapeHTML(String(t.ci_state).toLowerCase())}">ci ${escapeHTML(t.ci_state.toLowerCase())}</span>`
-        : "";
-      const when = resolved
-        ? `${t.state === "MERGED" ? "merged" : "closed"} ${daysAgo(t.merged_at || t.closed_at)}`
-        : `idle ${t.idle_days}d`;
-      li.innerHTML = `
-        <span class="pr-id-group">
-          <span class="pr-id">${escapeHTML(t.repo_short)}#${t.number}</span>
-          ${trackedStateTag(t)}${gone ? '<span class="tr-state tr-dismissed">dismissed</span>' : ""}${badges}
-        </span>
-        <span class="pr-title" title="${escapeHTML(t.title)}">${escapeHTML(t.title)}</span>
-        <button class="pr-hide" type="button" title="${gone ? "Restore to tracked list" : "Dismiss from tracked list"}"
-                data-dismiss-id="${escapeHTML(t.id)}">${gone ? "↺" : "×"}</button>
-        <span class="pr-sub">
-          <span class="pr-author">@${escapeHTML(t.author)}</span>
-          <span class="tr-branch">${escapeHTML(t.target_branch)}</span>
-          ${ci}
-          <span>${discussionParts(t).join(" · ") || "no discussion"}</span>
-          ${t.unresolved_threads ? `<span class="disc-unresolved">${t.unresolved_threads} unresolved</span>` : ""}
-          <span>open ${t.age_days}d · ${when}</span>
-        </span>`;
-      li.addEventListener("click", (e) => {
-        if (e.target.classList.contains("pr-hide")) return;
-        selectTracked(t.id);
-      });
-      li.querySelector(".pr-hide").addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (gone) return restoreTracked(t);
-        setDismissed("tracked", [t.id], true);
-        renderTrackedList();
-        if (selectedTrackedId === t.id && !visibleTracked.includes(t)) {
-          selectedTrackedId = null;
-          renderTrackedDetail(null);
-        }
-      });
-      trackedListEl.appendChild(li);
-    });
-    if (selectedTrackedId) highlightTracked(selectedTrackedId);
   }
 
   /** "3d ago" from an ISO stamp; empty string when there is no stamp. */
@@ -1257,18 +1103,6 @@
     if (isNaN(when)) return;
     lastRefreshEl.textContent = `updated ${ageLabel(Date.now() - when.getTime())}`;
     lastRefreshEl.title = `Cache last refreshed from GitHub ${when.toLocaleString()}`;
-  }
-
-  function highlightTracked(id) {
-    trackedListEl.querySelectorAll(".pr-row").forEach(row => {
-      row.classList.toggle("selected", row.dataset.id === id);
-    });
-  }
-
-  function selectTracked(id) {
-    selectedTrackedId = id;
-    highlightTracked(id);
-    renderTrackedDetail(TRACKED.find(t => t.id === id) || null);
   }
 
   const VERDICT = {
@@ -1356,88 +1190,6 @@
     }).join("");
   }
 
-  function renderTrackedDetail(t) {
-    if (!t) {
-      detailEl.innerHTML = '<div class="empty">Select a tracked PR on the left.</div>';
-      return;
-    }
-    const resolved = isResolved(t);
-    const stateBadge = t.state === "MERGED"
-      ? '<span class="pair-badge tr-badge-merged">merged</span>'
-      : t.state === "CLOSED" ? '<span class="pair-badge tr-badge-closed">closed</span>'
-      : t.is_draft ? '<span class="draft-badge">draft</span>' : "";
-
-    detailEl.innerHTML = `
-      <div class="detail">
-        <div class="detail-header">
-          <h2>${stateBadge}${escapeHTML(t.title)}</h2>
-          <div class="crumbs">
-            <span>${escapeHTML(t.repo)}#${t.number}</span> ·
-            <span>@${escapeHTML(t.author)}</span> ·
-            <span>${escapeHTML(t.target_branch)}</span>
-          </div>
-        </div>
-
-        <div class="detail-links">
-          <a href="${escapeHTML(t.url)}" target="_blank" rel="noopener">GitHub: ${escapeHTML(t.repo_short)}#${t.number} ↗</a>
-          <button class="detail-hide tr-dismiss" type="button">${isDismissed("tracked", t) ? "Restore" : "Dismiss"}</button>
-        </div>
-
-        <section class="section">
-          <h3>Status</h3>
-          <dl class="kv">
-            <dt>State</dt><dd>${escapeHTML(t.state)}${t.is_draft ? " (draft)" : ""}</dd>
-            <dt>CI</dt><dd>${escapeHTML(t.ci_state || "-")}</dd>
-            <dt>Age</dt><dd>${t.age_days}d open · ${resolved
-              ? `${t.state === "MERGED" ? "merged" : "closed"} ${daysAgo(t.merged_at || t.closed_at)}`
-              : `last activity ${daysAgo(t.updated_at)}`}</dd>
-            <dt>Discussion</dt><dd>${discussionParts(t).join(" · ") || "<em>(none)</em>"}${
-              t.unresolved_threads ? ` · <span class="disc-unresolved">${t.unresolved_threads} unresolved</span>` : ""}</dd>
-            <dt>Tracked</dt><dd>${t.source === "manual" ? "manually" : "via subscription"}</dd>
-          </dl>
-        </section>
-
-        ${t.body && t.body.trim() ? `
-        <section class="section">
-          <h3>Description</h3>
-          <div class="pr-body markdown-body">${md.render(t.body.trim())}</div>
-        </section>` : ""}
-
-        <section class="section">
-          <h3>Discussion</h3>
-          ${discussionHTML(t.discussion)}
-        </section>
-      </div>`;
-    const btn = detailEl.querySelector(".tr-dismiss");
-    if (btn) btn.addEventListener("click", () => {
-      if (isDismissed("tracked", t)) return restoreTracked(t);
-      setDismissed("tracked", [t.id], true);
-      renderTrackedList();
-      if (visibleTracked.includes(t)) return renderTrackedDetail(t);
-      selectedTrackedId = null;
-      renderTrackedDetail(null);
-    });
-  }
-
-  function restoreTracked(t) {
-    setDismissed("tracked", [t.id], false);
-    renderTrackedList();
-    if (selectedTrackedId === t.id) renderTrackedDetail(t);
-  }
-
-  function dismissSelectedTracked() {
-    if (!selectedTrackedId) return;
-    const t = TRACKED.find(x => x.id === selectedTrackedId);
-    if (isDismissed("tracked", t)) return restoreTracked(t);
-    const idx = visibleTracked.indexOf(t);
-    setDismissed("tracked", [selectedTrackedId], true);
-    renderTrackedList();
-    if (visibleTracked.includes(t)) return renderTrackedDetail(t);
-    const next = visibleTracked[Math.min(idx, visibleTracked.length - 1)];
-    if (next) selectTracked(next.id);
-    else { selectedTrackedId = null; renderTrackedDetail(null); }
-  }
-
   // ---- mine: Authored PRs as Branch sets, one row per head branch, each member inline --
 
   // Selection keys on a per-page id, as a dismissed and a live set can share a head branch.
@@ -1482,7 +1234,7 @@
 
   function minePasses(s) {
     if (isMineDismissed(s) && !filters["mine-state"].has("show-dismissed")) return false;
-    return !searchQuery || searchQuery.split(/\s+/).every(q => !q || mineHaystack(s).includes(q));
+    return matchesSearch(mineHaystack(s));
   }
 
   const mineTargets = s => [...new Set(s.members.map(m => m.target_branch))].join(", ");
@@ -1700,10 +1452,195 @@
     detailEl.querySelector(".mine-ack-btn")?.addEventListener("click", () => toggleAck(s.uid));
   }
 
+  // ---- Tab engine: each view declares what differs, the engine runs the rest --
+
+  const hasMoved = t => ((t.since_last_look || []).length ? 1 : 0);
+  const byActivity = (a, b) => (b.updated_at || "").localeCompare(a.updated_at || "");
+
+  const VIEWS = {
+    // PRs I subscribed to on GitHub or added with `pr-dash track`, watched until they land.
+    tracked: {
+      rows: TRACKED,
+      search: "Search tracked title, #, author…  ( / )",
+      placeholder: "Select a tracked PR on the left.",
+      empty: ["Nothing matches. Clear the search or filters.",
+              "Nothing tracked yet. Subscribe to a PR on GitHub, or run `pr-dash track <url>`."],
+      haystack: t => [t.title, t.author, t.target_branch, t.repo, t.repo_short,
+                      `${t.repo_short}#${t.number}`, String(t.number)].join(" "),
+      chips: {
+        "tracked-state": [
+          { id: "resolved", label: "merged / closed", test: isResolved },
+          { id: "moved", label: "moved since last look", test: hasMoved },
+          { id: "show-dismissed", label: "show dismissed" },
+        ],
+      },
+      lookChip: ["tracked-state", "moved"],
+      // Active first by default, as a watch list grows a long tail of PRs closed months ago.
+      sorts: {
+        active: (a, b) => (isResolved(a) - isResolved(b)) || byActivity(a, b),
+        moved: (a, b) => (hasMoved(b) - hasMoved(a)) || byActivity(a, b),
+        resolved: (a, b) => (isResolved(b) - isResolved(a)) || byActivity(a, b),
+        age: (a, b) => (b.age_days - a.age_days) || byActivity(a, b),
+        repo: (a, b) => a.repo.localeCompare(b.repo) || a.number - b.number,
+      },
+      marks: {
+        x: { on: t => isDismissed("tracked", t), set: (t, on) => setDismissed("tracked", [t.id], on),
+             show: "show-dismissed" },
+      },
+      badges: { resolved: "done", reopened: "reopened", pushed: "↑push", reply: "reply", new: "new" },
+      counts(visible) {
+        const live = TRACKED.filter(t => !isDismissed("tracked", t));
+        const gone = TRACKED.length - live.length;
+        const moved = live.filter(hasMoved).length;
+        return [`${visible.length} / ${TRACKED.length}${gone ? `  ·  ${gone} dismissed` : ""}`, "tracked PRs",
+                moved ? `${moved} moved` : "", moved ? "Show only tracked PRs that moved since your last visit" : "",
+                live.length];
+      },
+      rowHTML(t, badges) {
+        const resolved = isResolved(t);
+        const gone = isDismissed("tracked", t);
+        const ci = t.ci_state && t.ci_state !== "SUCCESS"
+          ? `<span class="tr-ci tr-ci-${escapeHTML(String(t.ci_state).toLowerCase())}">ci ${escapeHTML(t.ci_state.toLowerCase())}</span>`
+          : "";
+        const when = resolved
+          ? `${t.state === "MERGED" ? "merged" : "closed"} ${daysAgo(t.merged_at || t.closed_at)}`
+          : `idle ${t.idle_days}d`;
+        return `<li class="pr-row tr-row${resolved ? " tr-row-resolved" : ""}${gone ? " hidden-row" : ""}" data-id="${escapeHTML(t.id)}">
+          <span class="pr-id-group">
+            <span class="pr-id">${escapeHTML(t.repo_short)}#${t.number}</span>
+            ${trackedStateTag(t)}${gone ? '<span class="tr-state tr-dismissed">dismissed</span>' : ""}${badges}
+          </span>
+          <span class="pr-title" title="${escapeHTML(t.title)}">${escapeHTML(t.title)}</span>
+          <button class="pr-hide" type="button" title="${gone ? "Restore to tracked list" : "Dismiss from tracked list"}"
+                  data-key="x">${gone ? "↺" : "×"}</button>
+          <span class="pr-sub">
+            <span class="pr-author">@${escapeHTML(t.author)}</span>
+            <span class="tr-branch">${escapeHTML(t.target_branch)}</span>
+            ${ci}
+            <span>${discussionParts(t).join(" · ") || "no discussion"}</span>
+            ${t.unresolved_threads ? `<span class="disc-unresolved">${t.unresolved_threads} unresolved</span>` : ""}
+            <span>open ${t.age_days}d · ${when}</span>
+          </span></li>`;
+      },
+      detail(t) {
+        const stateBadge = t.state === "MERGED"
+          ? '<span class="pair-badge tr-badge-merged">merged</span>'
+          : t.state === "CLOSED" ? '<span class="pair-badge tr-badge-closed">closed</span>'
+          : t.is_draft ? '<span class="draft-badge">draft</span>' : "";
+        return `
+      <div class="detail">
+        <div class="detail-header">
+          <h2>${stateBadge}${escapeHTML(t.title)}</h2>
+          <div class="crumbs">
+            <span>${escapeHTML(t.repo)}#${t.number}</span> ·
+            <span>@${escapeHTML(t.author)}</span> ·
+            <span>${escapeHTML(t.target_branch)}</span>
+          </div>
+        </div>
+
+        <div class="detail-links">
+          <a href="${escapeHTML(t.url)}" target="_blank" rel="noopener">GitHub: ${escapeHTML(t.repo_short)}#${t.number} ↗</a>
+          <button class="detail-hide" type="button" data-key="x">${isDismissed("tracked", t) ? "Restore" : "Dismiss"}</button>
+        </div>
+
+        <section class="section">
+          <h3>Status</h3>
+          <dl class="kv">
+            <dt>State</dt><dd>${escapeHTML(t.state)}${t.is_draft ? " (draft)" : ""}</dd>
+            <dt>CI</dt><dd>${escapeHTML(t.ci_state || "-")}</dd>
+            <dt>Age</dt><dd>${t.age_days}d open · ${isResolved(t)
+              ? `${t.state === "MERGED" ? "merged" : "closed"} ${daysAgo(t.merged_at || t.closed_at)}`
+              : `last activity ${daysAgo(t.updated_at)}`}</dd>
+            <dt>Discussion</dt><dd>${discussionParts(t).join(" · ") || "<em>(none)</em>"}${
+              t.unresolved_threads ? ` · <span class="disc-unresolved">${t.unresolved_threads} unresolved</span>` : ""}</dd>
+            <dt>Tracked</dt><dd>${t.source === "manual" ? "manually" : "via subscription"}</dd>
+          </dl>
+        </section>
+
+        ${t.body && t.body.trim() ? `
+        <section class="section">
+          <h3>Description</h3>
+          <div class="pr-body markdown-body">${md.render(t.body.trim())}</div>
+        </section>` : ""}
+
+        <section class="section">
+          <h3>Discussion</h3>
+          ${discussionHTML(t.discussion)}
+        </section>
+      </div>`;
+      },
+    },
+  };
+
+  const viewRow = (d, id) => d.rows.find(r => r.id === id);
+
+  function renderView(d) {
+    const shown = id => Object.keys(d.chips).some(g => filters[g].has(id));
+    d.visible = d.rows.filter(r => matchesSearch(r._haystack ??= d.haystack(r).toLowerCase())
+      && Object.entries(d.chips).every(([g, cs]) => cs.every(c => !c.test || !filters[g].has(c.id) || c.test(r)))
+      && Object.values(d.marks).every(m => !m.show || !m.on(r) || shown(m.show)))
+      .sort(d.sorts[d.sort] || Object.values(d.sorts)[0]);
+    let tab;
+    [visibleCountEl.textContent, totalCountEl.textContent, lookCountEl.textContent, lookCountEl.title, tab] =
+      d.counts(d.visible);
+    const tabCountEl = document.getElementById(`${d.key}-tab-count`);
+    if (tabCountEl) tabCountEl.textContent = String(tab);
+    d.list.innerHTML = d.visible.length
+      ? d.visible.map(r => d.rowHTML(r, (r.since_last_look || []).map(
+        x => `<span class="look-badge look-${x}">${d.badges[x] || x}</span>`).join(""))).join("")
+      : `<li class="tr-empty">${escapeHTML(d.empty[d.rows.length ? 0 : 1])}</li>`;
+    highlight(d);
+  }
+
+  function highlight(d) {
+    d.list.querySelectorAll(".pr-row").forEach(li => li.classList.toggle("selected", li.dataset.id === d.selected));
+  }
+
+  function select(d, id) {
+    d.selected = id;
+    highlight(d);
+    const row = viewRow(d, id);
+    detailEl.innerHTML = row ? d.detail(row) : `<div class="empty">${d.placeholder}</div>`;
+  }
+
+  // Toggle a mark, and if the selection left the list take its successor when `advance`.
+  function mark(d, key, id, advance) {
+    const row = viewRow(d, id);
+    if (!row) return;
+    const idx = d.visible.indexOf(row);
+    d.marks[key].set(row, !d.marks[key].on(row));
+    renderView(d);
+    if (d.selected !== id) return;
+    if (d.visible.includes(row)) return select(d, id);
+    select(d, (advance && d.visible[Math.min(idx, d.visible.length - 1)]?.id) || null);
+  }
+
+  for (const [key, d] of Object.entries(VIEWS)) {
+    Object.assign(d, { key, list: document.getElementById(`${key}-list`), selected: null, visible: [] });
+    for (const [g, cs] of Object.entries(d.chips)) {
+      buildChips(g, cs.map(c => c.id), id => cs.find(c => c.id === id).label);
+    }
+    const sortEl = document.getElementById(`${key}-sort`);
+    const stored = `pr-dash:${key}-sort:v1`;
+    d.sort = localStorage.getItem(stored) || Object.keys(d.sorts)[0];
+    if (sortEl) sortEl.value = d.sort;
+    sortEl?.addEventListener("change", () => { localStorage.setItem(stored, d.sort = sortEl.value); renderView(d); });
+    d.list.addEventListener("click", (e) => {
+      const li = e.target.closest(".pr-row");
+      const btn = e.target.closest("[data-key]");
+      if (li) btn ? mark(d, btn.dataset.key, li.dataset.id, false) : select(d, li.dataset.id);
+    });
+  }
+  detailEl.addEventListener("click", (e) => {
+    const d = VIEWS[activeTab];
+    const btn = e.target.closest("[data-key]");
+    if (d && btn) mark(d, btn.dataset.key, d.selected, false);
+  });
+
   /** Render whichever tab is showing. Shared controls (search, reset, the
    *  updated-count) call this instead of renderList so they work in both. */
   function rerenderActive() {
-    if (activeTab === "tracked") renderTrackedList();
+    if (VIEWS[activeTab]) renderView(VIEWS[activeTab]);
     else if (activeTab === "mine") renderMineList();
     else renderList();
   }
@@ -1719,15 +1656,14 @@
         document.getElementById(`${tab}-${part}`).hidden = tab !== activeTab;
       }
     }
-    searchEl.placeholder = {
+    const d = VIEWS[activeTab];
+    searchEl.placeholder = d ? d.search : {
       queue: "Search title, #, author, module…  ( / )",
-      tracked: "Search tracked title, #, author…  ( / )",
       mine: "Search title, #, branch, task…  ( / )",
     }[activeTab];
     rerenderActive();
-    if (activeTab === "tracked") {
-      if (!selectedTrackedId && visibleTracked.length) selectTracked(visibleTracked[0].id);
-      else renderTrackedDetail(TRACKED.find(t => t.id === selectedTrackedId) || null);
+    if (d) {
+      select(d, d.selected ?? d.visible[0]?.id ?? null);
     } else if (activeTab === "mine") {
       if (!selectedMineKey && visibleMine.length) selectMine(visibleMine[0].uid);
       else renderMineDetail(MINE.find(s => s.uid === selectedMineKey) || null);
@@ -1772,6 +1708,8 @@
     if (e.key === "/" && !typing) { e.preventDefault(); searchEl.focus(); return; }
     if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
 
+    const d = VIEWS[activeTab];
+    if (d?.marks[e.key]) return mark(d, e.key, d.selected, true);
     switch (e.key) {
       case "j": case "ArrowDown": e.preventDefault(); moveSelection(1); break;
       case "k": case "ArrowUp": e.preventDefault(); moveSelection(-1); break;
@@ -1780,10 +1718,7 @@
         if (/^(BUTTON|A)$/.test(tag)) break;  // let a focused control act normally
         openSelectedOnGithub(); break;
       case "h": if (activeTab === "queue") hideSelected(); break;
-      case "x":
-        if (activeTab === "tracked") dismissSelectedTracked();
-        else if (activeTab === "mine" && selectedMineKey) dismissMine(selectedMineKey);
-        break;
+      case "x": if (activeTab === "mine" && selectedMineKey) dismissMine(selectedMineKey); break;
       case "a": if (activeTab === "mine" && selectedMineKey) toggleAck(selectedMineKey); break;
       case "t": setTab(TABS[(TABS.indexOf(activeTab) + 1) % TABS.length]); break;
     }
@@ -1802,8 +1737,7 @@
   flushQueue();
   if (kpiEl) kpiEl.addEventListener("click", renderStats);
   if (lookCountEl) lookCountEl.addEventListener("click", () => {
-    toggleChip(activeTab === "tracked" ? "tracked-state" : "state",
-               activeTab === "tracked" ? "moved" : "updated");
+    toggleChip(...(VIEWS[activeTab]?.lookChip || ["state", "updated"]));
   });
   renderList();
 
