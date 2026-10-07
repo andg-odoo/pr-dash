@@ -91,6 +91,13 @@ def test_a_truncated_partial_body_is_a_github_error(monkeypatch):
         github.GhGitHub().nodes([("odoo/odoo", 1)], "tracked")
 
 
+def test_nodes_of_an_unknown_view_raise_instead_of_borrowing_one(monkeypatch):
+    _gh_answers(monkeypatch, lambda args, stdin: {"data": {}})
+
+    with pytest.raises(KeyError):
+        github.GhGitHub().nodes([("odoo/odoo", 1)], "queu")
+
+
 def _page(nodes, cursor=None):
     return {"totalCount": 0, "nodes": nodes,
             "pageInfo": {"hasNextPage": cursor is not None, "endCursor": cursor}}

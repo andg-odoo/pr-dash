@@ -498,6 +498,14 @@ def _search_authored(q: str) -> tuple[list[tuple[str, int]], int]:
 
 
 View = Literal["queue", "tracked", "mine", "history"]
+# Per view, the node fragment, its spread and how many PRs one query holds.
+_NODE_QUERIES: dict[View, tuple[str, str, int]] = {
+    "queue": (PR_NODE_FRAGMENT, "...PRFields", 10),
+    "tracked": (TRACKED_NODE_FRAGMENT, "...TrackedFields", 50),
+    "mine": (MINE_NODE_FRAGMENT, "...MineFields", 50),
+    # A closed PR carries its whole discussion, and 50 of them overran GitHub's 10 s limit.
+    "history": (MINE_NODE_FRAGMENT, "...MineFields", 10),
+}
 
 
 class GitHub(Protocol):
@@ -601,18 +609,10 @@ class GhGitHub:
                 for pr_id, pr in prs.items() if pr.get("state")}
 
     def nodes(self, refs, view):
-        if view == "queue":
-            # Cached refs go stale too, and one deleted PR must not sink its chunk.
-            nodes = _pull_requests(refs, "...PRFields", chunk_size=10, partial=True,
-                                   fragment=PR_NODE_FRAGMENT)
-            _complete_pages(list(nodes.values()), _PAGES)
-            return nodes
-        fragment, spread = ((TRACKED_NODE_FRAGMENT, "...TrackedFields") if view == "tracked"
-                            else (MINE_NODE_FRAGMENT, "...MineFields"))
-        # A closed PR carries its whole discussion, and 50 of them overran GitHub's 10 s limit.
-        nodes = _pull_requests(refs, spread, chunk_size=10 if view == "history" else 50,
-                               partial=True, fragment=fragment)
-        # Both fragments spread TrackedFields.
+        fragment, spread, chunk_size = _NODE_QUERIES[view]
+        # Cached refs go stale too, and one deleted PR must not sink its chunk.
+        nodes = _pull_requests(refs, spread, chunk_size=chunk_size, partial=True,
+                               fragment=fragment)
         _complete_pages(list(nodes.values()), _PAGES)
         return nodes
 
