@@ -316,6 +316,8 @@ def _migrate(conn: sqlite3.Connection, db_path: Path) -> None:
     current = conn.execute("PRAGMA user_version").fetchone()[0]
     if current == SCHEMA_VERSION:
         return
+    if current > SCHEMA_VERSION:
+        raise RuntimeError(f"cache is schema v{current}, this code knows v{SCHEMA_VERSION}: restart pr-dash")
     # The v30 move of the marks cannot be undone, so the old cache is kept for a rollback by hand.
     backup_path = db_path.with_name(f"{db_path.name}.bak-v{current}")
     # A rerun after old code reopened a migrated cache must not overwrite the first, clean backup.

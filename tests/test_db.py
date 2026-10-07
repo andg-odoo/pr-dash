@@ -1,6 +1,7 @@
 import sqlite3
 from pathlib import Path
 
+import pytest
 
 from pr_dash import db
 
@@ -334,3 +335,11 @@ def test_a_mark_whose_guard_moved_or_whose_row_is_gone_counts_as_none(tmp_path):
         db.set_mark(conn, "hide", pr_id, guard, "t")
     live = db.live_marks(conn, "hide", {"odoo/odoo#1": "new", "odoo/odoo#2": "same"})
     assert list(live) == ["odoo/odoo#2"]
+
+
+def test_a_cache_newer_than_the_code_is_refused_not_downgraded(tmp_path):
+    path = tmp_path / "pr_dash.db"
+    db.connect(path).execute(f"PRAGMA user_version = {db.SCHEMA_VERSION + 1}")
+    with pytest.raises(RuntimeError, match=f"v{db.SCHEMA_VERSION + 1}"):
+        db.connect(path)
+    assert sqlite3.connect(path).execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION + 1
