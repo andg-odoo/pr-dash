@@ -614,7 +614,9 @@ def render(payload: list[dict], html_path: Path, *, offline: bool = False,
     assets_dir = TEMPLATES_DIR / "assets"
     html = template.render(
         tab_data_json=_json_for_script(
-            {"queue": payload, "tracked": tracked or [], "mine": mine or []}
+            {"queue": payload, "tracked": tracked or [],
+             # A per-page id, as a dismissed and a live Branch set can share a head branch.
+             "mine": [{**s, "id": str(i)} for i, s in enumerate(mine or [])]}
         ),
         pr_count=len(payload),
         counts={

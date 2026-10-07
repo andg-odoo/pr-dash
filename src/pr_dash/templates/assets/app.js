@@ -28,8 +28,6 @@
   const searchEl = document.getElementById("search");
 
   const tabsEl = document.getElementById("tabs");
-  const mineListEl = document.getElementById("mine-list");
-  const mineTabCountEl = document.getElementById("mine-tab-count");
 
   const STATE_KEY = "pr-dash:filters:v1";
   const TAB_KEY = "pr-dash:tab:v1";
@@ -229,7 +227,6 @@
     buildChips("bucket", BUCKETS);
     buildChips("branch", uniqueValues("target_branch"));
     buildChips("state", STATES.map(s => s.id), id => STATES.find(s => s.id === id).label);
-    buildChips("mine-state", ["show-dismissed"], () => "show dismissed");
   }
 
   function passesFilters(pr) {
@@ -532,10 +529,6 @@
   function moveSelection(delta) {
     const d = VIEWS[activeTab];
     if (d) return moveListSelection(d.visible.map(r => r.id), d.selected, delta, id => select(d, id), d.list);
-    if (activeTab === "mine") {
-      return moveListSelection(visibleMine.map(s => s.uid), selectedMineKey, delta,
-                               selectMine, mineListEl);
-    }
     if (!visiblePRs.length) return;
     const cur = visiblePRs.findIndex(p => p.id === selectedId);
     const next = cur === -1
@@ -561,11 +554,6 @@
     if (d) {
       const row = viewRow(d, d.selected);
       if (row) window.open(row.url, "_blank", "noopener");
-      return;
-    }
-    if (activeTab === "mine") {
-      const set = MINE.find(x => x.uid === selectedMineKey);
-      if (set) window.open(set.url, "_blank", "noopener");
       return;
     }
     const pr = PRS.find(p => p.id === selectedId);
@@ -1192,11 +1180,6 @@
 
   // ---- mine: Authored PRs as Branch sets, one row per head branch, each member inline --
 
-  // Selection keys on a per-page id, as a dismissed and a live set can share a head branch.
-  MINE.forEach((s, i) => { s.uid = String(i); });
-  let selectedMineKey = null;
-  let visibleMine = [];
-
   const isMineDismissed = s => s.members.every(m => isDismissed("mine", m));
 
   // Local-first like dismissals, an Acknowledge holds only for the fingerprint it was taken at.
@@ -1207,35 +1190,7 @@
     return a && a.fingerprint === s.fingerprint ? a.on : s.acknowledged;
   }
   const mineBand = s => s.band === "done" ? "done" : s.actions.length && !isAcked(s) ? "needs" : "open";
-
-  function toggleAck(uid) {
-    const s = MINE.find(x => x.uid === uid);
-    if (!s || mineBand(s) === "done" || !s.actions.length) return;
-    const on = !isAcked(s);
-    const key = s.key;
-    localAcks[key] = { fingerprint: s.fingerprint, on };
-    localStorage.setItem(ACK_KEY, JSON.stringify(localAcks));
-    enqueueOp({ route: "mine-ack", op: on ? "ack" : "unack", key, fingerprint: s.fingerprint,
-                at: new Date().toISOString() });
-    flushQueue();
-    renderMineList();
-    if (selectedMineKey === uid) renderMineDetail(s);
-  }
-
-  function mineHaystack(s) {
-    if (s._haystack === undefined) {
-      const parts = [s.key, s.task || ""];
-      s.members.forEach(m => parts.push(m.title, m.ref, m.repo, m.target_branch,
-                                        ...m.fw.map(f => f.ref)));
-      s._haystack = parts.join(" ").toLowerCase();
-    }
-    return s._haystack;
-  }
-
-  function minePasses(s) {
-    if (isMineDismissed(s) && !filters["mine-state"].has("show-dismissed")) return false;
-    return matchesSearch(mineHaystack(s));
-  }
+  const mineRank = s => isMineDismissed(s) ? 3 : ["needs", "open", "done"].indexOf(mineBand(s));
 
   const mineTargets = s => [...new Set(s.members.map(m => m.target_branch))].join(", ");
 
@@ -1275,102 +1230,6 @@
         : "");
   }
 
-  function renderMineList() {
-    const live = MINE.filter(s => !isMineDismissed(s));
-    const visible = MINE.filter(minePasses);
-    const shown = visible.filter(s => !isMineDismissed(s));
-    const oldest = s => new Date(s.actions[0].since);
-    const bands = [
-      ["Needs you", " mine-band-needs",
-       shown.filter(s => mineBand(s) === "needs").sort((a, b) => oldest(a) - oldest(b))],
-      ["Open", "", shown.filter(s => mineBand(s) === "open")],
-      ["Done", " mine-band-done", shown.filter(s => mineBand(s) === "done")],
-    ];
-    if (filters["mine-state"].has("show-dismissed")) {
-      bands.push(["Dismissed", "", visible.filter(isMineDismissed)]);
-    }
-    visibleMine = bands.flatMap(b => b[2]);
-    const count = band => live.filter(s => mineBand(s) === band).length;
-    visibleCountEl.textContent = `${count("needs")} need you · ${count("open")} open · ${count("done")} done`;
-    if (totalCountEl) totalCountEl.textContent = "";
-    if (lookCountEl) lookCountEl.textContent = "";
-    if (mineTabCountEl) mineTabCountEl.textContent = String(count("needs") + count("open"));
-
-    mineListEl.innerHTML = "";
-    if (!visible.length) {
-      const li = document.createElement("li");
-      li.className = "tr-empty";
-      li.textContent = live.length
-        ? "Nothing matches. Clear the search."
-        : "No Authored PRs yet. The next refresh lists every open PR you opened.";
-      mineListEl.appendChild(li);
-      return;
-    }
-    for (const [label, cls, sets] of bands) {
-      const head = document.createElement("li");
-      head.className = "mine-band" + cls;
-      head.innerHTML = `${label} <span class="mine-band-n">${sets.length}</span>`;
-      mineListEl.appendChild(head);
-      sets.forEach(s => mineListEl.appendChild(mineRow(s)));
-    }
-    if (selectedMineKey) highlightMine(selectedMineKey);
-  }
-
-  function mineRow(s) {
-    const li = document.createElement("li");
-    const gone = isMineDismissed(s);
-    li.className = "pr-row mine-row" + (s.band === "done" ? " mine-row-done" : "")
-      + (gone ? " hidden-row" : "");
-    li.dataset.id = s.uid;
-    li.innerHTML = `
-      <span class="pr-title" title="${escapeHTML(s.title)}">${escapeHTML(s.title)}</span>
-      <button class="pr-hide" type="button" title="${gone ? "Restore this Branch set" : "Dismiss this Branch set"}">${gone ? "↺" : "×"}</button>
-      <span class="pr-sub mine-members">${s.members.map(memberChip).join("")}</span>
-      <span class="pr-sub">
-        <span class="tr-branch">${escapeHTML(s.key)} → ${escapeHTML(mineTargets(s))}</span>
-        ${s.task ? `<span>task-${escapeHTML(s.task)}</span>` : ""}
-        ${mineLabels(s)}
-      </span>
-      ${fwLines(s)}
-      ${mineBand(s) === "needs" ? s.action_lines.map(a =>
-        `<span class="pr-sub mine-reason">${escapeHTML(a.member)}: ${escapeHTML(a.text)}</span>`).join("") : ""}`;
-    li.addEventListener("click", (e) => {
-      if (e.target.classList.contains("pr-hide")) return;
-      selectMine(s.uid);
-    });
-    li.querySelector(".pr-hide").addEventListener("click", (e) => {
-      e.stopPropagation();
-      dismissMine(s.uid);
-    });
-    return li;
-  }
-
-  function highlightMine(key) {
-    mineListEl.querySelectorAll(".pr-row").forEach(row => {
-      row.classList.toggle("selected", row.dataset.id === key);
-    });
-  }
-
-  function selectMine(uid) {
-    selectedMineKey = uid;
-    highlightMine(uid);
-    renderMineDetail(MINE.find(s => s.uid === uid) || null);
-  }
-
-  // Dismiss or restore a Branch set by every member, then select the row that took its place.
-  function dismissMine(uid) {
-    const set = MINE.find(s => s.uid === uid);
-    if (!set) return;
-    const idx = visibleMine.indexOf(set);
-    setDismissed("mine", set.members.map(m => m.id), !isMineDismissed(set));
-    renderMineList();
-    if (selectedMineKey !== uid) return;
-    if (visibleMine.includes(set)) return selectMine(uid);
-    const next = visibleMine[Math.min(idx, visibleMine.length - 1)];
-    if (next) selectMine(next.uid);
-    else { selectedMineKey = null; renderMineDetail(null); }
-  }
-
   function memberCI(m) {
     const ci = m.ci === "red"
       ? `<span class="tr-ci-failure">red: ${m.ci_failing.map(escapeHTML).join(", ")}</span>`
@@ -1385,73 +1244,6 @@
     return (people || "-") + (teams ? ` <span class="mine-dim">+ teams ${teams}</span>` : "");
   }
 
-  function renderMineDetail(s) {
-    if (!s) {
-      detailEl.innerHTML = '<div class="empty">Select a Branch set on the left.</div>';
-      return;
-    }
-    const rows = s.members.map(m => `
-      <tr>
-        <td title="${escapeHTML(m.title)}">${escapeHTML(m.ref)}</td>
-        <td>${escapeHTML(m.state.toLowerCase())}${m.draft ? " · draft" : ""}${
-          m.conflict ? ' · <span class="tr-ci-failure">conflict</span>' : ""}${
-          m.mergebot_unknown ? ' · <span class="mine-unknown">mergebot?</span>' : ""}</td>
-        <td>${memberCI(m)}</td>
-        <td>${escapeHTML(m.review || "-")}</td>
-        <td class="mine-requested">${memberRequested(m)}</td>
-        <td><a href="${escapeHTML(m.url)}" target="_blank" rel="noopener">GitHub ↗</a>${
-          m.runbot_url ? ` · <a href="${escapeHTML(m.runbot_url)}" target="_blank" rel="noopener">runbot ↗</a>` : ""}</td>
-      </tr>${m.fw.map(f => `
-      <tr>
-        <td>&nbsp;&nbsp;↳ ${escapeHTML(f.ref)}</td>
-        <td>${escapeHTML(f.state.toLowerCase())}${f.flag ? " · " + fwLabel(f) : ""}${
-          f.mergebot_unknown ? ' · <span class="mine-unknown">mergebot?</span>' : ""}</td>
-        <td>${memberCI(f)}</td>
-        <td class="mine-dim">fw to ${escapeHTML(f.base)}</td>
-        <td></td>
-        <td><a href="${escapeHTML(f.url)}" target="_blank" rel="noopener">GitHub ↗</a></td>
-      </tr>`).join("")}`).join("");
-    detailEl.innerHTML = `
-      <div class="detail">
-        <div class="detail-header">
-          <h2>${s.members.some(m => m.draft) ? '<span class="draft-badge">draft</span>' : ""}${escapeHTML(s.title)}</h2>
-          <div class="crumbs">
-            <span>${escapeHTML(s.key)}</span> ·
-            <span>→ ${escapeHTML(mineTargets(s))}</span>
-            ${s.task ? ` · <a href="https://www.odoo.com/odoo/all-tasks/${escapeHTML(s.task)}" target="_blank" rel="noopener">task-${escapeHTML(s.task)}</a>` : ""}
-          </div>
-        </div>
-
-        <div class="detail-links">
-          <button class="detail-hide mine-dismiss" type="button">${isMineDismissed(s) ? "Restore" : "Dismiss"}</button>
-        </div>
-
-        ${s.actions.length && mineBand(s) !== "done" ? `
-        <section class="section">
-          <h3>Action items <button class="detail-hide mine-ack-btn" type="button">${
-            isAcked(s) ? "Un-acknowledge" : "Acknowledge (a)"}</button></h3>
-          ${s.actions.map(a => `<div class="mine-reason">${escapeHTML(a.member)}: ${escapeHTML(a.text)}
-            <span class="mine-dim">since ${escapeHTML(a.since.slice(0, 10))}</span></div>`).join("")}
-        </section>` : ""}
-
-        <section class="section">
-          <h3>Members</h3>
-          <table class="mine-table">
-            <tr><th>PR</th><th>State</th><th>CI</th><th>Review</th><th>Requested</th><th>Links</th></tr>
-            ${rows}
-          </table>
-        </section>
-
-        <section class="section">
-          <h3>Discussion</h3>
-          ${discussionHTML(s.discussion, s.members.length > 1 || s.members.some(m => m.fw.length),
-                           "No discussion yet.")}
-        </section>
-      </div>`;
-    detailEl.querySelector(".mine-dismiss").addEventListener("click", () => dismissMine(s.uid));
-    detailEl.querySelector(".mine-ack-btn")?.addEventListener("click", () => toggleAck(s.uid));
-  }
-
   // ---- Tab engine: each view declares what differs, the engine runs the rest --
 
   const hasMoved = t => ((t.since_last_look || []).length ? 1 : 0);
@@ -1463,8 +1255,8 @@
       rows: TRACKED,
       search: "Search tracked title, #, author…  ( / )",
       placeholder: "Select a tracked PR on the left.",
-      empty: ["Nothing matches. Clear the search or filters.",
-              "Nothing tracked yet. Subscribe to a PR on GitHub, or run `pr-dash track <url>`."],
+      empty: () => TRACKED.length ? "Nothing matches. Clear the search or filters."
+        : "Nothing tracked yet. Subscribe to a PR on GitHub, or run `pr-dash track <url>`.",
       haystack: t => [t.title, t.author, t.target_branch, t.repo, t.repo_short,
                       `${t.repo_short}#${t.number}`, String(t.number)].join(" "),
       chips: {
@@ -1570,6 +1362,120 @@
       </div>`;
       },
     },
+    mine: {
+      rows: MINE,
+      search: "Search title, #, branch, task…  ( / )",
+      placeholder: "Select a Branch set on the left.",
+      empty: () => MINE.some(s => !isMineDismissed(s)) ? "Nothing matches. Clear the search."
+        : "No Authored PRs yet. The next refresh lists every open PR you opened.",
+      haystack: s => [s.key, s.task || "", ...s.members.flatMap(m => [m.title, m.ref, m.repo, m.target_branch,
+                                                                      ...m.fw.map(f => f.ref)])].join(" "),
+      chips: { "mine-state": [{ id: "show-dismissed", label: "show dismissed" }] },
+      sorts: {
+        band: (a, b) => mineRank(a) - mineRank(b)
+          || (mineRank(a) ? 0 : new Date(a.actions[0].since) - new Date(b.actions[0].since)),
+      },
+      marks: {
+        x: { on: isMineDismissed, set: (s, on) => setDismissed("mine", s.members.map(m => m.id), on),
+             show: "show-dismissed" },
+        a: { on: isAcked, set(s, on) {
+          if (mineBand(s) === "done" || !s.actions.length) return;
+          localAcks[s.key] = { fingerprint: s.fingerprint, on };
+          localStorage.setItem(ACK_KEY, JSON.stringify(localAcks));
+          enqueueOp({ route: "mine-ack", op: on ? "ack" : "unack", key: s.key, fingerprint: s.fingerprint,
+                      at: new Date().toISOString() });
+          flushQueue();
+        } },
+      },
+      // Its buttons take the next row on dismiss like its keys, unlike Tracked's.
+      clickAdvances: true,
+      counts() {
+        const n = band => MINE.filter(s => !isMineDismissed(s) && mineBand(s) === band).length;
+        return [`${n("needs")} need you · ${n("open")} open · ${n("done")} done`, "", "", "", n("needs") + n("open")];
+      },
+      listHTML: (sets, rowHTML) => [["Needs you", " mine-band-needs"], ["Open", ""], ["Done", " mine-band-done"],
+        ...(filters["mine-state"].has("show-dismissed") ? [["Dismissed", ""]] : [])].map(([label, cls], i) => {
+        const band = sets.filter(s => mineRank(s) === i);
+        return `<li class="mine-band${cls}">${label} <span class="mine-band-n">${band.length}</span></li>`
+          + band.map(rowHTML).join("");
+      }).join(""),
+      rowHTML(s) {
+        const gone = isMineDismissed(s);
+        return `<li class="pr-row mine-row${s.band === "done" ? " mine-row-done" : ""}${gone ? " hidden-row" : ""}" data-id="${s.id}">
+      <span class="pr-title" title="${escapeHTML(s.title)}">${escapeHTML(s.title)}</span>
+      <button class="pr-hide" type="button" title="${gone ? "Restore this Branch set" : "Dismiss this Branch set"}"
+              data-key="x">${gone ? "↺" : "×"}</button>
+      <span class="pr-sub mine-members">${s.members.map(memberChip).join("")}</span>
+      <span class="pr-sub">
+        <span class="tr-branch">${escapeHTML(s.key)} → ${escapeHTML(mineTargets(s))}</span>
+        ${s.task ? `<span>task-${escapeHTML(s.task)}</span>` : ""}
+        ${mineLabels(s)}
+      </span>
+      ${fwLines(s)}
+      ${mineBand(s) === "needs" ? s.action_lines.map(a =>
+        `<span class="pr-sub mine-reason">${escapeHTML(a.member)}: ${escapeHTML(a.text)}</span>`).join("") : ""}</li>`;
+      },
+      detail(s) {
+        const rows = s.members.map(m => `
+      <tr>
+        <td title="${escapeHTML(m.title)}">${escapeHTML(m.ref)}</td>
+        <td>${escapeHTML(m.state.toLowerCase())}${m.draft ? " · draft" : ""}${
+          m.conflict ? ' · <span class="tr-ci-failure">conflict</span>' : ""}${
+          m.mergebot_unknown ? ' · <span class="mine-unknown">mergebot?</span>' : ""}</td>
+        <td>${memberCI(m)}</td>
+        <td>${escapeHTML(m.review || "-")}</td>
+        <td class="mine-requested">${memberRequested(m)}</td>
+        <td><a href="${escapeHTML(m.url)}" target="_blank" rel="noopener">GitHub ↗</a>${
+          m.runbot_url ? ` · <a href="${escapeHTML(m.runbot_url)}" target="_blank" rel="noopener">runbot ↗</a>` : ""}</td>
+      </tr>${m.fw.map(f => `
+      <tr>
+        <td>&nbsp;&nbsp;↳ ${escapeHTML(f.ref)}</td>
+        <td>${escapeHTML(f.state.toLowerCase())}${f.flag ? " · " + fwLabel(f) : ""}${
+          f.mergebot_unknown ? ' · <span class="mine-unknown">mergebot?</span>' : ""}</td>
+        <td>${memberCI(f)}</td>
+        <td class="mine-dim">fw to ${escapeHTML(f.base)}</td>
+        <td></td>
+        <td><a href="${escapeHTML(f.url)}" target="_blank" rel="noopener">GitHub ↗</a></td>
+      </tr>`).join("")}`).join("");
+        return `
+      <div class="detail">
+        <div class="detail-header">
+          <h2>${s.members.some(m => m.draft) ? '<span class="draft-badge">draft</span>' : ""}${escapeHTML(s.title)}</h2>
+          <div class="crumbs">
+            <span>${escapeHTML(s.key)}</span> ·
+            <span>→ ${escapeHTML(mineTargets(s))}</span>
+            ${s.task ? ` · <a href="https://www.odoo.com/odoo/all-tasks/${escapeHTML(s.task)}" target="_blank" rel="noopener">task-${escapeHTML(s.task)}</a>` : ""}
+          </div>
+        </div>
+
+        <div class="detail-links">
+          <button class="detail-hide" type="button" data-key="x">${isMineDismissed(s) ? "Restore" : "Dismiss"}</button>
+        </div>
+
+        ${s.actions.length && mineBand(s) !== "done" ? `
+        <section class="section">
+          <h3>Action items <button class="detail-hide" type="button" data-key="a">${
+            isAcked(s) ? "Un-acknowledge" : "Acknowledge (a)"}</button></h3>
+          ${s.actions.map(a => `<div class="mine-reason">${escapeHTML(a.member)}: ${escapeHTML(a.text)}
+            <span class="mine-dim">since ${escapeHTML(a.since.slice(0, 10))}</span></div>`).join("")}
+        </section>` : ""}
+
+        <section class="section">
+          <h3>Members</h3>
+          <table class="mine-table">
+            <tr><th>PR</th><th>State</th><th>CI</th><th>Review</th><th>Requested</th><th>Links</th></tr>
+            ${rows}
+          </table>
+        </section>
+
+        <section class="section">
+          <h3>Discussion</h3>
+          ${discussionHTML(s.discussion, s.members.length > 1 || s.members.some(m => m.fw.length),
+                           "No discussion yet.")}
+        </section>
+      </div>`;
+      },
+    },
   };
 
   const viewRow = (d, id) => d.rows.find(r => r.id === id);
@@ -1586,9 +1492,9 @@
     const tabCountEl = document.getElementById(`${d.key}-tab-count`);
     if (tabCountEl) tabCountEl.textContent = String(tab);
     d.list.innerHTML = d.visible.length
-      ? d.visible.map(r => d.rowHTML(r, (r.since_last_look || []).map(
-        x => `<span class="look-badge look-${x}">${d.badges[x] || x}</span>`).join(""))).join("")
-      : `<li class="tr-empty">${escapeHTML(d.empty[d.rows.length ? 0 : 1])}</li>`;
+      ? d.listHTML(d.visible, r => d.rowHTML(r, (r.since_last_look || []).map(
+        x => `<span class="look-badge look-${x}">${d.badges[x] || x}</span>`).join("")))
+      : `<li class="tr-empty">${escapeHTML(d.empty())}</li>`;
     highlight(d);
   }
 
@@ -1608,7 +1514,9 @@
     const row = viewRow(d, id);
     if (!row) return;
     const idx = d.visible.indexOf(row);
-    d.marks[key].set(row, !d.marks[key].on(row));
+    const was = d.marks[key].on(row);
+    d.marks[key].set(row, !was);
+    if (d.marks[key].on(row) === was) return;
     renderView(d);
     if (d.selected !== id) return;
     if (d.visible.includes(row)) return select(d, id);
@@ -1617,6 +1525,7 @@
 
   for (const [key, d] of Object.entries(VIEWS)) {
     Object.assign(d, { key, list: document.getElementById(`${key}-list`), selected: null, visible: [] });
+    d.listHTML ??= (rows, rowHTML) => rows.map(rowHTML).join("");
     for (const [g, cs] of Object.entries(d.chips)) {
       buildChips(g, cs.map(c => c.id), id => cs.find(c => c.id === id).label);
     }
@@ -1628,20 +1537,19 @@
     d.list.addEventListener("click", (e) => {
       const li = e.target.closest(".pr-row");
       const btn = e.target.closest("[data-key]");
-      if (li) btn ? mark(d, btn.dataset.key, li.dataset.id, false) : select(d, li.dataset.id);
+      if (li) btn ? mark(d, btn.dataset.key, li.dataset.id, d.clickAdvances) : select(d, li.dataset.id);
     });
   }
   detailEl.addEventListener("click", (e) => {
     const d = VIEWS[activeTab];
     const btn = e.target.closest("[data-key]");
-    if (d && btn) mark(d, btn.dataset.key, d.selected, false);
+    if (d && btn) mark(d, btn.dataset.key, d.selected, d.clickAdvances);
   });
 
   /** Render whichever tab is showing. Shared controls (search, reset, the
    *  updated-count) call this instead of renderList so they work in both. */
   function rerenderActive() {
     if (VIEWS[activeTab]) renderView(VIEWS[activeTab]);
-    else if (activeTab === "mine") renderMineList();
     else renderList();
   }
 
@@ -1657,16 +1565,10 @@
       }
     }
     const d = VIEWS[activeTab];
-    searchEl.placeholder = d ? d.search : {
-      queue: "Search title, #, author, module…  ( / )",
-      mine: "Search title, #, branch, task…  ( / )",
-    }[activeTab];
+    searchEl.placeholder = d ? d.search : "Search title, #, author, module…  ( / )";
     rerenderActive();
     if (d) {
       select(d, d.selected ?? d.visible[0]?.id ?? null);
-    } else if (activeTab === "mine") {
-      if (!selectedMineKey && visibleMine.length) selectMine(visibleMine[0].uid);
-      else renderMineDetail(MINE.find(s => s.uid === selectedMineKey) || null);
     } else {
       renderDetail(PRS.find(p => p.id === selectedId));
     }
@@ -1718,8 +1620,6 @@
         if (/^(BUTTON|A)$/.test(tag)) break;  // let a focused control act normally
         openSelectedOnGithub(); break;
       case "h": if (activeTab === "queue") hideSelected(); break;
-      case "x": if (activeTab === "mine" && selectedMineKey) dismissMine(selectedMineKey); break;
-      case "a": if (activeTab === "mine" && selectedMineKey) toggleAck(selectedMineKey); break;
       case "t": setTab(TABS[(TABS.indexOf(activeTab) + 1) % TABS.length]); break;
     }
   });
