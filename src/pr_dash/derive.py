@@ -216,10 +216,6 @@ def tracked_row_from_node(node: dict, fetched_at: str) -> tuple[dict, list[dict]
     review_block = node.get("reviews") or {}
     thread_block = node.get("reviewThreads") or {}
     comments = discussion_stream(node)
-
-    unresolved = sum(
-        1 for t in (thread_block.get("nodes") or []) if not t.get("isResolved")
-    )
     # Movement signal: replies move no totalCount, but a new review, thread or comment does.
     activity_count = (
         (comment_block.get("totalCount") or 0)
@@ -239,7 +235,6 @@ def tracked_row_from_node(node: dict, fetched_at: str) -> tuple[dict, list[dict]
         "activity_count": activity_count,
         "review_count": review_block.get("totalCount") or 0,
         "thread_count": thread_block.get("totalCount") or 0,
-        "unresolved_threads": unresolved,
         "created_at": node.get("createdAt"),
         "updated_at": node.get("updatedAt"),
         "closed_at": node.get("closedAt"),
@@ -455,6 +450,11 @@ def thread_facts(stream: list[dict], login: str) -> list[dict]:
         "last_reply_at": comments[-1]["created_at"] or "",
         "last_reply_author": comments[-1]["author"] or "",
     } for thread_id, comments in threads.items()]
+
+
+def unresolved_threads(stream: list[dict]) -> int:
+    """How many review threads of a Discussion are unresolved."""
+    return len({c["thread_id"] for c in stream if c["kind"] == "thread" and c["state"] == "UNRESOLVED"})
 
 
 def awaiting_my_reply(facts: list[dict], login: str) -> bool:

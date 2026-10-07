@@ -838,7 +838,7 @@ class Sync:
             "additions": node["additions"],
             "deletions": node["deletions"],
             "changed_files": node["changedFiles"],
-            "unresolved_threads": sum(not t["is_resolved"] for t in threads),
+            "unresolved_threads": derive.unresolved_threads(stream),
             "awaiting_my_reply": int(derive.awaiting_my_reply(threads, login)),
             "linked_task": task_id,
             "linked_task_kind": task_kind,

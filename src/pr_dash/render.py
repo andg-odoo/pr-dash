@@ -506,6 +506,7 @@ def build_tracked_payload(
         if not row["dismissed_at"]:
             seen_updates.append(_tab_seen_row(row))
         repo_short = row["repo"].split("/")[-1]
+        stream = comments_by_pr.get(row["id"], [])
         items.append({
             "id": row["id"],
             "repo": row["repo"],
@@ -522,9 +523,9 @@ def build_tracked_payload(
             "activity_count": row["activity_count"] or 0,
             "review_count": row["review_count"] or 0,
             "thread_count": row["thread_count"] or 0,
-            "unresolved_threads": row["unresolved_threads"] or 0,
+            "unresolved_threads": derive.unresolved_threads(stream),
             "body": row["body"],
-            "discussion": derive.group_discussion(comments_by_pr.get(row["id"], [])),
+            "discussion": derive.group_discussion(stream),
             "source": row["source"],
             "added_at": row["added_at"],
             "updated_at": row["updated_at"],

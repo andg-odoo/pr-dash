@@ -193,7 +193,7 @@ def test_tracked_row_merges_reviews_and_threads_in_time_order():
     assert approval["state"] == "APPROVED" and not approval["body"]
     assert comments[1]["path"] == "addons/sale/models/sale_order.py"
     assert comments[1]["state"] == "UNRESOLVED"
-    assert row["unresolved_threads"] == 1
+    assert derive.unresolved_threads(comments) == 1
     # comment_count stays the GitHub-visible number; activity_count drives
     # deltas; the parts are kept so the row can read "1 comment · 3 reviews".
     assert row["comment_count"] == 1

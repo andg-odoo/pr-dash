@@ -296,7 +296,8 @@ def _v29_db(path):
     conn.executescript(
         db.SCHEMA_SQL.replace(db.MARK_SCHEMA_SQL, "")
         .replace("  added_at      TEXT NOT NULL,\n",
-                 "  added_at      TEXT NOT NULL,\n  dismissed_at  TEXT,\n")
+                 "  added_at      TEXT NOT NULL,\n  dismissed_at  TEXT,\n"
+                 "  unresolved_threads INTEGER NOT NULL DEFAULT 0,\n")
         + "CREATE TABLE mine_ack (key TEXT PRIMARY KEY, fingerprint TEXT, acked_at TEXT);"
         + "".join(f"INSERT INTO {tab} (id, repo, number, url, added_at, dismissed_at) "
                   f"VALUES ('odoo/odoo#{n}', 'odoo/odoo', {n}, 'u', 't', {at});"
@@ -317,8 +318,8 @@ def test_migration_moves_every_mark_of_a_v29_cache_into_one_table(tmp_path):
         ("dismiss_tracked", "odoo/odoo#1", None, "d1")]
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert "mine_ack" not in tables
-    assert all("dismissed_at" not in {r[1] for r in conn.execute(f"PRAGMA table_info({tab})")}
-               for tab in ("tracked", "mine"))
+    assert all({"dismissed_at", "unresolved_threads"}.isdisjoint(
+        r[1] for r in conn.execute(f"PRAGMA table_info({tab})")) for tab in ("tracked", "mine"))
     assert [(r["id"], r["dismissed_at"]) for r in db.list_mine(conn, include_dismissed=True)] == [
         ("odoo/odoo#2", "d2"), ("odoo/odoo#3", None)]
 

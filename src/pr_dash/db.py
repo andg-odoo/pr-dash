@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterator
 
 
-SCHEMA_VERSION = 30
+SCHEMA_VERSION = 31
 # A fetched_at no fetch ever wrote, so the row is fetched in full, its Discussion with it.
 UNFETCHED = "1970-01-01T00:00:00+00:00"
 
@@ -84,7 +84,6 @@ CREATE TABLE tracked (
   activity_count     INTEGER NOT NULL DEFAULT 0,
   review_count       INTEGER NOT NULL DEFAULT 0,
   thread_count       INTEGER NOT NULL DEFAULT 0,
-  unresolved_threads INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT,
   updated_at    TEXT,
   closed_at     TEXT,
@@ -131,7 +130,6 @@ CREATE TABLE mine (
   activity_count     INTEGER NOT NULL DEFAULT 0,
   review_count       INTEGER NOT NULL DEFAULT 0,
   thread_count       INTEGER NOT NULL DEFAULT 0,
-  unresolved_threads INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT,
   updated_at    TEXT,
   closed_at     TEXT,
@@ -588,7 +586,14 @@ def _migrate(conn: sqlite3.Connection, db_path: Path) -> None:
                 )
                 conn.execute("DROP TABLE mine_ack")
             # Stamped inside the move, so a failed one leaves a v29 cache to retry whole.
-            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            conn.execute("PRAGMA user_version = 30")
+    if current < 31:
+        # Tracked and Mine count unresolved threads from the stored Discussion on read.
+        for table in ("tracked", "mine"):
+            cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            if "unresolved_threads" in cols:
+                conn.execute(f"ALTER TABLE {table} DROP COLUMN unresolved_threads")
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
 @contextmanager
@@ -981,8 +986,7 @@ def list_reviewers(conn: sqlite3.Connection) -> dict[str, list[dict]]:
 TRACKED_STATE_COLS = [
     "title", "author", "state", "is_draft", "target_branch", "head_sha", "body",
     "ci_state", "comment_count", "created_at", "updated_at", "closed_at",
-    "merged_at", "fetched_at", "activity_count", "unresolved_threads",
-    "review_count", "thread_count",
+    "merged_at", "fetched_at", "activity_count", "review_count", "thread_count",
 ]
 _MINE_JSON_COLS = ["checks", "requested_people", "requested_teams", "review_request_events"]
 _TAB_STATE_COLS = {
