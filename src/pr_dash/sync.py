@@ -17,6 +17,8 @@ log = logging.getLogger("pr_dash")
 
 # Waits after the first failed AI pass at a review context, then after the second.
 _AI_RETRY_BACKOFF_HOURS = (1, 4)
+# Three ten-PR chunks a refresh, so the unfetched archived rows trickle in.
+_PRIME_BATCH = 30
 
 
 @dataclass
@@ -168,6 +170,7 @@ class Sync:
 
         self._phase("Re-checking archived rows...")
         self._reconcile_archived_states(kept_ids, report)
+        report.refreshed += self._prime_unfetched_archived(kept_ids)
 
         # Before the AI pass, so it is told whether a migration exists.
         self._phase("Matching migration PRs...")
@@ -345,7 +348,7 @@ class Sync:
                 else:
                     pr_row = self._node_to_rows(node)[0]
                     pr_row.update(review_requested_at=latest["submittedAt"], previously_reviewed=1,
-                                  archived_at=latest["submittedAt"])
+                                  archived_at=latest["submittedAt"], fetched_at=db.UNFETCHED)
                     db.upsert_pr(self.conn, pr_row)
                     report.added += 1
                 db.set_my_review_state(self.conn, pr_id, login, verdict)
@@ -494,8 +497,7 @@ class Sync:
             # Kept even when not re-persisted, so the sweep never archives a reviewed half.
             if kept_ids is not None:
                 kept_ids.add(pr_id)
-            # A row with no comment rows yet predates their caching, so it is primed once.
-            if not (force or cached is None or not db.has_discussion(self.conn, pr_id)
+            if not (force or cached is None or cached["fetched_at"] == db.UNFETCHED
                     or cached["head_sha"] != node["headRefOid"]
                     or cached["updated_at"] != node["updatedAt"]):
                 continue
@@ -575,6 +577,16 @@ class Sync:
                 ):
                     outdated.append(p)
         report.refreshed = self._refresh_pr_rows(outdated, force=False)
+
+    def _prime_unfetched_archived(self, kept_ids: set[str]) -> int:
+        """Fetch a batch of the archived rows never fetched in full, which lack a Discussion."""
+        unfetched = [
+            dict(p) for p in db.list_prs(self.conn)
+            if p["id"] not in kept_ids and p["archived_at"] and p["fetched_at"] == db.UNFETCHED
+        ]
+        if unfetched:
+            self._phase(f"Fetching {len(unfetched)} archived Discussions...")
+        return self._refresh_pr_rows(unfetched[:_PRIME_BATCH], force=False)
 
     def _refresh_companions(self, kept_ids: set[str], report: RefreshReport) -> str:
         """Attach each Branch set's migration PR by head branch, returning the repo searched."""

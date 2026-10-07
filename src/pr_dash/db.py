@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Iterator
 
 SCHEMA_VERSION = 29
+# A fetched_at no fetch ever wrote, so the row is fetched in full, its Discussion with it.
+UNFETCHED = "1970-01-01T00:00:00+00:00"
 
 # Cache-wide facts with nowhere better to live, such as when a refresh last reached GitHub.
 META_SCHEMA_SQL = """
@@ -551,7 +553,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("DROP TABLE IF EXISTS pr_comment")
         conn.execute("DROP TABLE IF EXISTS pr_thread")
         # Queue rows refetch on the next refresh, the hourly gate lifted, to refill their Discussion.
-        conn.execute("UPDATE pr SET fetched_at = '1970-01-01T00:00:00+00:00'")
+        conn.execute("UPDATE pr SET fetched_at = ?", (UNFETCHED,))
         conn.execute("DELETE FROM meta WHERE key = 'last_queue_refresh'")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
@@ -1040,11 +1042,6 @@ def list_discussions(conn: sqlite3.Connection, tab: str) -> dict[str, list[dict]
     for r in rows:
         out.setdefault(r["pr_id"], []).append(dict(r))
     return out
-
-
-def has_discussion(conn: sqlite3.Connection, pr_id: str) -> bool:
-    row = conn.execute("SELECT 1 FROM comment WHERE pr_id = ? LIMIT 1", (pr_id,)).fetchone()
-    return row is not None
 
 
 def sweep_discussions(conn: sqlite3.Connection) -> None:

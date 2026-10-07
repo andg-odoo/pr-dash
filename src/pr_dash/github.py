@@ -602,7 +602,9 @@ class GhGitHub:
 
     def nodes(self, refs, view):
         if view == "queue":
-            nodes = _pull_requests(refs, "...PRFields", chunk_size=10, fragment=PR_NODE_FRAGMENT)
+            # Cached refs go stale too, and one deleted PR must not sink its chunk.
+            nodes = _pull_requests(refs, "...PRFields", chunk_size=10, partial=True,
+                                   fragment=PR_NODE_FRAGMENT)
             _complete_pages(list(nodes.values()), _PAGES)
             return nodes
         fragment, spread = ((TRACKED_NODE_FRAGMENT, "...TrackedFields") if view == "tracked"

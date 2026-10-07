@@ -1,6 +1,6 @@
 import pytest
 
-from pr_dash import db, github, hidden, query, render
+from pr_dash import db, github, hidden, query, render, sync
 from pr_dash.config import Config
 from pr_dash.sync import Sync
 from tests.fakes import T0, FakeClock, FakeGitHub, FakeMergebot, FakeReviewer, insert_pr
@@ -117,7 +117,7 @@ def test_an_archived_row_follows_its_pr_on_github(w):
     assert (row["ping_author"], row["push_at"]) == ("alice", None)
     assert row["ping_at"] == row["updated_at"] == "2026-07-01T02:00:00Z"
     assert "ready" in row["ping_snippet"]
-    assert db.has_discussion(w.conn, ODOO)
+    assert ODOO in db.list_discussions(w.conn, "pr")
 
     w.clock.advance(hours=1)
     w.gh.push(ODOO, "sha2")
@@ -168,7 +168,7 @@ def test_a_reviewed_half_of_an_active_set_is_kept_and_primed(w):
     w.gh.comment(ENT, "someone", "why?")
     assert w.refresh().primed == 1
     assert w.row(ENT)["archived_at"] is None
-    assert db.has_discussion(w.conn, ENT)
+    assert ENT in db.list_discussions(w.conn, "pr")
 
     # Unchanged with its comments cached, the half is kept without being re-persisted.
     assert w.refresh().primed == 0
@@ -199,8 +199,8 @@ def test_priming_an_archived_half_keeps_it_archived(w):
     assert w.row(ENT)["archived_at"] == archived_at
 
 
-def test_a_half_cached_before_comment_rows_existed_is_primed_once(w):
-    insert_pr(w.conn, ENT)
+def test_a_half_the_migration_left_unfetched_is_primed_once(w):
+    insert_pr(w.conn, ENT, fetched_at=db.UNFETCHED)
     w.gh.add("odoo/enterprise", 2, comments=[{"author": "x", "at": T0, "body": "b"}])
     w.gh.add("odoo/odoo", 1, requested=["me"])
     assert w.refresh().primed == 1
@@ -427,6 +427,19 @@ def test_backfill_archives_past_reviews_and_leaves_live_rows_to_the_refresh(w):
         "odoo/odoo#1": ["APPROVED"], "odoo/odoo#3": ["PENDING"],
         "odoo/odoo#4": ["CHANGES_REQUESTED"]}
     assert w.row("odoo/odoo#2") is None
+
+
+def test_backfilled_rows_fetch_their_discussion_a_batch_a_refresh(w, monkeypatch):
+    monkeypatch.setattr(sync, "_PRIME_BATCH", 2)
+    for n in (1, 2, 3):
+        w.gh.add("odoo/odoo", n, state="MERGED",
+                 reviews=[{"author": "me", "state": "APPROVED", "at": T0, "commit": "sha1"}])
+        w.gh.comment(f"odoo/odoo#{n}", "alice", "thanks")
+    assert w.sync.backfill(since=None, limit=1000).added == 3
+
+    assert [w.refresh().refreshed for _ in range(3)] == [2, 1, 0]
+    assert sorted(db.list_discussions(w.conn, "pr")) == ["odoo/odoo#1", "odoo/odoo#2", "odoo/odoo#3"]
+    assert all(w.row(f"odoo/odoo#{n}")["archived_at"] == T0 for n in (1, 2, 3))
 
 
 def test_tracking_by_hand_fills_rows_at_once_and_outlives_a_github_failure(w):
