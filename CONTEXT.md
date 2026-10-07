@@ -22,6 +22,14 @@ _Avoid_: my PR, own PR
 Every review, conversation comment and review thread on a PR, as one stream.
 _Avoid_: comments, conversation, timeline
 
+**Tab definition**:
+The declaration of what makes one view different, its rows, filters, sorts, keys and Detail tabs, run by one shared engine.
+_Avoid_: tab config, view class
+
+**Detail tab**:
+A labelled group of sections in a view's detail, shown one at a time under the detail header.
+_Avoid_: panel, pane, section
+
 ### Attention
 
 **Branch set**:

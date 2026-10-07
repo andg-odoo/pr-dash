@@ -169,6 +169,7 @@
 
   /** Render the review-history stats panel into the detail pane. */
   function renderStats() {
+    openDtab = null;
     const arch = PRS.filter(p => p.is_archived && p.archived_at);
     if (!arch.length) {
       detailEl.innerHTML = '<div class="empty">No review history yet.</div>';
@@ -537,15 +538,17 @@
     return `<span class="disc-onpath">${escapeHTML(c.member || "")}</span>`;
   }
 
-  // The Discussion tree with bot entries hidden, newest group first.
-  function discussionHTML(discussion, showMember = false, empty = "No discussion cached.", login = "") {
+  // The Discussion Detail tab, bots hidden, newest first, its label counting the open threads.
+  function discussionTab(discussion, showMember = false, empty = "No discussion cached.", login = "", links = "") {
     const groups = discussion.flatMap(g => {
       const threads = g.threads.map(t => ({ ...t, comments: t.comments.filter(c => !c.is_bot) }))
         .filter(t => t.comments.length);
       return (g.entry ? g.entry.is_bot : !threads.length) ? [] : [{ ...g, threads }];
     });
-    if (!groups.length) return `<div class="disc-none">${empty}</div>`;
-    return groups.map(g => {
+    const threads = groups.flatMap(g => g.threads);
+    const open = threads.filter(t => t.state === "UNRESOLVED").length;
+    const awaits = threads.filter(t => awaitsMe(t, login)).length;
+    const tree = () => !groups.length ? `<div class="disc-none">${empty}</div>` : groups.map(g => {
       if (g.kind === "orphan") {
         return `<article class="disc-entry disc-entry-orphan">${threadsHTML(g.threads, showMember, login)}</article>`;
       }
@@ -559,6 +562,8 @@
           ${threadsHTML(g.threads, showMember, login)}
         </article>`;
     }).join("");
+    return { label: "Discussion", awaits, sections: () => `<section class="section"><h3>Discussion ${links}</h3>${tree()}</section>`,
+             count: [open && `${open} unresolved`, awaits && `${awaits} await${awaits === 1 ? "s" : ""} you`].filter(Boolean).join(" · ") };
   }
 
   // ---- mine: Authored PRs as Branch sets, one row per head branch, each member inline --
@@ -805,14 +810,14 @@
           ? `<span class="archived-badge" title="No longer requested for review${pr.archived_at ? " · archived " + pr.archived_at.slice(0, 10) : ""}">archived</span>`
           : "";
 
-        return `
-          <div class="detail">
+        const head = `
             <div class="detail-header">
               <h2>${pairBadge}${draftBadge}${pendBadge}${archivedBadge}${escapeHTML(pr.title)}</h2>
               <div class="crumbs">
                 <span>${crumbsId}</span> ·
                 <span>@${escapeHTML(pr.author)}</span> ·
                 <span>${escapeHTML(pr.target_branch)} ← ${escapeHTML(pr.head_branch)}</span>
+                ${pr.awaiting_my_reply ? '<button class="disc-awaits disc-awaits-jump" type="button">awaiting your reply ↓</button>' : ""}
               </div>
             </div>
 
@@ -849,8 +854,8 @@
               <span class="ping-who">${escapeHTML((pr.push_sha || "").slice(0, 10))}</span>
               <span class="ping-snippet">pushed since your review</span>
             </div>
-            ` : ""}
-
+            ` : ""}`;
+        const overview = () => `
             <section class="section">
               <h3>Status</h3>
               <dl class="kv">
@@ -919,14 +924,8 @@
                 </div>
               `).join("")}
             </section>
-            ` : ""}
-
-            <section class="section">
-              <h3>Discussion ${pr.awaiting_my_reply ? '<button class="disc-awaits disc-awaits-jump" type="button">awaiting your reply ↓</button>' : ""}${pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank" rel="noopener" class="disc-repo-link">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")}</h3>
-              ${discussionHTML(pr.discussion, pr.is_pair, undefined, pr.my_login)}
-            </section>
-
-            ${pr.diffs.map((d, i) => `
+            ` : ""}`;
+        const diffs = () => pr.diffs.map((d, i) => `
             <section class="diff-section${(d.closed || (d.reviewed && !pr.is_archived)) ? " diff-section-closed" : ""}">
               <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--fg-dim);">
                 Diff: ${escapeHTML(d.repo_short)}#${d.number}${d.closed ? ' <span class="diff-closed-badge">CLOSED</span>' : (d.reviewed && !pr.is_archived) ? ' <span class="diff-reviewed-badge">REVIEWED</span>' : ""}
@@ -938,65 +937,54 @@
                 ${d.available ? "" : `<div class="empty" style="padding:20px;">Diff not available${d.truncated ? " (truncated - too large)" : ""}. <a href="${escapeHTML(d.url)}/files" target="_blank" rel="noopener">View on GitHub ↗</a></div>`}
               </div>
             </section>
-            `).join("")}
-          </div>
-        `;
-      },
-      wire(pr) {
-        wireDiscordCopy(detailEl, pr);
+            `).join("");
+        return { head, tabs: [
+          { label: "Overview", sections: overview },
+          discussionTab(pr.discussion, pr.is_pair, undefined, pr.my_login, pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank" rel="noopener" class="disc-repo-link">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")),
+          { label: "Diff", count: `${pr.changed_files} file${pr.changed_files === 1 ? "" : "s"}`, sections: diffs,
+            wire: pane => pr.diffs.forEach((d, i) => {
+              if (!d.available || !d.diff) return;
+              const container = pane.querySelector(`.diff-container[data-diff-idx="${i}"]`);
+              container.innerHTML = "";
+              // A truncated cached diff says so, rather than let its stubs read as the PR's own doing.
+              if (d.truncated) {
+                const notice = document.createElement("div");
+                notice.className = "diff-partial-notice";
+                notice.innerHTML = `Partial diff: oversized or generated files were replaced by a pr-dash stub. <a href="${escapeHTML(d.url)}/files" target="_blank" rel="noopener">Full diff on GitHub ↗</a>`;
+                container.appendChild(notice);
+              }
 
-        const awaitsBtn = detailEl.querySelector(".disc-awaits-jump");
-        const awaitsThreads = [...detailEl.querySelectorAll(".disc-thread-awaits")];
-        let awaitsIdx = 0;
-        if (awaitsBtn && !awaitsThreads.length) awaitsBtn.disabled = true;
-        // Each click scrolls to the next thread awaiting my reply, wrapping around.
-        awaitsBtn?.addEventListener("click", () => {
-          const thread = awaitsThreads[awaitsIdx++ % awaitsThreads.length];
-          thread.closest("details").open = true;
-          thread.scrollIntoView({ block: "start" });
-        });
-
-        pr.diffs.forEach((d, i) => {
-          if (!d.available || !d.diff) return;
-          const container = detailEl.querySelector(`.diff-container[data-diff-idx="${i}"]`);
-          container.innerHTML = "";
-          // A truncated cached diff says so, rather than let its stubs read as the PR's own doing.
-          if (d.truncated) {
-            const notice = document.createElement("div");
-            notice.className = "diff-partial-notice";
-            notice.innerHTML = `Partial diff: oversized or generated files were replaced by a pr-dash stub. <a href="${escapeHTML(d.url)}/files" target="_blank" rel="noopener">Full diff on GitHub ↗</a>`;
-            container.appendChild(notice);
-          }
-
-          // Files keep PR order, unchanged since my review or heavy ones fold into stubs drawn on expand.
-          const files = splitDiffFiles(d.diff);
-          const changedSet = d.review_changed_paths ? new Set(d.review_changed_paths) : null;
-          const isReviewed = f => changedSet && !changedSet.has(f.path);
-          const willFold = f => isReviewed(f) || isHeavyFile(f);
-          // Folds split the diff into several blocks, so each block drops its repeated file list.
-          const split = files.some(willFold);
-          let run = [];
-          const flush = () => {
-            if (!run.length) return;
-            const host = document.createElement("div");
-            container.appendChild(host);
-            renderDiffInto(host, run.map(f => f.chunk).join(""), { fileList: !split });
-            run = [];
-          };
-          files.forEach(f => {
-            if (isReviewed(f)) {
+              // Files keep PR order, unchanged since my review or heavy ones fold into stubs drawn on expand.
+              const files = splitDiffFiles(d.diff);
+              const changedSet = d.review_changed_paths ? new Set(d.review_changed_paths) : null;
+              const isReviewed = f => changedSet && !changedSet.has(f.path);
+              const willFold = f => isReviewed(f) || isHeavyFile(f);
+              // Folds split the diff into several blocks, so each block drops its repeated file list.
+              const split = files.some(willFold);
+              let run = [];
+              const flush = () => {
+                if (!run.length) return;
+                const host = document.createElement("div");
+                container.appendChild(host);
+                renderDiffInto(host, run.map(f => f.chunk).join(""), { fileList: !split });
+                run = [];
+              };
+              files.forEach(f => {
+                if (isReviewed(f)) {
+                  flush();
+                  container.appendChild(buildFileStub(f, "reviewed"));
+                } else if (isHeavyFile(f)) {
+                  flush();
+                  container.appendChild(buildFileStub(f, changedSet ? "changed" : "heavy"));
+                } else {
+                  run.push(f);  // new/changed (or no-baseline) small file → render inline
+                }
+              });
               flush();
-              container.appendChild(buildFileStub(f, "reviewed"));
-            } else if (isHeavyFile(f)) {
-              flush();
-              container.appendChild(buildFileStub(f, changedSet ? "changed" : "heavy"));
-            } else {
-              run.push(f);  // new/changed (or no-baseline) small file → render inline
-            }
-          });
-          flush();
-        });
+            }) },
+        ] };
       },
+      wire: pr => wireDiscordCopy(detailEl, pr),
     },
     // PRs I subscribed to on GitHub or added with `pr-dash track`, watched until they land.
     tracked: {
@@ -1067,8 +1055,7 @@
           ? '<span class="pair-badge tr-badge-merged">merged</span>'
           : t.state === "CLOSED" ? '<span class="pair-badge tr-badge-closed">closed</span>'
           : t.is_draft ? '<span class="draft-badge">draft</span>' : "";
-        return `
-      <div class="detail">
+        return { head: `
         <div class="detail-header">
           <h2>${stateBadge}${escapeHTML(t.title)}</h2>
           <div class="crumbs">
@@ -1081,8 +1068,7 @@
         <div class="detail-links">
           <a href="${escapeHTML(t.url)}" target="_blank" rel="noopener">GitHub: ${escapeHTML(t.repo_short)}#${t.number} ↗</a>
           <button class="detail-hide" type="button" data-key="x">${isDismissed("tracked", t) ? "Restore" : "Dismiss"}</button>
-        </div>
-
+        </div>`, tabs: [{ label: "Overview", sections: () => `
         <section class="section">
           <h3>Status</h3>
           <dl class="kv">
@@ -1101,13 +1087,7 @@
         <section class="section">
           <h3>Description</h3>
           <div class="pr-body markdown-body">${md.render(t.body.trim())}</div>
-        </section>` : ""}
-
-        <section class="section">
-          <h3>Discussion</h3>
-          ${discussionHTML(t.discussion)}
-        </section>
-      </div>`;
+        </section>` : ""}` }, discussionTab(t.discussion)] };
       },
     },
     mine: {
@@ -1185,8 +1165,7 @@
         <td></td>
         <td><a href="${escapeHTML(f.url)}" target="_blank" rel="noopener">GitHub ↗</a></td>
       </tr>`).join("")}`).join("");
-        return `
-      <div class="detail">
+        return { head: `
         <div class="detail-header">
           <h2>${s.members.some(m => m.draft) ? '<span class="draft-badge">draft</span>' : ""}${escapeHTML(s.title)}</h2>
           <div class="crumbs">
@@ -1198,8 +1177,7 @@
 
         <div class="detail-links">
           <button class="detail-hide" type="button" data-key="x">${isMineDismissed(s) ? "Restore" : "Dismiss"}</button>
-        </div>
-
+        </div>`, tabs: [{ label: "Overview", sections: () => `
         ${s.actions.length && mineBand(s) !== "done" ? `
         <section class="section">
           <h3>Action items <button class="detail-hide" type="button" data-key="a">${
@@ -1214,14 +1192,7 @@
             <tr><th>PR</th><th>State</th><th>CI</th><th>Review</th><th>Requested</th><th>Links</th></tr>
             ${rows}
           </table>
-        </section>
-
-        <section class="section">
-          <h3>Discussion</h3>
-          ${discussionHTML(s.discussion, s.members.length > 1 || s.members.some(m => m.fw.length),
-                           "No discussion yet.")}
-        </section>
-      </div>`;
+        </section>` }, discussionTab(s.discussion, s.members.length > 1 || s.members.some(m => m.fw.length), "No discussion yet.")] };
       },
     },
   };
@@ -1258,13 +1229,52 @@
   const scrollTo = (d, id) => d.list.querySelector(`.pr-row[data-id="${CSS.escape(id)}"]`)
     ?.scrollIntoView({ block: "nearest" });
 
+  let openDtab = null;
+
+  // One layout for every detail: its header, a strip of Detail tabs when several, the open pane.
+  function renderDetail(d, row) {
+    const { head, tabs } = d.detail(row);
+    const stored = `pr-dash:${d.key}-dtab:v1`;
+    detailEl.innerHTML = `<div class="detail">${head}${tabs.length > 1 ? `<div class="dtab-strip" role="tablist">${
+      tabs.map(t => `<button class="dtab" type="button">${t.label}${t.count ? `<span class="dtab-count">${t.count}</span>` : ""}</button>`).join("")
+    }</div>` : ""}${'<div class="dtab-pane" hidden></div>'.repeat(tabs.length)}</div>`;
+    const strip = detailEl.querySelector(".dtab-strip");
+    const panes = [...detailEl.querySelectorAll(".dtab-pane")];
+    // A pane is drawn the first time it opens, so stepping through rows never draws an unseen Diff.
+    const show = (i, picked) => {
+      if (!tabs[i]) return;
+      if (!panes[i].hasChildNodes()) { panes[i].innerHTML = tabs[i].sections(); tabs[i].wire?.(panes[i]); }
+      panes.forEach((p, j) => { p.hidden = j !== i; strip?.children[j].classList.toggle("is-active", j === i); });
+      if (picked) localStorage.setItem(stored, tabs[i].label);
+      // Once the header scrolled away, a picked pane starts right under the strip.
+      if (picked && strip?.getBoundingClientRect().top <= detailEl.getBoundingClientRect().top) panes[i].scrollIntoView({ block: "start" });
+      return panes[i];
+    };
+    show(Math.max(0, tabs.findIndex(t => t.label === localStorage.getItem(stored))));
+    openDtab = i => show(i, true);
+    strip?.querySelectorAll(".dtab").forEach((b, i) => b.addEventListener("click", () => openDtab(i)));
+    // The reply chip opens the Discussion and steps through the threads awaiting my reply.
+    const reply = tabs.findIndex(t => t.awaits);
+    const chip = detailEl.querySelector(".disc-awaits-jump");
+    let next = 0;
+    if (chip) chip.disabled = reply < 0;
+    chip?.addEventListener("click", () => {
+      const threads = openDtab(reply).querySelectorAll(".disc-thread-awaits");
+      const thread = threads[next++ % threads.length];
+      thread.closest("details").open = true;
+      thread.scrollIntoView({ block: "start" });
+    });
+    d.wire?.(row);
+  }
+
   // Show a row in the detail and put it in the URL, so a reload reopens the same view and item.
   function select(d, id) {
     d.selected = id;
     highlight(d);
     const row = viewRow(d, id);
-    detailEl.innerHTML = row ? d.detail(row) : `<div class="empty">${d.placeholder}</div>`;
-    if (row) d.wire?.(row);
+    openDtab = null;
+    if (row) renderDetail(d, row);
+    else detailEl.innerHTML = `<div class="empty">${d.placeholder}</div>`;
     history.replaceState(null, "", id ? `#${d.link}=${encodeURIComponent(id)}` : location.pathname + location.search);
   }
 
@@ -1391,6 +1401,7 @@
         if (row && (e.key === "o" || !/^(BUTTON|A)$/.test(tag))) window.open(row.url, "_blank", "noopener");
         break;
       case "t": setTab(TABS[(TABS.indexOf(activeTab) + 1) % TABS.length]); break;
+      case "1": case "2": case "3": case "4": openDtab?.(e.key - 1); break;
     }
   });
 
