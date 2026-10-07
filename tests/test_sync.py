@@ -1,6 +1,6 @@
 import pytest
 
-from pr_dash import db, github, hidden, render, sync, tab
+from pr_dash import db, github, render, sync, tab
 from pr_dash.config import Config
 from pr_dash.sync import Sync
 from tests.fakes import T0, FakeClock, FakeGitHub, FakeMergebot, FakeReviewer, insert_pr
@@ -144,17 +144,23 @@ def test_an_archived_row_follows_its_pr_on_github(w):
     assert (w.row(ODOO)["state"], w.row(ODOO)["ping_at"]) == ("MERGED", None)
 
 
-def test_a_hidden_archived_pr_is_never_pinged(w):
+def test_a_hidden_archived_pr_is_never_pinged_until_a_push_ends_the_hide(w):
     w.gh.add("odoo/odoo", 1, requested=["me"])
     w.refresh()
     w.clock.advance(hours=1)
     w.gh.review(ODOO, "me")
     w.refresh()
-    hidden.save(w.cfg, {ODOO: {"head_sha": "sha1", "hidden_at": "t"}})
+    db.set_mark(w.conn, "hide", ODOO, "sha1", "t")
     w.clock.advance(hours=1)
     w.gh.comment(ODOO, "alice", "done, ready for r+")
     assert w.refresh().pinged == 0
     assert w.row(ODOO)["ping_at"] is None
+    assert list(db.marks(w.conn, "hide")) == [ODOO]
+
+    w.clock.advance(hours=1)
+    w.gh.push(ODOO, "sha2")
+    w.refresh()
+    assert db.marks(w.conn, "hide") == {}
 
 
 # --- reviewed Branch set halves ----------------------------------------------
@@ -454,12 +460,12 @@ def test_tracking_by_hand_fills_rows_at_once_and_outlives_a_github_failure(w):
     assert w.sync.fetch_tracked(refs) == 1
     assert db.get_tracked(w.conn, "odoo/odoo#1")["title"] == "[FIX] x"
 
-    db.set_dismissed(w.conn, "tracked", "odoo/odoo#1", T0)
+    db.set_mark(w.conn, "dismiss_tracked", "odoo/odoo#1", None, T0)
     w.gh.fail("nodes")
     assert w.sync.track([("odoo/odoo", 1)]) == []
     with pytest.raises(github.GithubError):
         w.sync.fetch_tracked([("odoo/odoo", 1)])
-    assert db.get_tracked(w.conn, "odoo/odoo#1")["dismissed_at"] is None
+    assert db.marks(w.conn, "dismiss_tracked") == {}
 
 
 def test_a_pr_in_two_tabs_shares_one_discussion_swept_once_it_leaves_them_all(w):

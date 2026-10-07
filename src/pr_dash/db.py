@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 29
+log = logging.getLogger(__name__)
+
+SCHEMA_VERSION = 30
 # A fetched_at no fetch ever wrote, so the row is fetched in full, its Discussion with it.
 UNFETCHED = "1970-01-01T00:00:00+00:00"
 
@@ -90,7 +93,6 @@ CREATE TABLE tracked (
   merged_at     TEXT,
   source        TEXT NOT NULL DEFAULT 'notif',
   added_at      TEXT NOT NULL,
-  dismissed_at  TEXT,
   fetched_at    TEXT
 );
 
@@ -137,7 +139,6 @@ CREATE TABLE mine (
   closed_at     TEXT,
   merged_at     TEXT,
   added_at      TEXT NOT NULL,
-  dismissed_at  TEXT,
   fetched_at    TEXT
 );
 
@@ -182,12 +183,14 @@ CREATE TABLE comment (
 );
 """
 
-# A Branch set is keyed by head branch, so its Acknowledge outlives any one member row.
-MINE_ACK_SCHEMA_SQL = """
-CREATE TABLE mine_ack (
-  key         TEXT PRIMARY KEY,
-  fingerprint TEXT NOT NULL,
-  acked_at    TEXT NOT NULL
+# A user mark on a row: a hide, a dismiss or an Acknowledge, held while its guard still matches.
+MARK_SCHEMA_SQL = """
+CREATE TABLE mark (
+  kind  TEXT NOT NULL,
+  key   TEXT NOT NULL,
+  guard TEXT,
+  at    TEXT,
+  PRIMARY KEY (kind, key)
 );
 """
 
@@ -297,7 +300,7 @@ CREATE TABLE seen (
 CREATE INDEX idx_pr_module_pr ON pr_module(pr_id);
 CREATE INDEX idx_pr_reviewer_pr ON pr_reviewer(pr_id);
 """ + TRACKED_SCHEMA_SQL + COMPANION_SCHEMA_SQL + AI_ATTEMPT_SCHEMA_SQL + META_SCHEMA_SQL + MINE_SCHEMA_SQL \
-    + MINE_ACK_SCHEMA_SQL + MINE_FW_SCHEMA_SQL + COMMENT_SCHEMA_SQL
+    + MINE_FW_SCHEMA_SQL + COMMENT_SCHEMA_SQL + MARK_SCHEMA_SQL
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
@@ -309,14 +312,26 @@ def connect(db_path: Path) -> sqlite3.Connection:
     # Wait (rather than immediately raising "database is locked") when another
     # pr-dash run holds the write lock - e.g. a cron refresh overlapping a manual one.
     conn.execute("PRAGMA busy_timeout = 5000")
-    _migrate(conn)
+    _migrate(conn, db_path)
     return conn
 
 
-def _migrate(conn: sqlite3.Connection) -> None:
+def _migrate(conn: sqlite3.Connection, db_path: Path) -> None:
     current = conn.execute("PRAGMA user_version").fetchone()[0]
     if current == SCHEMA_VERSION:
         return
+    # The v30 move of the marks cannot be undone, so the old cache is kept for a rollback by hand.
+    hidden_json = db_path.parent / "hidden.json"
+    backup_path = db_path.with_name(f"{db_path.name}.bak-v{current}")
+    # A rerun after old code reopened a migrated cache must not overwrite the first, clean backup.
+    if 0 < current < 30 and not backup_path.exists():
+        backup = sqlite3.connect(backup_path)
+        try:
+            conn.backup(backup)
+        finally:
+            backup.close()
+    if 0 < current < 30 and hidden_json.exists():
+        hidden_json.replace(hidden_json.with_name("hidden.json.bak"))
     if current == 0:
         conn.executescript(SCHEMA_SQL)
     if current < 2:
@@ -516,8 +531,6 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 "SELECT name FROM sqlite_master WHERE type = 'table'",
             ).fetchall()
         }
-        if "mine_ack" not in tables:
-            conn.executescript(MINE_ACK_SCHEMA_SQL)
         # Older databases got these columns from MINE_SCHEMA_SQL above.
         if current == 24:
             conn.execute("ALTER TABLE mine ADD COLUMN head_committed_at TEXT")
@@ -555,7 +568,45 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # Queue rows refetch on the next refresh, the hourly gate lifted, to refill their Discussion.
         conn.execute("UPDATE pr SET fetched_at = ?", (UNFETCHED,))
         conn.execute("DELETE FROM meta WHERE key = 'last_queue_refresh'")
-    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+    if current < 30:
+        hides = {}
+        if current:
+            try:
+                hides = json.loads(hidden_json.with_name("hidden.json.bak").read_text())
+            except FileNotFoundError:
+                pass
+            except (OSError, ValueError) as e:
+                log.warning("hides not migrated, hidden.json.bak kept as is: %s", e)
+        with transaction(conn):
+            tables = {
+                r[0] for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'",
+                ).fetchall()
+            }
+            if "mark" not in tables:
+                conn.execute(MARK_SCHEMA_SQL)
+            conn.executemany(
+                "INSERT OR REPLACE INTO mark (kind, key, guard, at) VALUES ('hide', ?, ?, ?)",
+                [(pr_id, (entry or {}).get("head_sha"), (entry or {}).get("hidden_at"))
+                 for pr_id, entry in (hides if isinstance(hides, dict) else {}).items()],
+            )
+            for table in ("tracked", "mine"):
+                cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+                if "dismissed_at" in cols:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO mark (kind, key, guard, at) "
+                        f"SELECT 'dismiss_{table}', id, NULL, dismissed_at FROM {table} "
+                        "WHERE dismissed_at IS NOT NULL",
+                    )
+                    conn.execute(f"ALTER TABLE {table} DROP COLUMN dismissed_at")
+            if "mine_ack" in tables:
+                conn.execute(
+                    "INSERT OR REPLACE INTO mark (kind, key, guard, at) "
+                    "SELECT 'ack', key, fingerprint, acked_at FROM mine_ack",
+                )
+                conn.execute("DROP TABLE mine_ack")
+            # Stamped inside the move, so a failed one leaves a v29 cache to retry whole.
+            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
 @contextmanager
@@ -972,29 +1023,22 @@ def add_tracked(conn: sqlite3.Connection, pr_id: str, repo: str, number: int,
     as long as GitHub retains it, so an un-dismissing seed would resurrect every
     PR the moment after you cleared it.
     """
-    existing = conn.execute(
-        "SELECT dismissed_at FROM tracked WHERE id = ?", (pr_id,),
-    ).fetchone()
-    if existing is None:
+    if get_tracked(conn, pr_id) is None:
         conn.execute(
             "INSERT INTO tracked (id, repo, number, url, source, added_at) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (pr_id, repo, number, url, source, added_at),
         )
         return True
-    if existing["dismissed_at"] is not None and source == "manual":
-        conn.execute("UPDATE tracked SET dismissed_at = NULL WHERE id = ?", (pr_id,))
+    if source == "manual":
+        clear_marks(conn, "dismiss_tracked", [pr_id])
     return False
 
 
 def remove_tracked(conn: sqlite3.Connection, pr_id: str) -> bool:
     """Stop tracking a PR entirely (cascades its comments and seen baseline)."""
+    clear_marks(conn, "dismiss_tracked", [pr_id])
     return conn.execute("DELETE FROM tracked WHERE id = ?", (pr_id,)).rowcount > 0
-
-
-def set_dismissed(conn: sqlite3.Connection, tab: str, pr_id: str, when: str | None) -> None:
-    """Stamp (or clear, with when=None) a dismissal in `tab`, keeping the row for re-seed dedup."""
-    conn.execute(f"UPDATE {tab} SET dismissed_at = ? WHERE id = ?", (when, pr_id))
 
 
 def update_tab_state(conn: sqlite3.Connection, tab: str, pr_id: str, row: dict) -> None:
@@ -1013,9 +1057,11 @@ def get_tracked(conn: sqlite3.Connection, pr_id: str) -> sqlite3.Row | None:
 
 def list_tracked(conn: sqlite3.Connection, *,
                  include_dismissed: bool = False) -> list[sqlite3.Row]:
-    where = "" if include_dismissed else " WHERE dismissed_at IS NULL"
+    where = "" if include_dismissed else " WHERE mark.key IS NULL"
     return conn.execute(
-        f"SELECT * FROM tracked{where} ORDER BY updated_at DESC, number DESC"
+        "SELECT tracked.*, mark.at AS dismissed_at FROM tracked"
+        " LEFT JOIN mark ON mark.kind = 'dismiss_tracked' AND mark.key = tracked.id"
+        f"{where} ORDER BY updated_at DESC, number DESC"
     ).fetchall()
 
 
@@ -1072,12 +1118,13 @@ def list_mine(conn: sqlite3.Connection, *, include_dismissed: bool = False,
               dismissed_only: bool = False) -> list[dict]:
     """Authored PRs and their Forward-ports, which carry a `source_id` and follow its dismissal."""
     where = "" if include_dismissed else (
-        " WHERE COALESCE(src.dismissed_at, mine.dismissed_at) IS"
-        f"{' NOT' if dismissed_only else ''} NULL")
+        f" WHERE COALESCE(src.key, own.key) IS{' NOT' if dismissed_only else ''} NULL")
     rows = [dict(r) for r in conn.execute(
-        "SELECT mine.*, mine_fw.source_id FROM mine"
+        "SELECT mine.*, mine_fw.source_id, own.at AS dismissed_at FROM mine"
         " LEFT JOIN mine_fw ON mine_fw.fw_id = mine.id"
-        f" LEFT JOIN mine AS src ON src.id = mine_fw.source_id{where}")]
+        " LEFT JOIN mark AS own ON own.kind = 'dismiss_mine' AND own.key = mine.id"
+        " LEFT JOIN mark AS src ON src.kind = 'dismiss_mine' AND src.key = mine_fw.source_id"
+        f"{where}")]
     for row in rows:
         for col in _MINE_JSON_COLS:
             row[col] = json.loads(row[col])
@@ -1113,24 +1160,24 @@ def list_mine_mergebot(conn: sqlite3.Connection) -> dict[str, dict]:
     return out
 
 
-def list_mine_acks(conn: sqlite3.Connection) -> dict[str, str]:
-    return {r["key"]: r["fingerprint"] for r in conn.execute("SELECT * FROM mine_ack")}
+def set_mark(conn: sqlite3.Connection, kind: str, key: str, guard: str | None,
+             at: str | None) -> None:
+    _upsert(conn, "mark", {"kind": kind, "key": key, "guard": guard, "at": at}, ["kind", "key"])
 
 
-def set_mine_ack(conn: sqlite3.Connection, key: str, fingerprint: str | None,
-                 when: str) -> None:
-    """Acknowledge Branch set `key` at `fingerprint`, or drop its Acknowledge when None."""
-    if fingerprint is None:
-        conn.execute("DELETE FROM mine_ack WHERE key = ?", (key,))
-    else:
-        _upsert(conn, "mine_ack", {"key": key, "fingerprint": fingerprint, "acked_at": when},
-                ["key"])
+def clear_marks(conn: sqlite3.Connection, kind: str, keys) -> None:
+    conn.executemany("DELETE FROM mark WHERE kind = ? AND key = ?", [(kind, k) for k in keys])
 
 
-def drop_stale_mine_acks(conn: sqlite3.Connection, fingerprints: dict[str, str]) -> None:
-    """Drop each Acknowledge whose Branch set no longer has the fingerprint it was taken at."""
-    conn.executemany("DELETE FROM mine_ack WHERE key = ? AND fingerprint != ?",
-                     list(fingerprints.items()))
+def marks(conn: sqlite3.Connection, kind: str) -> dict[str, sqlite3.Row]:
+    return {r["key"]: r for r in conn.execute("SELECT * FROM mark WHERE kind = ?", (kind,))}
+
+
+def live_marks(conn: sqlite3.Connection, kind: str,
+               guards: dict[str, str]) -> dict[str, sqlite3.Row]:
+    """The `kind` marks on a key of `guards` whose guard still matches, a stale one being none."""
+    return {key: m for key, m in marks(conn, kind).items()
+            if key in guards and m["guard"] == guards[key]}
 
 
 def list_tab_seen(conn: sqlite3.Connection, tab: str) -> dict[str, sqlite3.Row]:

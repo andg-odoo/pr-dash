@@ -17,7 +17,7 @@ import click
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from pr_dash import config, db, derive, github, hidden, mergebot, render, sync, tab
+from pr_dash import config, db, derive, github, mergebot, render, sync, tab
 from pr_dash import query as prquery
 
 console = Console()
@@ -114,7 +114,7 @@ def _run_sync(conn, cfg, operation):
 
 def _render_from_cache(conn, cfg, *, offline=False):
     """Build the payload from cache and write the dashboard HTML, baking in the
-    pruned server-side hidden map. Returns (payload, seen_updates,
+    hides still holding. Returns (payload, seen_updates,
     tab_seen_updates keyed by tab); the caller decides whether to advance the
     since-last-look baselines."""
     payload, seen_updates = render.build_payload(
@@ -123,8 +123,8 @@ def _render_from_cache(conn, cfg, *, offline=False):
     )
     for p in payload:
         p["my_login"] = cfg.github_login
-    hidden_map = hidden.prune(hidden.load(cfg), payload)
-    hidden.save(cfg, hidden_map)
+    hides = db.live_marks(conn, "hide", {p["id"]: p["heads_key"] for p in payload})
+    hidden_map = {key: {"head_sha": m["guard"], "hidden_at": m["at"]} for key, m in hides.items()}
     tracked, tracked_seen = render.build_tracked_payload(conn, include_dismissed=True)
     mine, mine_seen = render.build_mine_payload(conn, cfg.github_login)
     # Built apart so a dismissed member never joins a live set sharing its head branch.

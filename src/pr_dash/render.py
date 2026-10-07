@@ -562,7 +562,8 @@ def build_mine_payload(
     comments_by_pr = db.list_discussions(conn, "mine")
     sets = derive.branch_sets(
         rows, db.list_mine_mergebot(conn), streams=comments_by_pr, login=login,
-        acks=db.list_mine_acks(conn), seen=db.list_tab_seen(conn, "mine"),
+        acks={key: m["guard"] for key, m in db.marks(conn, "ack").items()},
+        seen=db.list_tab_seen(conn, "mine"),
         now=now or derive.now_utc())
     seen_updates = []
     for s in sets:

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from pr_dash import hidden
+from pr_dash import db
 from pr_dash.config import Config
 from tests.fakes import FakeGitHub
 
@@ -51,6 +51,20 @@ def _cfg(tmp_path: Path, **kw) -> Config:
     return Config(github_login="me", cache_dir=tmp_path, **kw)
 
 
+def _hide(cfg, pr_id, guard):
+    conn = db.connect(cfg.db_path)
+    db.set_mark(conn, "hide", pr_id, guard, "t")
+    conn.close()
+
+
+def _hides(cfg):
+    conn = db.connect(cfg.db_path)
+    try:
+        return {key: m["guard"] for key, m in db.marks(conn, "hide").items()}
+    finally:
+        conn.close()
+
+
 def _item(pr_id, head_sha, **over):
     repo, num = pr_id.split("#")
     item = {"id": pr_id, "head_sha": head_sha, "heads_key": head_sha,
@@ -76,7 +90,7 @@ def test_list_prs_excludes_hidden_by_default(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path)
     items = [_item("odoo/odoo#1", "a"), _item("odoo/odoo#2", "b")]
     mcp_server = _patch_cfg_and_items(monkeypatch, cfg, items)
-    hidden.save(cfg, {"odoo/odoo#1": {"head_sha": "a", "hidden_at": "t"}})
+    _hide(cfg, "odoo/odoo#1", "a")
 
     out = mcp_server.list_prs()
     assert [p["id"] for p in out["prs"]] == ["odoo/odoo#2"]
@@ -87,7 +101,7 @@ def test_list_prs_include_hidden_flags_rows(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path)
     items = [_item("odoo/odoo#1", "a"), _item("odoo/odoo#2", "b")]
     mcp_server = _patch_cfg_and_items(monkeypatch, cfg, items)
-    hidden.save(cfg, {"odoo/odoo#1": {"head_sha": "a", "hidden_at": "t"}})
+    _hide(cfg, "odoo/odoo#1", "a")
 
     out = mcp_server.list_prs(include_hidden=True)
     by_id = {p["id"]: p for p in out["prs"]}
@@ -96,17 +110,16 @@ def test_list_prs_include_hidden_flags_rows(tmp_path, monkeypatch):
     assert "hidden" not in by_id["odoo/odoo#2"]
 
 
-def test_list_prs_prunes_hidden_on_push(tmp_path, monkeypatch):
-    # A hide whose head_sha no longer matches is auto-dropped, so the PR is back.
+def test_list_prs_ignores_a_hide_made_before_a_push(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path)
     items = [_item("odoo/odoo#1", "new")]
     mcp_server = _patch_cfg_and_items(monkeypatch, cfg, items)
-    hidden.save(cfg, {"odoo/odoo#1": {"head_sha": "old", "hidden_at": "t"}})
+    _hide(cfg, "odoo/odoo#1", "old")
 
     out = mcp_server.list_prs()
     assert [p["id"] for p in out["prs"]] == ["odoo/odoo#1"]
-    # Prune was persisted.
-    assert hidden.load(cfg) == {}
+    # The next sync deletes it, a read only skips it.
+    assert _hides(cfg) == {"odoo/odoo#1": "old"}
 
 
 # --- listener ---------------------------------------------------------------
@@ -121,9 +134,13 @@ def test_hidden_listener_post_get_and_cors(tmp_path):
     try:
         port = server.server_address[1]
 
-        # POST an op -> written to disk, CORS header present.
+        # POST ops -> stored, bad ones skipped, CORS header present.
         body = json.dumps({"ops": [
             {"op": "hide", "pr_id": "odoo/odoo#1", "head_sha": "abc", "hidden_at": "t"},
+            {"op": "hide", "pr_id": "odoo/odoo#2", "head_sha": "def", "hidden_at": "t"},
+            {"op": "unhide", "pr_id": "odoo/odoo#2"},
+            {"op": "hide"},
+            {"op": "bogus", "pr_id": "odoo/odoo#3"},
         ]})
         conn = http.client.HTTPConnection("127.0.0.1", port)
         conn.request("POST", "/hidden", body, {"Content-Type": "application/json"})
@@ -131,9 +148,7 @@ def test_hidden_listener_post_get_and_cors(tmp_path):
         assert resp.status == 200
         assert resp.getheader("Access-Control-Allow-Origin") == "*"
         assert json.loads(resp.read()) == {"ok": True, "count": 1}
-        assert hidden.load(cfg) == {
-            "odoo/odoo#1": {"head_sha": "abc", "hidden_at": "t"},
-        }
+        assert _hides(cfg) == {"odoo/odoo#1": "abc"}
 
         # GET returns the current map.
         conn = http.client.HTTPConnection("127.0.0.1", port)
@@ -170,7 +185,6 @@ def test_hidden_listener_second_bind_returns_none(tmp_path):
 
 
 def test_hide_pr_records_live_sha(tmp_path, monkeypatch):
-    from pr_dash import hidden
     from pr_dash.config import Config
 
     cfg = Config(github_login="me", cache_dir=tmp_path)
@@ -185,11 +199,10 @@ def test_hide_pr_records_live_sha(tmp_path, monkeypatch):
     gh.add("odoo/enterprise", 2, head_sha="live2")
     monkeypatch.setattr(mcp_server, "_github", gh)
     mcp_server.hide_pr("odoo/odoo#1")
-    assert hidden.load(cfg)["odoo/odoo#1"]["head_sha"] == "live1+live2"
+    assert _hides(cfg) == {"odoo/odoo#1": "live1+live2"}
 
 
 def test_hide_pr_falls_back_to_cached_sha(tmp_path, monkeypatch):
-    from pr_dash import hidden
     from pr_dash.config import Config
 
     cfg = Config(github_login="me", cache_dir=tmp_path)
@@ -201,7 +214,7 @@ def test_hide_pr_falls_back_to_cached_sha(tmp_path, monkeypatch):
     gh.fail("head_sha")
     monkeypatch.setattr(mcp_server, "_github", gh)
     mcp_server.hide_pr("odoo/odoo#1")
-    assert hidden.load(cfg)["odoo/odoo#1"]["head_sha"] == "stale"
+    assert _hides(cfg) == {"odoo/odoo#1": "stale"}
 
 
 # --- set_ai_review ----------------------------------------------------------
@@ -255,9 +268,9 @@ def test_a_pair_hide_holds_until_either_half_moves(tmp_path, monkeypatch):
         _seed_pr(conn, "odoo/odoo#1", "bbb")
         _seed_pr(conn, "odoo/enterprise#2", "aaa")
     cfg, mcp_server = _seeded_cfg(tmp_path, monkeypatch, seed)
-    hidden.save(cfg, {"odoo/odoo#1": {"head_sha": "aaa+bbb", "hidden_at": "t"}})
+    _hide(cfg, "odoo/odoo#1", "aaa+bbb")
     assert mcp_server.list_prs()["prs"] == []
-    hidden.save(cfg, {"odoo/odoo#1": {"head_sha": "bbb+ccc", "hidden_at": "t"}})
+    _hide(cfg, "odoo/odoo#1", "bbb+ccc")
     assert [p["id"] for p in mcp_server.list_prs()["prs"]] == ["odoo/odoo#1"]
 
 

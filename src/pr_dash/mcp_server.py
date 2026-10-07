@@ -12,7 +12,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from pr_dash import ai, branch_set, config, db, derive, github, hidden, query, tab
+from pr_dash import ai, branch_set, config, db, derive, github, query, tab
 
 # stderr only: stdout is the MCP protocol channel, so a single stray print or
 # rich.Console write there corrupts the stream. Everything human-facing goes to
@@ -50,10 +50,12 @@ def _get_cfg() -> config.Config:
 
 
 def _hidden_ids(cfg: config.Config, items: list[dict]) -> set[str]:
-    """Pruned set of hidden PR ids, persisting the prune (auto-unhide on push)."""
-    mapping = hidden.prune(hidden.load(cfg), items)
-    hidden.save(cfg, mapping)
-    return set(mapping)
+    """Ids of the items whose hide still holds, a push to any half having ended it."""
+    conn = db.connect(cfg.db_path)
+    try:
+        return set(db.live_marks(conn, "hide", {it["id"]: it["heads_key"] for it in items}))
+    finally:
+        conn.close()
 
 
 def _ai_review_shas(item: dict, ref: str) -> tuple[str, str, str]:
@@ -426,13 +428,13 @@ def hide_pr(ref: str) -> dict:
             pass
         members.append({**member, "head_sha": live or member["head_sha"]})
     live_set = branch_set.from_item(item, members)
-    mapping = hidden.apply_ops(cfg, [{
+    count = _apply_hide_ops(cfg, [{
         "op": "hide",
         "pr_id": item["id"],
         "head_sha": live_set.heads_key,
         "hidden_at": derive.now_utc(),
     }])
-    return {"id": item["id"], "hidden": True, "hidden_count": len(mapping)}
+    return {"id": item["id"], "hidden": True, "hidden_count": count}
 
 
 @mcp.tool()
@@ -444,13 +446,8 @@ def unhide_pr(ref: str) -> dict:
     """
     cfg = _get_cfg()
     item = tab.QUEUE.find(cfg, ref)
-    mapping = hidden.apply_ops(cfg, [{
-        "op": "unhide",
-        "pr_id": item["id"],
-        "head_sha": None,
-        "hidden_at": None,
-    }])
-    return {"id": item["id"], "hidden": False, "hidden_count": len(mapping)}
+    count = _apply_hide_ops(cfg, [{"op": "unhide", "pr_id": item["id"]}])
+    return {"id": item["id"], "hidden": False, "hidden_count": count}
 
 
 @mcp.tool()
@@ -665,7 +662,13 @@ def _make_handler(cfg: config.Config) -> type[BaseHTTPRequestHandler]:
             if self.path.split("?", 1)[0] != "/hidden":
                 self._send_json(404, {"error": "not found"})
                 return
-            self._send_json(200, hidden.load(cfg))
+            conn = db.connect(cfg.db_path)
+            try:
+                hides = db.marks(conn, "hide")
+            finally:
+                conn.close()
+            self._send_json(200, {key: {"head_sha": m["guard"], "hidden_at": m["at"]}
+                                  for key, m in hides.items()})
 
         def do_POST(self) -> None:
             path = self.path.split("?", 1)[0]
@@ -687,19 +690,29 @@ def _make_handler(cfg: config.Config) -> type[BaseHTTPRequestHandler]:
                 count = _apply_dismiss_ops(cfg, path[1:], ops)
                 self._send_json(200, {"ok": True, "count": count})
                 return
-            mapping = hidden.apply_ops(cfg, ops)
-            self._send_json(200, {"ok": True, "count": len(mapping)})
+            self._send_json(200, {"ok": True, "count": _apply_hide_ops(cfg, ops)})
 
     return HiddenSyncHandler
 
 
-def _apply_dismiss_ops(cfg: config.Config, tab: str, ops: list) -> int:
-    """Write dashboard dismiss/restore ops through to the `tab` table.
+def _apply_hide_ops(cfg: config.Config, ops: list) -> int:
+    """Store hide/unhide ops, each hide guarded by the heads it was made at, returning the hides."""
+    conn = db.connect(cfg.db_path)
+    try:
+        with db.transaction(conn):
+            for op in ops:
+                pr_id = (op or {}).get("pr_id")
+                if pr_id and op.get("op") == "hide":
+                    db.set_mark(conn, "hide", pr_id, op.get("head_sha"), op.get("hidden_at"))
+                elif pr_id and op.get("op") == "unhide":
+                    db.clear_marks(conn, "hide", [pr_id])
+        return len(db.marks(conn, "hide"))
+    finally:
+        conn.close()
 
-    Unlike hides (a JSON file), dismissals live in SQLite, so this opens its own
-    short-lived connection - the handler runs on the listener thread and sqlite3
-    connections are not shareable across threads.
-    """
+
+def _apply_dismiss_ops(cfg: config.Config, tab: str, ops: list) -> int:
+    """Store dismiss/restore ops for `tab` on a connection of its own, the listener's thread."""
     applied = 0
     conn = db.connect(cfg.db_path)
     try:
@@ -709,9 +722,11 @@ def _apply_dismiss_ops(cfg: config.Config, tab: str, ops: list) -> int:
                 kind = (op or {}).get("op")
                 if not pr_id or kind not in ("dismiss", "restore"):
                     continue
-                when = (op.get("dismissed_at") or derive.now_utc()) \
-                    if kind == "dismiss" else None
-                db.set_dismissed(conn, tab, pr_id, when)
+                if kind == "dismiss":
+                    db.set_mark(conn, f"dismiss_{tab}", pr_id, None,
+                                op.get("dismissed_at") or derive.now_utc())
+                else:
+                    db.clear_marks(conn, f"dismiss_{tab}", [pr_id])
                 applied += 1
     finally:
         conn.close()
@@ -730,8 +745,11 @@ def _apply_ack_ops(cfg: config.Config, ops: list) -> int:
                 if not key or kind not in ("ack", "unack") or (
                         kind == "ack" and not op.get("fingerprint")):
                     continue
-                db.set_mine_ack(conn, key, op["fingerprint"] if kind == "ack" else None,
+                if kind == "ack":
+                    db.set_mark(conn, "ack", key, op["fingerprint"],
                                 op.get("at") or derive.now_utc())
+                else:
+                    db.clear_marks(conn, "ack", [key])
                 applied += 1
     finally:
         conn.close()

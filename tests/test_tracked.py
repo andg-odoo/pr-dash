@@ -43,7 +43,7 @@ def test_notification_seed_does_not_revive_dismissed(tmp_path):
     # an un-dismissing seed would resurrect every row right after it is cleared.
     conn = _conn(tmp_path)
     _add(conn, "odoo/odoo#1")
-    db.set_dismissed(conn, "tracked", "odoo/odoo#1", "2026-08-02T00:00:00+00:00")
+    db.set_mark(conn, "dismiss_tracked", "odoo/odoo#1", None, "2026-08-02T00:00:00+00:00")
     assert db.list_tracked(conn) == []
 
     _add(conn, "odoo/odoo#1", source="notif")
@@ -54,7 +54,7 @@ def test_notification_seed_does_not_revive_dismissed(tmp_path):
 def test_explicit_track_revives_dismissed(tmp_path):
     conn = _conn(tmp_path)
     _add(conn, "odoo/odoo#1")
-    db.set_dismissed(conn, "tracked", "odoo/odoo#1", "2026-08-02T00:00:00+00:00")
+    db.set_mark(conn, "dismiss_tracked", "odoo/odoo#1", None, "2026-08-02T00:00:00+00:00")
 
     _add(conn, "odoo/odoo#1", source="manual")
     assert [r["id"] for r in db.list_tracked(conn)] == ["odoo/odoo#1"]
@@ -273,7 +273,7 @@ def test_build_tracked_payload_dismissed_rows(tmp_path):
     conn = _conn(tmp_path)
     _add(conn, "odoo/odoo#1")
     _add(conn, "odoo/odoo#2")
-    db.set_dismissed(conn, "tracked", "odoo/odoo#2", "2026-08-02T00:00:00+00:00")
+    db.set_mark(conn, "dismiss_tracked", "odoo/odoo#2", None, "2026-08-02T00:00:00+00:00")
 
     items, updates = render.build_tracked_payload(conn)
     assert [i["id"] for i in items] == ["odoo/odoo#1"]
@@ -437,8 +437,8 @@ def test_acknowledge_through_the_listener_and_fyi_clearing_on_a_look(tmp_path):
     # A push changes the fingerprint, the refresh drops the Acknowledge and the set lifts again.
     _mine(conn, "odoo/enterprise#132695", ec, "2026-10-05T08:00:00Z", headRefOid="s2")
     sets, _ = render.build_mine_payload(conn, "andg")
-    db.drop_stale_mine_acks(conn, {s["key"]: s["fingerprint"] for s in sets})
-    assert (sets[0]["key"], sets[0]["band"], db.list_mine_acks(conn)) == (ec, "needs", {})
+    db.clear_marks(conn, "ack", [s["key"] for s in sets if not s["acknowledged"]])
+    assert (sets[0]["key"], sets[0]["band"], db.marks(conn, "ack")) == (ec, "needs", {})
 
 
 def test_dismissed_mine_set_stays_hidden_after_a_refresh(tmp_path):
@@ -532,7 +532,7 @@ def test_load_tracked_include_dismissed_flags_them(tmp_path):
     conn = _conn(tmp_path)
     _add(conn, "odoo/odoo#1")
     _add(conn, "odoo/odoo#2")
-    db.set_dismissed(conn, "tracked", "odoo/odoo#2", "2026-08-02T00:00:00+00:00")
+    db.set_mark(conn, "dismiss_tracked", "odoo/odoo#2", None, "2026-08-02T00:00:00+00:00")
     db.replace_discussion(conn, "odoo/odoo#2", derive.discussion_stream({"comments": {"nodes": [
         {"author": {"login": "jov-odoo"}, "createdAt": "2026-08-01T00:00:00Z", "url": "c1", "body": "hi"}]}}))
     conn.close()

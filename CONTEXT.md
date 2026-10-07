@@ -52,6 +52,10 @@ _Avoid_: alert, blocker
 Clearing a Branch set's Action items for its current state, undone by any new push, comment or CI change.
 _Avoid_: snooze, hide, dismiss
 
+**Mark**:
+A user's hide, dismiss or Acknowledge on one row, stored with the guard that undoes it when it moves.
+_Avoid_: flag, tag, state
+
 **FYI**:
 A change on an authored PR worth seeing but owing nothing, such as an approval or a new reviewer.
 _Avoid_: notification, info

@@ -1,6 +1,8 @@
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from pr_dash import db
 
 
@@ -199,7 +201,7 @@ def test_migration_adds_ping_columns_to_v12_db(tmp_path):
 def test_migration_adds_mine_tables_to_v23_db(tmp_path):
     path = tmp_path / "old.db"
     conn = sqlite3.connect(path, isolation_level=None)
-    conn.executescript(db.SCHEMA_SQL.replace(db.MINE_SCHEMA_SQL + db.MINE_ACK_SCHEMA_SQL, ""))
+    conn.executescript(db.SCHEMA_SQL.replace(db.MINE_SCHEMA_SQL, ""))
     conn.execute("INSERT INTO tracked (id, repo, number, url, added_at) "
                  "VALUES ('odoo/odoo#1', 'odoo/odoo', 1, 'u', 't')")
     conn.execute("PRAGMA user_version = 23")
@@ -220,8 +222,7 @@ def test_migration_adds_mine_tables_to_v23_db(tmp_path):
 def test_migration_adds_acknowledge_and_fyi_state_to_v24_db(tmp_path):
     path = tmp_path / "old.db"
     conn = sqlite3.connect(path, isolation_level=None)
-    v24 = (db.SCHEMA_SQL.replace(db.MINE_ACK_SCHEMA_SQL, "")
-           .replace("  head_committed_at TEXT,\n", "")
+    v24 = (db.SCHEMA_SQL.replace("  head_committed_at TEXT,\n", "")
            .replace("  fetched_at     TEXT,\n  r_plus         INTEGER,\n", ""))
     conn.executescript(v24)
     conn.execute("INSERT INTO mine (id, repo, number, url, added_at) "
@@ -233,11 +234,11 @@ def test_migration_adds_acknowledge_and_fyi_state_to_v24_db(tmp_path):
     conn = db.connect(path)
     assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
     db.update_tab_state(conn, "mine", "odoo/odoo#2", {"head_committed_at": "2026-10-01"})
-    db.set_mine_ack(conn, "b", "f1", "t")
+    db.set_mark(conn, "ack", "b", "f1", "t")
     [row] = db.list_mine(conn)
     seen = db.list_tab_seen(conn, "mine")["odoo/odoo#2"]
     assert (row["head_committed_at"], seen["fetched_at"], seen["r_plus"],
-            db.list_mine_acks(conn)) == ("2026-10-01", None, None, {"b": "f1"})
+            db.marks(conn, "ack")["b"]["guard"]) == ("2026-10-01", None, None, "f1")
 
 
 def test_migration_links_forward_ports_that_follow_their_source_dismissal(tmp_path):
@@ -255,7 +256,7 @@ def test_migration_links_forward_ports_that_follow_their_source_dismissal(tmp_pa
     db.link_mine_forward_port(conn, "odoo/odoo#3", "odoo/odoo#2")
     assert [(r["id"], r["source_id"]) for r in db.list_mine(conn)] == [
         ("odoo/odoo#2", None), ("odoo/odoo#3", "odoo/odoo#2")]
-    db.set_dismissed(conn, "mine", "odoo/odoo#2", "t")
+    db.set_mark(conn, "dismiss_mine", "odoo/odoo#2", None, "t")
     assert db.list_mine(conn) == []
     assert len(db.list_mine(conn, include_dismissed=True)) == 2
 
@@ -289,3 +290,61 @@ def test_same_second_comments_keep_their_stream_order(tmp_path):
     db.replace_discussion(conn, "odoo/odoo#1", [
         {"comment_id": cid, "kind": "issue", "created_at": "t"} for cid in ("b", "a")])
     assert [c["comment_id"] for c in db.list_discussions(conn, "pr")["odoo/odoo#1"]] == ["b", "a"]
+
+
+def _v29_db(path, hidden_json):
+    conn = sqlite3.connect(path, isolation_level=None)
+    conn.executescript(
+        db.SCHEMA_SQL.replace(db.MARK_SCHEMA_SQL, "")
+        .replace("  added_at      TEXT NOT NULL,\n",
+                 "  added_at      TEXT NOT NULL,\n  dismissed_at  TEXT,\n")
+        + "CREATE TABLE mine_ack (key TEXT PRIMARY KEY, fingerprint TEXT, acked_at TEXT);"
+        + "".join(f"INSERT INTO {tab} (id, repo, number, url, added_at, dismissed_at) "
+                  f"VALUES ('odoo/odoo#{n}', 'odoo/odoo', {n}, 'u', 't', {at});"
+                  for tab, n, at in (("tracked", 1, "'d1'"), ("mine", 2, "'d2'"),
+                                     ("mine", 3, "NULL")))
+        + "INSERT INTO mine_ack VALUES ('branch', 'fp', 'a1');")
+    conn.execute("PRAGMA user_version = 29")
+    conn.close()
+    if hidden_json is not None:
+        (path.parent / "hidden.json").write_text(hidden_json)
+
+
+def test_migration_moves_every_mark_of_a_v29_cache_into_one_table(tmp_path):
+    path = tmp_path / "pr_dash.db"
+    _v29_db(path, '{"odoo/odoo#9": {"head_sha": "a+b", "hidden_at": "h1"}}')
+
+    conn = db.connect(path)
+    assert sorted(tuple(r) for r in conn.execute("SELECT * FROM mark")) == [
+        ("ack", "branch", "fp", "a1"), ("dismiss_mine", "odoo/odoo#2", None, "d2"),
+        ("dismiss_tracked", "odoo/odoo#1", None, "d1"), ("hide", "odoo/odoo#9", "a+b", "h1")]
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert "mine_ack" not in tables
+    assert all("dismissed_at" not in {r[1] for r in conn.execute(f"PRAGMA table_info({tab})")}
+               for tab in ("tracked", "mine"))
+    assert [(r["id"], r["dismissed_at"]) for r in db.list_mine(conn, include_dismissed=True)] == [
+        ("odoo/odoo#2", "d2"), ("odoo/odoo#3", None)]
+
+    backup = sqlite3.connect(tmp_path / "pr_dash.db.bak-v29")
+    assert (backup.execute("PRAGMA user_version").fetchone()[0],
+            backup.execute("SELECT dismissed_at FROM tracked").fetchall()) == (29, [("d1",)])
+    assert sorted(p.name for p in tmp_path.glob("hidden.json*")) == ["hidden.json.bak"]
+
+
+@pytest.mark.parametrize("hidden_json", [None, "{not json"])
+def test_migration_without_a_readable_hidden_json_moves_the_other_marks(tmp_path, hidden_json):
+    path = tmp_path / "pr_dash.db"
+    _v29_db(path, hidden_json)
+
+    conn = db.connect(path)
+    assert (conn.execute("PRAGMA user_version").fetchone()[0], db.marks(conn, "hide"),
+            len(db.marks(conn, "dismiss_mine"))) == (db.SCHEMA_VERSION, {}, 1)
+    assert (tmp_path / "hidden.json.bak").exists() == (hidden_json is not None)
+
+
+def test_a_mark_whose_guard_moved_or_whose_row_is_gone_counts_as_none(tmp_path):
+    conn = _conn(tmp_path)
+    for pr_id, guard in (("odoo/odoo#1", "old"), ("odoo/odoo#2", "same"), ("odoo/odoo#3", "x")):
+        db.set_mark(conn, "hide", pr_id, guard, "t")
+    live = db.live_marks(conn, "hide", {"odoo/odoo#1": "new", "odoo/odoo#2": "same"})
+    assert list(live) == ["odoo/odoo#2"]

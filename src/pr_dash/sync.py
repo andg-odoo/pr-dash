@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from pr_dash import ai, branch_set, db, derive, github, hidden, mergebot, render
+from pr_dash import ai, branch_set, db, derive, github, mergebot, render
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -94,6 +94,11 @@ class Sync:
         if force or not cron or not last_queue or derive.parse_iso(last_queue) <= due:
             self._refresh_queue(report, force=force, cron=cron)
             db.set_meta(self.conn, "last_queue_refresh", self._stamp())
+            # A push to any code half of a Branch set ends its hide.
+            heads = {s.primary["id"]: s.heads_key
+                     for s in branch_set.group(dict(r) for r in db.list_prs(self.conn))}
+            db.clear_marks(self.conn, "hide", db.marks(self.conn, "hide").keys()
+                           - db.live_marks(self.conn, "hide", heads).keys())
         self._refresh_tracked(report, force=force)
         self._refresh_mine(report, force=force)
         db.sweep_discussions(self.conn)
@@ -277,7 +282,7 @@ class Sync:
                 db.upsert_mine_mergebot(conn, pr_id, asdict(state), now)
         report.mergebot_read = len(reads)
         sets, _ = render.build_mine_payload(conn, self.cfg.github_login, now=now)
-        db.drop_stale_mine_acks(conn, {s["key"]: s["fingerprint"] for s in sets})
+        db.clear_marks(conn, "ack", [s["key"] for s in sets if not s["acknowledged"]])
 
     def import_history(self) -> ImportReport | None:
         """Import every closed Authored PR once, dismissing the Branch sets already resolved.
@@ -307,7 +312,7 @@ class Sync:
             resolved = [s for s in imported if s["band"] == "done"]
             for s in resolved:
                 for m in s["members"]:
-                    db.set_dismissed(conn, "mine", m["id"], now)
+                    db.set_mark(conn, "dismiss_mine", m["id"], None, now)
             db.set_meta(conn, "mine_history_imported", now)
         return ImportReport(
             closed=len(nodes) - len(links), forward_ports=len(links), dismissed=len(resolved),
@@ -541,9 +546,8 @@ class Sync:
 
         live_sets = branch_set.group({**p, "head_sha": _live_sha(p)} for p in prs)
         set_of = {m["id"]: s for s in live_sets for m in s.members}
-        hidden_ids = set(hidden.prune(hidden.load(self.cfg), [
-            {"id": p["id"], "heads_key": set_of[p["id"]].heads_key} for p in stale
-        ]))
+        hidden_ids = db.live_marks(conn, "hide",
+                                   {p["id"]: set_of[p["id"]].heads_key for p in stale})
 
         outdated: list[dict] = []
         with db.transaction(conn):
