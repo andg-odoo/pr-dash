@@ -519,6 +519,7 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
         _seed_mine(conn, "odoo/enterprise#1", "master-other-andg", state="CLOSED")
         _seed_mine(conn, "odoo/odoo#291981", "master-fw", comments=[("me", "Rebased.")])
         db.link_mine_forward_port(conn, "odoo/odoo#291981", "odoo/odoo#290109")
+        db.add_tracked(conn, "odoo/odoo#40", "odoo/odoo", 40, "u", "notif", "t")
 
     cfg, mcp_server = _seeded_cfg(tmp_path, monkeypatch, seed)
 
@@ -556,6 +557,10 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
     assert mcp_server.get_pr("enterprise#1")["key"] == "master-other-andg"
     with pytest.raises(ValueError, match="No PR matching"):
         mcp_server.get_pr("99")
+    # Tracked answers get_comments last, and a ref no view holds gets the queue's error.
+    assert mcp_server.get_comments("40")["id"] == "odoo/odoo#40"
+    with pytest.raises(ValueError, match="No PR matching 'enterprise#40'"):
+        mcp_server.get_comments("enterprise#40")
 
     conn = db.connect(cfg.db_path)
     try:

@@ -1,6 +1,6 @@
 import pytest
 
-from pr_dash import db, github, hidden, query, render, sync
+from pr_dash import db, github, hidden, render, sync, tab
 from pr_dash.config import Config
 from pr_dash.sync import Sync
 from tests.fakes import T0, FakeClock, FakeGitHub, FakeMergebot, FakeReviewer, insert_pr
@@ -237,7 +237,7 @@ def test_a_queue_rows_thread_signals_follow_its_discussion(w):
     assert look()[:2] == (0, 0)
 
     # The envelope review is dropped, the bodiless approval kept, the bot flagged.
-    discussion = query.get_comments(w.cfg, "odoo#1")["discussion"]
+    discussion = tab.get_comments(w.cfg, "odoo#1")["discussion"]
     assert discussion == items[0]["discussion"]
     assert discussion[0]["entry"]["member"] == "odoo"
     assert [(g["kind"], g["entry"] and (g["entry"]["author"], g["entry"]["is_bot"],

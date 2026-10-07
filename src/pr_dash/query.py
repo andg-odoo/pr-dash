@@ -70,67 +70,6 @@ def _parse_ref(ref: str | int) -> tuple[str | None, str | None, int]:
     )
 
 
-def _members(item: dict) -> list[dict]:
-    return item.get("members") or [
-        {"repo": item.get("repo"), "repo_short": item.get("repo_short"),
-         "number": item.get("number")}
-    ]
-
-
-def _member_matches(member: dict, repo_full: str | None,
-                    repo_short: str | None, number: int) -> bool:
-    if member.get("number") != number:
-        return False
-    if repo_full is not None and member.get("repo") != repo_full:
-        return False
-    if repo_short is not None and member.get("repo_short") != repo_short:
-        return False
-    return True
-
-
-def _ref_label(item: dict) -> str:
-    parts = [f"{m.get('repo_short')}#{m.get('number')}" for m in _members(item)]
-    if len(parts) > 1:
-        return f"{item['id']} [{' + '.join(parts)}]"
-    return item["id"]
-
-
-def _candidates(items: list[dict], limit: int = 20) -> str:
-    labels = [_ref_label(it) for it in items[:limit]]
-    if len(items) > limit:
-        labels.append(f"... (+{len(items) - limit} more)")
-    return ", ".join(labels) if labels else "(cache is empty)"
-
-
-def _matching_items(items: list[dict], ref: str | int) -> list[dict]:
-    repo_full, repo_short, number = _parse_ref(ref)
-    seen: set[str] = set()
-    uniq: list[dict] = []
-    for it in items:
-        if any(_member_matches(m, repo_full, repo_short, number) for m in _members(it)):
-            if it["id"] not in seen:
-                seen.add(it["id"])
-                uniq.append(it)
-    return uniq
-
-
-def resolve_item(items: list[dict], ref: str | int) -> dict:
-    """Resolve a PR reference to a single item, matching item id and every
-    member (so an enterprise number resolves to its odoo+enterprise pair).
-    Raises ValueError with candidates on no match or ambiguity."""
-    uniq = _matching_items(items, ref)
-    number = _parse_ref(ref)[2]
-    if len(uniq) == 1:
-        return uniq[0]
-    if not uniq:
-        raise ValueError(f"No PR matching {ref!r}. Available: {_candidates(items)}")
-    raise ValueError(
-        f"Ambiguous PR reference {ref!r} matches: "
-        f"{', '.join(_ref_label(it) for it in uniq)}. "
-        f"Qualify with a repo, e.g. 'odoo#{number}' or 'enterprise#{number}'."
-    )
-
-
 # --- diff handling -----------------------------------------------------------
 
 def split_diff(patch_text: str | None) -> dict[str, str]:
@@ -198,50 +137,27 @@ def get_diff_text(
 
 # --- projections -------------------------------------------------------------
 
+_SUMMARY_KEYS = (
+    "id", "url", "title", "author", "is_draft", "is_pair", "members", "target_branch", "modules",
+    "additions", "deletions", "changed_files", "bucket", "flags", "ci_state", "mergeable",
+    "unresolved_threads", "awaiting_my_reply", "my_pending_review", "my_review_state",
+    "previously_reviewed", "req_age_days", "since_last_look", "ai_review_verdict",
+    "linked_task_label", "is_archived", "state", "ping_at", "ping_author", "ping_snippet",
+    "push_at", "push_sha",
+    # On the compact row so "does this data move have a migration" needs no get_pr call.
+    "companion",
+)
+
+
 def summarize(item: dict) -> dict:
     """Compact triage row: no body, Discussion or diffs."""
-    return {
-        "id": item["id"],
-        "url": item.get("url"),
-        "title": item.get("title"),
-        "author": item.get("author"),
-        "is_draft": item.get("is_draft"),
-        "is_pair": item.get("is_pair"),
-        "members": [
-            {"repo_short": m.get("repo_short"), "number": m.get("number"),
-             "closed": m.get("closed"), "reviewed": m.get("reviewed")}
-            for m in _members(item)
-        ],
-        "target_branch": item.get("target_branch"),
-        "modules": item.get("modules"),
-        "additions": item.get("additions"),
-        "deletions": item.get("deletions"),
-        "changed_files": item.get("changed_files"),
-        "bucket": item.get("bucket"),
-        "flags": item.get("flags"),
-        "ci_state": item.get("ci_state"),
-        "mergeable": item.get("mergeable"),
-        "unresolved_threads": item.get("unresolved_threads"),
-        "awaiting_my_reply": item.get("awaiting_my_reply"),
-        "my_pending_review": item.get("my_pending_review"),
-        "my_review_state": item.get("my_review_state"),
-        "previously_reviewed": item.get("previously_reviewed"),
-        "req_age_days": item.get("req_age_days"),
-        "since_last_look": item.get("since_last_look"),
-        "ai_review_verdict": item.get("ai_review_verdict"),
-        "linked_task_label": item.get("linked_task_label"),
-        "is_archived": item.get("is_archived"),
-        "state": item.get("state"),
-        "ping_at": item.get("ping_at"),
-        "ping_author": item.get("ping_author"),
-        "ping_snippet": item.get("ping_snippet"),
-        "push_at": item.get("push_at"),
-        "push_sha": item.get("push_sha"),
-        # Carried on the compact row rather than left to get_pr: it answers
-        # "does this data move have a migration" without a second call, which is
-        # the question that keeps being answered wrongly from the diff alone.
-        "companion": item.get("companion"),
-    }
+    row = {k: item.get(k) for k in _SUMMARY_KEYS}
+    row["members"] = [
+        {"repo_short": m.get("repo_short"), "number": m.get("number"),
+         "closed": m.get("closed"), "reviewed": m.get("reviewed")}
+        for m in item.get("members") or [item]
+    ]
+    return row
 
 
 def _diff_meta(d: dict) -> dict:
@@ -266,20 +182,6 @@ def detail(item: dict) -> dict:
     out = copy.deepcopy(item)
     out["diffs"] = [_diff_meta(d) for d in item.get("diffs", [])]
     return out
-
-
-def get_comments(cfg: Config, ref: str | int) -> dict:
-    """The Discussion of the cached PR `ref` names, in the Review queue, Mine or Tracked."""
-    items = load_items(cfg)
-    authored = resolve_authored(cfg, items, ref)
-    if authored is not None:
-        return authored
-    if not _matching_items(items, ref):
-        tracked = load_tracked(cfg, include_dismissed=True)
-        if any(t["number"] == _parse_ref(ref)[2] for t in tracked):
-            return tracked_detail(resolve_tracked(tracked, ref))
-    item = resolve_item(items, ref)
-    return {"id": item["id"], "discussion": item["discussion"]}
 
 
 def review_history(
@@ -364,28 +266,15 @@ def load_mine(cfg: Config, *, include_dismissed: bool = False) -> list[dict]:
     """Build the Branch sets from the cache, read-only, so no seen baseline moves."""
     conn = db.connect(cfg.db_path)
     try:
-        sets, _ = render.build_mine_payload(conn, cfg.github_login,
-                                            include_dismissed=include_dismissed)
+        return render.build_mine_payload(conn, cfg.github_login,
+                                         include_dismissed=include_dismissed)[0]
     finally:
         conn.close()
-    # The discussion stays out of a listing, mine_detail serves it.
-    return [{k: v for k, v in s.items() if k != "discussion"} for s in sets]
 
 
-def resolve_mine(sets: list[dict], ref: str | int) -> dict | None:
-    """The Branch set holding the Authored PR or Forward-port `ref` names, None when none does."""
-    repo_full, repo_short, number = _parse_ref(ref)
-    found = {
-        s["key"]: s for s in sets for m in s["members"] for pr in [m, *m["fw"]]
-        if pr["num"] == number
-        and (repo_full is None or pr["repo"] == repo_full)
-        and (repo_short is None or pr["repo"].split("/")[-1] == repo_short)
-    }
-    if len(found) > 1:
-        opts = ", ".join(f"{pr['repo']}#{pr['num']}" for s in found.values()
-                         for m in s["members"] for pr in [m, *m["fw"]] if pr["num"] == number)
-        raise ValueError(f"{ref!r} is ambiguous - candidates: {opts}")
-    return next(iter(found.values()), None)
+def summarize_mine(branch_set: dict) -> dict:
+    """A Branch set without its Discussion, which mine_detail serves per member."""
+    return {k: v for k, v in branch_set.items() if k != "discussion"}
 
 
 def mine_detail(cfg: Config, branch_set: dict) -> dict:
@@ -403,15 +292,7 @@ def mine_detail(cfg: Config, branch_set: dict) -> dict:
               for f in m["fw"]]
         members.append({**m, "fw": fw, "body": bodies.get(pr_id),
                         "discussion": derive.group_discussion(comments.get(pr_id, []))})
-    return {**branch_set, "members": members}
-
-
-def resolve_authored(cfg: Config, items: list[dict], ref: str | int) -> dict | None:
-    """mine_detail of the Branch set `ref` names, None when it names a review-queue PR or none."""
-    if _matching_items(items, ref):
-        return None
-    found = resolve_mine(load_mine(cfg, include_dismissed=True), ref)
-    return found and mine_detail(cfg, found)
+    return {**summarize_mine(branch_set), "members": members}
 
 
 # --- tracked PRs -------------------------------------------------------------
@@ -457,53 +338,19 @@ def load_tracked(cfg: Config, *, include_dismissed: bool = False) -> list[dict]:
     return items
 
 
-def resolve_tracked(items: list[dict], ref: str | int) -> dict:
-    """Find one tracked PR by '12345', 'odoo#12345', 'odoo/odoo#12345' or URL."""
-    repo_full, repo_short, number = _parse_ref(ref)
-    matches = [
-        t for t in items
-        if t["number"] == number
-        and (repo_full is None or t["repo"] == repo_full)
-        and (repo_short is None or t["repo_short"] == repo_short)
-    ]
-    if not matches:
-        known = ", ".join(f"{t['repo_short']}#{t['number']}" for t in items[:20])
-        raise ValueError(f"No tracked PR matches {ref!r}. Tracked: {known or '(none)'}")
-    if len(matches) > 1:
-        opts = ", ".join(f"{t['repo']}#{t['number']}" for t in matches)
-        raise ValueError(f"{ref!r} is ambiguous - candidates: {opts}")
-    return matches[0]
+_TRACKED_KEYS = (
+    "id", "url", "title", "author", "state", "is_draft", "target_branch", "ci_state",
+    "comment_count", "review_count", "thread_count", "unresolved_threads", "age_days",
+    "idle_days", "updated_at", "merged_at", "closed_at", "source", "since_last_look",
+    "dismissed_at",
+)
 
 
 def summarize_tracked(t: dict) -> dict:
     """Compact watch row: no body, no discussion."""
-    return {
-        "id": t["id"],
-        "url": t.get("url"),
-        "title": t.get("title"),
-        "author": t.get("author"),
-        "state": t.get("state"),
-        "is_draft": t.get("is_draft"),
-        "target_branch": t.get("target_branch"),
-        "ci_state": t.get("ci_state"),
-        "comment_count": t.get("comment_count"),
-        "review_count": t.get("review_count"),
-        "thread_count": t.get("thread_count"),
-        "unresolved_threads": t.get("unresolved_threads"),
-        "age_days": t.get("age_days"),
-        "idle_days": t.get("idle_days"),
-        "updated_at": t.get("updated_at"),
-        "merged_at": t.get("merged_at"),
-        "closed_at": t.get("closed_at"),
-        "source": t.get("source"),
-        "since_last_look": t.get("since_last_look"),
-        "dismissed_at": t.get("dismissed_at"),
-    }
+    return {k: t.get(k) for k in _TRACKED_KEYS}
 
 
 def tracked_detail(t: dict) -> dict:
     """Full tracked PR: summary plus body and its Discussion tree, bots flagged."""
-    out = summarize_tracked(t)
-    out["body"] = t.get("body")
-    out["discussion"] = t["discussion"]
-    return out
+    return {**summarize_tracked(t), "body": t.get("body"), "discussion": t["discussion"]}

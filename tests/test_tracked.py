@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pr_dash import cli, db, derive, mcp_server, mergebot, render
+from pr_dash import cli, db, derive, mcp_server, mergebot, render, tab
 from pr_dash import query as prquery
 from tests.fakes import FakePR, pr_node
 
@@ -505,12 +505,12 @@ def test_resolve_tracked_accepts_short_and_full_refs():
     items = [_tracked_item(), _tracked_item(
         id="odoo/enterprise#2", repo="odoo/enterprise", repo_short="enterprise",
         number=2)]
-    assert prquery.resolve_tracked(items, "1")["id"] == "odoo/odoo#1"
-    assert prquery.resolve_tracked(items, "enterprise#2")["id"] == "odoo/enterprise#2"
-    assert prquery.resolve_tracked(
+    assert tab.TRACKED.resolve(items, "1")["id"] == "odoo/odoo#1"
+    assert tab.TRACKED.resolve(items, "enterprise#2")["id"] == "odoo/enterprise#2"
+    assert tab.TRACKED.resolve(
         items, "https://github.com/odoo/odoo/pull/1")["id"] == "odoo/odoo#1"
     with pytest.raises(ValueError):
-        prquery.resolve_tracked(items, "999")
+        tab.TRACKED.resolve(items, "999")
 
 
 def test_resolve_tracked_rejects_ambiguous_number():
@@ -518,7 +518,7 @@ def test_resolve_tracked_rejects_ambiguous_number():
     items = [_tracked_item(), _tracked_item(
         id="odoo/enterprise#1", repo="odoo/enterprise", repo_short="enterprise")]
     with pytest.raises(ValueError, match="ambiguous"):
-        prquery.resolve_tracked(items, "1")
+        tab.TRACKED.resolve(items, "1")
 
 
 def test_summarize_tracked_omits_body_and_discussion():

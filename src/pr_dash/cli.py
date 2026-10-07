@@ -17,7 +17,7 @@ import click
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from pr_dash import config, db, derive, github, hidden, mergebot, render, sync
+from pr_dash import config, db, derive, github, hidden, mergebot, render, sync, tab
 from pr_dash import query as prquery
 
 console = Console()
@@ -271,8 +271,8 @@ def _refresh(cfg, *, no_open: bool, force: bool, offline: bool, cron: bool) -> N
     # Only now that the render succeeded do we advance the "last look" baseline,
     # so a render failure can't silently swallow the since-last-look deltas.
     render.commit_seen_baseline(conn, seen_updates, derive.now_utc())
-    for tab, updates in tab_seen.items():
-        render.commit_tab_seen_baseline(conn, tab, updates, derive.now_utc())
+    for name, updates in tab_seen.items():
+        render.commit_tab_seen_baseline(conn, name, updates, derive.now_utc())
     console.print(f"[green]Rendered {len(payload)} PRs → {cfg.html_path}[/green]")
 
     if not no_open:
@@ -429,9 +429,9 @@ def _emit(obj) -> None:
     click.echo(json.dumps(obj, indent=2))
 
 
-def _resolve_or_exit(items, ref):
+def _resolve_or_exit(view, rows, ref):
     try:
-        return prquery.resolve_item(items, ref)
+        return view.resolve(rows, ref)
     except ValueError as e:
         click.echo(str(e), err=True)
         sys.exit(1)
@@ -444,7 +444,7 @@ def _resolve_or_exit(items, ref):
 def query_list(status, config_path):
     """List PRs as compact triage rows."""
     cfg = _load_config_or_exit(config_path)
-    items = prquery.load_items(cfg)
+    items = tab.QUEUE.load(cfg)
     if status == "pending":
         sel = [it for it in items if not it.get("is_archived")]
     elif status == "archived":
@@ -454,7 +454,7 @@ def query_list(status, config_path):
     _emit({
         "cache_fetched_at": prquery.cache_fetched_at(cfg),
         "count": len(sel),
-        "prs": [prquery.summarize(it) for it in sel],
+        "prs": [tab.QUEUE.summarize(it) for it in sel],
     })
 
 
@@ -464,8 +464,7 @@ def query_list(status, config_path):
 def query_show(ref, config_path):
     """Full detail for one PR (no diff text)."""
     cfg = _load_config_or_exit(config_path)
-    items = prquery.load_items(cfg)
-    _emit(prquery.detail(_resolve_or_exit(items, ref)))
+    _emit(tab.QUEUE.detail(cfg, _resolve_or_exit(tab.QUEUE, tab.QUEUE.load(cfg), ref)))
 
 
 @query.command("diff")
@@ -477,8 +476,7 @@ def query_show(ref, config_path):
 def query_diff(ref, files, changed_only, max_chars, config_path):
     """Per-member diff text for one PR."""
     cfg = _load_config_or_exit(config_path)
-    items = prquery.load_items(cfg)
-    item = _resolve_or_exit(items, ref)
+    item = _resolve_or_exit(tab.QUEUE, tab.QUEUE.load(cfg), ref)
     _emit(prquery.get_diff_text(
         item, files=list(files) or None,
         changed_since_review_only=changed_only, max_chars=max_chars,
@@ -516,20 +514,16 @@ def query_stats(config_path):
 def query_tracked(ref, state, include_dismissed, config_path):
     """List watched PRs, or show one in full with REF."""
     cfg = _load_config_or_exit(config_path)
-    items = prquery.load_tracked(cfg, include_dismissed=include_dismissed)
+    items = tab.TRACKED.load(cfg, include_dismissed=include_dismissed)
     if ref:
-        try:
-            _emit(prquery.tracked_detail(prquery.resolve_tracked(items, ref)))
-        except ValueError as e:
-            click.echo(str(e), err=True)
-            sys.exit(1)
+        _emit(tab.TRACKED.detail(cfg, _resolve_or_exit(tab.TRACKED, items, ref)))
         return
     if state == "open":
         items = [t for t in items if t["state"] not in ("MERGED", "CLOSED")]
     elif state == "resolved":
         items = [t for t in items if t["state"] in ("MERGED", "CLOSED")]
     _emit({"count": len(items),
-           "tracked": [prquery.summarize_tracked(t) for t in items]})
+           "tracked": [tab.TRACKED.summarize(t) for t in items]})
 
 
 @query.command("mine")
@@ -538,7 +532,8 @@ def query_tracked(ref, state, include_dismissed, config_path):
 def query_mine(include_dismissed, config_path):
     """List Authored PRs as Branch sets."""
     cfg = _load_config_or_exit(config_path)
-    sets = prquery.load_mine(cfg, include_dismissed=include_dismissed)
+    sets = tab.MINE.load(cfg, include_dismissed=include_dismissed)
+    sets = [tab.MINE.summarize(s) for s in sets]
     _emit({"count": len(sets), "branch_sets": sets})
 
 

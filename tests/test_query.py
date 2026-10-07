@@ -4,7 +4,7 @@ import importlib.util
 
 import pytest
 
-from pr_dash import query
+from pr_dash import query, tab
 
 
 # --- item builders -----------------------------------------------------------
@@ -120,28 +120,28 @@ _DIFF_B = (
 _DIFF_TWO = _DIFF_A + _DIFF_B
 
 
-# --- resolve_item ------------------------------------------------------------
+# --- Review queue resolve ----------------------------------------------------
 
 def test_resolve_full_id():
     items = [_item("odoo/odoo#100"), _item("odoo/enterprise#200")]
-    assert query.resolve_item(items, "odoo/odoo#100")["id"] == "odoo/odoo#100"
+    assert tab.QUEUE.resolve(items, "odoo/odoo#100")["id"] == "odoo/odoo#100"
 
 
 def test_resolve_short_ref():
     items = [_item("odoo/odoo#100"), _item("odoo/enterprise#200")]
-    assert query.resolve_item(items, "enterprise#200")["id"] == "odoo/enterprise#200"
+    assert tab.QUEUE.resolve(items, "enterprise#200")["id"] == "odoo/enterprise#200"
 
 
 def test_resolve_bare_number_and_int():
     items = [_item("odoo/odoo#100"), _item("odoo/enterprise#200")]
-    assert query.resolve_item(items, "100")["id"] == "odoo/odoo#100"
-    assert query.resolve_item(items, 200)["id"] == "odoo/enterprise#200"
+    assert tab.QUEUE.resolve(items, "100")["id"] == "odoo/odoo#100"
+    assert tab.QUEUE.resolve(items, 200)["id"] == "odoo/enterprise#200"
 
 
 def test_resolve_url():
     items = [_item("odoo/odoo#100")]
     url = "https://github.com/odoo/odoo/pull/100"
-    assert query.resolve_item(items, url)["id"] == "odoo/odoo#100"
+    assert tab.QUEUE.resolve(items, url)["id"] == "odoo/odoo#100"
 
 
 def test_resolve_pair_member_resolves_to_pair_item():
@@ -152,23 +152,23 @@ def test_resolve_pair_member_resolves_to_pair_item():
         members=[_member("odoo/odoo", 100), _member("odoo/enterprise", 999)],
     )
     items = [pair, _item("odoo/odoo#101")]
-    assert query.resolve_item(items, "enterprise#999")["id"] == "odoo/odoo#100"
-    assert query.resolve_item(items, 999)["id"] == "odoo/odoo#100"
+    assert tab.QUEUE.resolve(items, "enterprise#999")["id"] == "odoo/odoo#100"
+    assert tab.QUEUE.resolve(items, 999)["id"] == "odoo/odoo#100"
 
 
 def test_resolve_ambiguous_bare_number():
     # Same number in two unrelated repos -> bare number is ambiguous.
     items = [_item("odoo/odoo#100"), _item("odoo/enterprise#100")]
     with pytest.raises(ValueError, match="Ambiguous"):
-        query.resolve_item(items, "100")
+        tab.QUEUE.resolve(items, "100")
     # Qualifying by repo disambiguates.
-    assert query.resolve_item(items, "enterprise#100")["id"] == "odoo/enterprise#100"
+    assert tab.QUEUE.resolve(items, "enterprise#100")["id"] == "odoo/enterprise#100"
 
 
 def test_resolve_not_found_lists_candidates():
     items = [_item("odoo/odoo#100")]
     with pytest.raises(ValueError, match="odoo/odoo#100"):
-        query.resolve_item(items, "odoo/odoo#404")
+        tab.QUEUE.resolve(items, "odoo/odoo#404")
 
 
 # --- split_diff --------------------------------------------------------------

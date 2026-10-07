@@ -12,7 +12,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from pr_dash import ai, branch_set, config, db, derive, github, hidden, query
+from pr_dash import ai, branch_set, config, db, derive, github, hidden, query, tab
 
 # stderr only: stdout is the MCP protocol channel, so a single stray print or
 # rich.Console write there corrupts the stream. Everything human-facing goes to
@@ -58,12 +58,8 @@ def _hidden_ids(cfg: config.Config, items: list[dict]) -> set[str]:
 
 def _ai_review_shas(item: dict, ref: str) -> tuple[str, str, str]:
     """(head_sha, context_heads, companion_head_sha) of the half `ref` names, else the primary's."""
-    repo_full, repo_short, number = query._parse_ref(ref)
     bset = branch_set.from_item(item)
-    target = next(
-        (m for m in bset.halves if query._member_matches(m, repo_full, repo_short, number)),
-        bset.primary,
-    )
+    target = next((pr for _, pr in tab.hits([item], ref)), bset.primary)
     cached = {(d["repo_short"], d["number"]) for d in item["diffs"] if d["diff"]}
     return (target["head_sha"],
             bset.context_heads(target, lambda h: (h["repo_short"], h["number"]) in cached),
@@ -245,7 +241,7 @@ def list_prs(status: str = "pending", include_hidden: bool = False) -> dict:
         sel = [it for it in sel if it.get("is_archived") or it["id"] not in hidden_ids]
     prs = []
     for it in sel:
-        row = query.summarize(it)
+        row = tab.QUEUE.summarize(it)
         if it["id"] in hidden_ids:
             row["hidden"] = True
         prs.append(row)
@@ -279,16 +275,15 @@ def get_pr(ref: str) -> dict:
     Branch set instead, as get_mine does but without the discussion.
     """
     cfg = _get_cfg()
-    items = query.load_items(cfg)
-    authored = query.resolve_authored(cfg, items, ref)
-    if authored is not None:
-        members = [
+    view, row = tab.first(cfg, ref, tab.QUEUE, tab.MINE)
+    out = view.detail(cfg, row)
+    if view is tab.MINE:
+        out["members"] = [
             {**{k: v for k, v in m.items() if k != "discussion"},
              "fw": [{k: v for k, v in f.items() if k != "discussion"} for f in m["fw"]]}
-            for m in authored["members"]
+            for m in out["members"]
         ]
-        return {**authored, "members": members}
-    return query.detail(query.resolve_item(items, ref))
+    return out
 
 
 @mcp.tool()
@@ -302,7 +297,7 @@ def get_comments(ref: str) -> dict:
     Discussion tree shape, bots included with is_bot: true, unsent review drafts
     (visible only to their author) with is_pending: true.
     """
-    return query.get_comments(_get_cfg(), ref)
+    return tab.get_comments(_get_cfg(), ref)
 
 
 @mcp.tool()
@@ -323,7 +318,7 @@ def list_tracked(state: str = "all", include_dismissed: bool = False) -> dict:
     tracked}.
     """
     cfg = _get_cfg()
-    items = query.load_tracked(cfg, include_dismissed=include_dismissed)
+    items = tab.TRACKED.load(cfg, include_dismissed=include_dismissed)
     if state == "open":
         sel = [t for t in items if t["state"] not in ("MERGED", "CLOSED")]
     elif state == "resolved":
@@ -337,7 +332,7 @@ def list_tracked(state: str = "all", include_dismissed: bool = False) -> dict:
     return {
         "cache_fetched_at": query.cache_fetched_at(cfg),
         "count": len(sel),
-        "tracked": [query.summarize_tracked(t) for t in sel],
+        "tracked": [tab.TRACKED.summarize(t) for t in sel],
     }
 
 
@@ -356,8 +351,7 @@ def get_tracked(ref: str) -> dict:
     CHANGES_REQUESTED / COMMENTED / DISMISSED). A bot review's threads are orphans.
     """
     cfg = _get_cfg()
-    items = query.load_tracked(cfg, include_dismissed=True)
-    return query.tracked_detail(query.resolve_tracked(items, ref))
+    return tab.TRACKED.detail(cfg, tab.TRACKED.find(cfg, ref))
 
 
 @mcp.tool()
@@ -386,9 +380,8 @@ def list_mine(band: str | None = None, include_dismissed: bool = False) -> dict:
     branch_sets}.
     """
     cfg = _get_cfg()
-    sets = query.load_mine(cfg, include_dismissed=include_dismissed)
-    if band is not None:
-        sets = [s for s in sets if s["band"] == band]
+    sets = [tab.MINE.summarize(s) for s in tab.MINE.load(cfg, include_dismissed=include_dismissed)
+            if band in (None, s["band"])]
     return {
         "cache_fetched_at": query.cache_fetched_at(cfg),
         "count": len(sets),
@@ -407,13 +400,7 @@ def get_mine(ref: str) -> dict:
     Each discussion has the get_tracked Discussion tree shape.
     """
     cfg = _get_cfg()
-    sets = query.load_mine(cfg, include_dismissed=True)
-    found = query.resolve_mine(sets, ref)
-    if found is None:
-        known = ", ".join(f"{m['repo'].split('/')[-1]}#{m['num']}"
-                          for s in sets[:20] for m in s["members"])
-        raise ValueError(f"No Authored PR matches {ref!r}. Authored: {known or '(none)'}")
-    return query.mine_detail(cfg, found)
+    return tab.MINE.detail(cfg, tab.MINE.find(cfg, ref))
 
 
 @mcp.tool()
@@ -426,7 +413,7 @@ def hide_pr(ref: str) -> dict:
     Returns {id, hidden: true, hidden_count}.
     """
     cfg = _get_cfg()
-    item = query.resolve_item(query.load_items(cfg), ref)
+    item = tab.QUEUE.find(cfg, ref)
     # An archived row's cached sha can be long stale; a hide recorded at it
     # would auto-unhide against the live sha immediately. Best-effort live
     # lookup per member, cached shas as the offline fallback.
@@ -456,7 +443,7 @@ def unhide_pr(ref: str) -> dict:
     Returns {id, hidden: false, hidden_count}.
     """
     cfg = _get_cfg()
-    item = query.resolve_item(query.load_items(cfg), ref)
+    item = tab.QUEUE.find(cfg, ref)
     mapping = hidden.apply_ops(cfg, [{
         "op": "unhide",
         "pr_id": item["id"],
@@ -480,8 +467,7 @@ def get_diff(
     files: restrict to these paths (exact, basename, or suffix match).
     changed_since_review_only: only files that changed since your last review.
     """
-    items = query.load_items(_get_cfg())
-    item = query.resolve_item(items, ref)
+    item = tab.QUEUE.find(_get_cfg(), ref)
     return query.get_diff_text(
         item, files=files,
         changed_since_review_only=changed_since_review_only,
@@ -496,8 +482,7 @@ def get_ai_review(ref: str) -> dict:
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
     """
-    items = query.load_items(_get_cfg())
-    item = query.resolve_item(items, ref)
+    item = tab.QUEUE.find(_get_cfg(), ref)
     ai_reviews = item.get("ai_reviews") or []
     out = {
         "id": item["id"],
@@ -547,7 +532,7 @@ def set_ai_review(ref: str, summary: str, verdict: str,
     up on the next browser reload without a `pr-dash refresh`.
     """
     cfg = _get_cfg()
-    item = query.resolve_item(query.load_items(cfg), ref)
+    item = tab.QUEUE.find(cfg, ref)
     if verdict not in ai._VERDICTS:
         raise ValueError(
             f"verdict must be one of {', '.join(ai._VERDICTS)}, got {verdict!r}",
