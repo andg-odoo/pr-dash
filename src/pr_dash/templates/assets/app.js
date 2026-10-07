@@ -871,7 +871,7 @@
         </section>
 
         <section class="section">
-          <h3>Discussion ${pr.awaiting_my_reply ? '<span class="disc-awaits">awaiting your reply</span>' : ""}${pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank" rel="noopener" class="disc-repo-link">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")}</h3>
+          <h3>Discussion ${pr.awaiting_my_reply ? '<button class="disc-awaits disc-awaits-jump" type="button">awaiting your reply ↓</button>' : ""}${pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank" rel="noopener" class="disc-repo-link">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")}</h3>
           ${discussionHTML(pr.discussion, pr.is_pair, undefined, pr.my_login)}
         </section>
 
@@ -901,6 +901,17 @@
     }
 
     wireDiscordCopy(detailEl, pr);
+
+    const awaitsBtn = detailEl.querySelector(".disc-awaits-jump");
+    const awaitsThreads = [...detailEl.querySelectorAll(".disc-thread-awaits")];
+    let awaitsIdx = 0;
+    if (awaitsBtn && !awaitsThreads.length) awaitsBtn.disabled = true;
+    // Each click scrolls to the next thread awaiting my reply, wrapping around.
+    awaitsBtn?.addEventListener("click", () => {
+      const thread = awaitsThreads[awaitsIdx++ % awaitsThreads.length];
+      thread.closest("details").open = true;
+      thread.scrollIntoView({ block: "start" });
+    });
 
     detailEl.querySelectorAll(".cmd-copy").forEach(btn => {
       btn.addEventListener("click", () => {

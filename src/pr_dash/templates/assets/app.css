@@ -1374,6 +1374,8 @@ body {
 .disc-onpath      { background: var(--chip-bg); color: var(--fg-dim); font-weight: 400; }
 .disc-unresolved  { background: var(--unresolved-bg); color: var(--yellow); }
 .disc-awaits      { background: var(--accent); color: var(--bg); }
+.disc-awaits-jump { border: 0; cursor: pointer; font-family: inherit; text-transform: inherit; }
+.disc-awaits-jump:disabled { cursor: default; opacity: 0.6; }
 
 /* Discussion tree. Top-level entries (reviews, conversation comments) are
    cards; the threads they opened nest inside, folded unless unresolved. */
