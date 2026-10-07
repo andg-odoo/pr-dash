@@ -21,7 +21,7 @@ class World:
     """A cache, the fake GitHub, Mergebot and reviewer behind it, and one clock for all."""
 
     def __init__(self, tmp_path):
-        self.cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+        self.cfg = Config(github_login="me", cache_dir=tmp_path)
         self.conn = db.connect(self.cfg.db_path)
         self.clock = FakeClock()
         self.gh = FakeGitHub(self.clock)
@@ -220,7 +220,7 @@ def test_a_queue_rows_thread_signals_follow_its_discussion(w):
     def look():
         w.clock.advance(minutes=1)
         w.refresh()
-        items[:], seen = render.build_payload(w.conn, "me", {}, 30)
+        items[:], seen = render.build_payload(w.conn, "me", 30)
         render.commit_seen_baseline(w.conn, seen, w.clock().isoformat())
         row = w.row(ODOO)
         return (row["unresolved_threads"], row["awaiting_my_reply"], row["my_pending_review"],

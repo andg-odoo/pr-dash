@@ -259,7 +259,7 @@ def list_prs(status: str = "pending", include_hidden: bool = False) -> dict:
 @mcp.tool()
 def get_pr(ref: str) -> dict:
     """Full detail for one PR: body, threads, reviewers, ci_failures, ai_reviews,
-    commands, task links, companion migration PR, and per-file diff metadata (no
+    task links, companion migration PR, and per-file diff metadata (no
     diff text - use get_diff for that).
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.

@@ -7,7 +7,7 @@ from pr_dash.config import Config
 
 
 def _cfg(tmp_path: Path) -> Config:
-    return Config(github_login="me", repos={}, cache_dir=tmp_path)
+    return Config(github_login="me", cache_dir=tmp_path)
 
 
 def _item(pr_id, heads_key):

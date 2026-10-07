@@ -9,7 +9,6 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from pr_dash import branch_set, db, derive
-from pr_dash.config import RepoSpec
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -175,11 +174,8 @@ def _build_pr_record(
     }
 
 
-def _make_item(bset: branch_set.BranchSet, my_login: str,
-               repos: dict[str, RepoSpec],
-               command_templates: dict[str, str] | None = None) -> dict:
+def _make_item(bset: branch_set.BranchSet, my_login: str) -> dict:
     """Build one renderable item from a Branch set of PR records."""
-    from pr_dash.commands import PRForCommands, build as build_cmds
 
     members = bset.halves
     primary = bset.primary
@@ -271,21 +267,6 @@ def _make_item(bset: branch_set.BranchSet, my_login: str,
     task_member = next((m for m in members if m["linked_task"]), None)
     linked_task = task_member and task_member["linked_task"]
     linked_task_kind = task_member and task_member["linked_task_kind"]
-
-    # Commands keep their two-repo shape: the primary and the first other code half.
-    paired = next((m for m in bset.halves if m is not primary), None)
-    cmds = build_cmds(
-        PRForCommands(
-            repo=primary["repo"],
-            number=primary["number"],
-            target_branch=primary["target_branch"],
-            modules=installable,
-            paired_repo=paired and paired["repo"],
-            paired_number=paired and paired["number"],
-        ),
-        repos,
-        command_templates,
-    )
 
     # Per-member diff payloads (so we render one diff section per repo)
     diffs = [
@@ -414,7 +395,6 @@ def _make_item(bset: branch_set.BranchSet, my_login: str,
         "my_review_state": my_reviewer["state"],
         "other_reviewers": other_reviewers,
         "discussion": discussion,
-        "commands": [{"label": c.label, "command": c.command} for c in cmds],
         "diffs": diffs,
         "state": primary["state"],
         "is_archived": is_archived,
@@ -434,9 +414,7 @@ def _make_item(bset: branch_set.BranchSet, my_login: str,
 def build_payload(
     conn: sqlite3.Connection,
     my_login: str,
-    repos: dict[str, RepoSpec],
     stale_review_days: int,
-    command_templates: dict[str, str] | None = None,
     ai_max_attempts: int = 3,
 ) -> tuple[list[dict], list[tuple[str, str | None, str | None, str]]]:
     """Return (items, seen_updates). The caller must persist seen_updates via
@@ -482,7 +460,7 @@ def build_payload(
         records[pr["id"]]["since_last_look"] = delta_map.get(pr["id"], [])
 
     sets = branch_set.group(records.values(), db.list_companion_rows(conn, records))
-    items = [_make_item(s, my_login, repos, command_templates) for s in sets]
+    items = [_make_item(s, my_login) for s in sets]
 
     items.sort(key=lambda p: (
         BUCKET_RANK.get(p["bucket"], 1),

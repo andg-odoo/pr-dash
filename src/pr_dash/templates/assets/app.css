@@ -790,47 +790,6 @@ body {
 .reviewer .state-DISMISSED { color: var(--fg-faint); }
 .reviewer.me { border-color: var(--accent); }
 
-.cmd {
-  margin-bottom: 8px;
-}
-
-.cmd-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--fg-dim);
-  margin-bottom: 3px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.cmd-copy {
-  background: var(--chip-bg);
-  border: 1px solid var(--border);
-  color: var(--fg-dim);
-  border-radius: 3px;
-  padding: 1px 8px;
-  font-size: 10px;
-  cursor: pointer;
-}
-
-.cmd-copy.copied { background: var(--green); color: #0f1115; border-color: var(--green); }
-
-.cmd pre {
-  margin: 0;
-  background: #0a0c10;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 10px 12px;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-  overflow-x: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
-  line-height: 1.5;
-}
-
 .pr-body {
   background: #0a0c10;
   border: 1px solid var(--border);

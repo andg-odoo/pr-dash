@@ -48,7 +48,7 @@ def _wait_for(pred, timeout=2.0):
 
 
 def _cfg(tmp_path: Path, **kw) -> Config:
-    return Config(github_login="me", repos={}, cache_dir=tmp_path, **kw)
+    return Config(github_login="me", cache_dir=tmp_path, **kw)
 
 
 def _item(pr_id, head_sha, **over):
@@ -173,7 +173,7 @@ def test_hide_pr_records_live_sha(tmp_path, monkeypatch):
     from pr_dash import hidden
     from pr_dash.config import Config
 
-    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    cfg = Config(github_login="me", cache_dir=tmp_path)
     items = [{"id": "odoo/odoo#1", "author": "a", "head_branch": "b",
               "members": [{"repo": "odoo/odoo", "number": 1, "head_sha": "stale"},
                           {"repo": "odoo/enterprise", "number": 2, "head_sha": "stale"}]}]
@@ -192,7 +192,7 @@ def test_hide_pr_falls_back_to_cached_sha(tmp_path, monkeypatch):
     from pr_dash import hidden
     from pr_dash.config import Config
 
-    cfg = Config(github_login="me", repos={}, cache_dir=tmp_path)
+    cfg = Config(github_login="me", cache_dir=tmp_path)
     items = [{"id": "odoo/odoo#1", "author": "a", "head_branch": "b",
               "members": [{"repo": "odoo/odoo", "number": 1, "head_sha": "stale"}]}]
     mcp_server = _patch_cfg_and_items(monkeypatch, cfg, items)

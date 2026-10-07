@@ -712,7 +712,7 @@
     }
     const mixedNotice = (pr.is_pair && noticeParts.length && activeMembers.length)
       ? `<div class="pair-mixed-notice" title="A paired PR whose other half left your review queue">
-          ${noticeParts.join(" ")} The diff, commands and stats below still cover both halves.
+          ${noticeParts.join(" ")} The diff and stats below still cover both halves.
         </div>`
       : "";
     // Why is a half missing from the AI first-pass? closed > over-budget > not-yet-reviewed.
@@ -858,19 +858,6 @@
         ` : ""}
 
         <section class="section">
-          <h3>Commands</h3>
-          ${pr.commands.map((c, i) => `
-            <div class="cmd">
-              <div class="cmd-label">
-                <span>${escapeHTML(c.label)}</span>
-                <button class="cmd-copy" data-cmd-idx="${i}" type="button">copy</button>
-              </div>
-              <pre>${escapeHTML(c.command)}</pre>
-            </div>
-          `).join("")}
-        </section>
-
-        <section class="section">
           <h3>Discussion ${pr.awaiting_my_reply ? '<button class="disc-awaits disc-awaits-jump" type="button">awaiting your reply ↓</button>' : ""}${pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank" rel="noopener" class="disc-repo-link">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")}</h3>
           ${discussionHTML(pr.discussion, pr.is_pair, undefined, pr.my_login)}
         </section>
@@ -911,18 +898,6 @@
       const thread = awaitsThreads[awaitsIdx++ % awaitsThreads.length];
       thread.closest("details").open = true;
       thread.scrollIntoView({ block: "start" });
-    });
-
-    detailEl.querySelectorAll(".cmd-copy").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const idx = parseInt(btn.dataset.cmdIdx, 10);
-        const text = pr.commands[idx].command;
-        navigator.clipboard.writeText(text).then(() => {
-          btn.classList.add("copied");
-          btn.textContent = "copied!";
-          setTimeout(() => { btn.classList.remove("copied"); btn.textContent = "copy"; }, 1200);
-        });
-      });
     });
 
     pr.diffs.forEach((d, i) => {

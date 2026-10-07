@@ -19,21 +19,17 @@ loop:
 - **Review KPIs** - counts and trends from your archived review history.
 - **Companion migration** - the `odoo/upgrade` PR that ships with a data move, which appears in no addons diff (see below).
 - **AI first-pass** - optional `claude` sanity-check that flags obvious issues.
-- **One-click commands** - copy-paste checkout / fresh-DB / test / cleanup for each PR.
 - **Tracked tab** - a second view for PRs you *watch* rather than review (see below).
 - **Mine tab** - your Authored PRs, one row per Branch set (same head branch across repos): Needs you (Action items, oldest first) above Open above Done, `a` to Acknowledge, `x` to dismiss.
 
 It is **not** a re-skin of GitHub - browse code on github.com. It earns its keep
-on personal filtering, ball-in-my-court signals, Odoo-specific derivations, and
-fast checkout commands.
+on personal filtering, ball-in-my-court signals and Odoo-specific derivations.
 
 ## Requirements
 
 - **Python 3.11+**
 - **[`gh`](https://cli.github.com/)**, authenticated (`gh auth login`) - used for all GitHub calls.
-- **`git`** - for the checkout commands the dashboard emits.
 - **`claude`** (optional) - [Claude Code CLI](https://docs.claude.com/en/docs/claude-code), for the AI first-pass review. Uses your existing Claude subscription auth; no API key. Disable with `[ai] enabled = false` if you don't have it.
-- Local clones of the repos you review (e.g. `odoo/odoo`, `odoo/enterprise`).
 
 ## Install
 
@@ -59,7 +55,7 @@ while that venv is activated - it is not global on its own.)
 
 ```bash
 pr-dash init             # writes ~/.config/pr-dash/config.toml (auto-detects your gh login)
-$EDITOR ~/.config/pr-dash/config.toml   # set your repo paths (and command templates)
+$EDITOR ~/.config/pr-dash/config.toml   # adjust thresholds, AI and paths
 pr-dash                  # fetch + render + open the dashboard
 pr-dash backfill         # (optional, one-time) pull historical reviews for KPI counts
 ```
@@ -71,12 +67,6 @@ pr-dash backfill         # (optional, one-time) pull historical reviews for KPI 
 ```toml
 [user]
 github_login = "your-login"      # auto-detected by `pr-dash init`
-
-[repos]                          # repo -> local clone path
-"odoo/odoo" = "~/Dev/src/odoo"
-"odoo/enterprise" = "~/Dev/src/enterprise"
-# If you keep one git worktree per version, give a `{branch}` pattern instead of
-# a single path (see "Per-version worktrees" below).
 
 [thresholds]
 staleness_minutes = 15           # skip re-fetching PRs fetched more recently than this
@@ -104,76 +94,7 @@ cron_max_reviews = 5             # reviews one `refresh --cron` tick may start
 [companion]
 enabled = true                   # set false to skip the migration-PR lookup
 repo = "odoo/upgrade"            # where a bundle's migration script lives
-
-[commands]                       # the per-PR action buttons (see below)
-fresh_db = "onew {db} -i {modules}"
-test = "otest {db} {tags}"
-cleanup = "ocleanup {db} y"
 ```
-
-### Command templates
-
-The Checkout / Fresh DB / Test / Cleanup buttons generate copy-paste shell
-commands. The git checkout/cleanup steps are built from your `[repos]` paths
-automatically; the **Fresh DB**, **Test**, and **Cleanup** snippets are yours to
-template. Placeholders:
-
-| Placeholder    | Value                                  |
-|----------------|----------------------------------------|
-| `{db}`         | `pr_<number>` (a DB name)              |
-| `{modules}`    | comma-separated installable modules    |
-| `{tags}`       | test tags, e.g. `/sale,/account`       |
-| `{repo_path}`  | local path of the PR's repo (worktree-resolved, see below) |
-| `{number}`     | PR number                              |
-| `{branch}`     | target branch                          |
-
-The defaults assume the `onew` / `otest` / `ocleanup` Odoo-dev shell aliases -
-replace them with however you create a database, run tests, and tear down. Fresh
-DB / Test are only shown when the PR touches installable modules.
-
-### Per-version worktrees
-
-If you keep a separate git worktree per version, point a repo at a `{branch}`
-pattern with a `default` fallback:
-
-```toml
-[repos."odoo/odoo"]
-pattern = "~/Dev/worktrees/odoo-{branch}"   # {branch} = the PR's target branch
-default = "~/Dev/src/odoo"                   # used when no worktree exists for the branch
-
-[repos."odoo/enterprise"]
-pattern = "~/Dev/worktrees/enterprise-{branch}"
-default = "~/Dev/src/enterprise"
-```
-
-`{branch}` is a plain substitution, so it can sit anywhere in the path - whether
-the version is a trailing suffix or a parent directory. If you group both repos
-under one per-branch directory, put `{branch}` mid-path instead:
-
-```toml
-[repos."odoo/odoo"]
-pattern = "~/Dev/worktrees/{branch}/odoo"
-default = "~/Dev/src/odoo"
-
-[repos."odoo/enterprise"]
-pattern = "~/Dev/worktrees/{branch}/enterprise"
-default = "~/Dev/src/enterprise"
-```
-
-With this, the generated commands are version-accurate:
-
-- **Checkout** runs in the worktree matching the PR's target branch, so
-  `{repo_path}` and the `git fetch ... && git checkout pr-<n>` steps target the
-  right directory instead of a single fixed clone.
-- The **sibling switch steps** (fetching + checking out the target branch in the
-  *other* repo to keep framework and addons versions aligned) are **dropped** -
-  that repo's worktree is already on the right version, so there's nothing to
-  switch and nothing to restore on cleanup.
-- A branch with **no worktree checked out** (the pattern dir is missing) falls
-  back to `default`, restoring the classic single-clone behaviour for that PR.
-
-Because `{branch}` is a placeholder, you can also wire worktree paths into your
-own **Fresh DB** / **Test** snippets, e.g. `--addons-path ~/Dev/worktrees/odoo-{branch}/addons,...`.
 
 ## Usage
 
@@ -328,8 +249,8 @@ when the `pr-dash mcp` listener happens to be running, and otherwise holds in
 the browser, exactly like hides.
 
 Rows are deliberately thin: state, target branch, CI, comment count, age, and a
-detail pane with the description and recent discussion. No diff, no AI pass, no
-checkout commands - browse the code on github.com.
+detail pane with the description and recent discussion. No diff and no AI
+pass - browse the code on github.com.
 
 ## MCP server / agent access
 
@@ -352,7 +273,7 @@ config with `pr-dash mcp --config PATH` or the `PR_DASH_CONFIG` env var.
 Tools:
 
 - `list_prs(status)` - compact triage rows; `status` is `pending` / `archived` / `all`.
-- `get_pr(ref)` - full detail for one PR (body, threads, reviewers, CI, companion migration PR, per-file diff metadata, commands).
+- `get_pr(ref)` - full detail for one PR (body, threads, reviewers, CI, companion migration PR, per-file diff metadata).
 - `get_diff(ref, files, changed_since_review_only, max_chars)` - diff text, whole files only, under a char budget.
 - `get_ai_review(ref)` - the cached AI first-pass sanity check, if any.
 - `set_ai_review(ref, summary, verdict, concerns)` - record a review by hand, in the slot the automatic pass writes to (it skips PRs whose diff is too big to cache). Re-renders the dashboard shortly after, so the row shows up on the next browser reload; several calls in a row coalesce into one render, and concurrent sessions take turns.

@@ -118,8 +118,7 @@ def _render_from_cache(conn, cfg, *, offline=False):
     tab_seen_updates keyed by tab); the caller decides whether to advance the
     since-last-look baselines."""
     payload, seen_updates = render.build_payload(
-        conn, cfg.github_login, cfg.repos, cfg.thresholds.stale_review_days,
-        command_templates=dataclasses.asdict(cfg.commands),
+        conn, cfg.github_login, cfg.thresholds.stale_review_days,
         ai_max_attempts=cfg.ai.max_attempts,
     )
     for p in payload:

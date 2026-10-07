@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import dataclasses
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -24,9 +23,7 @@ def load_items(cfg: Config) -> list[dict]:
         items, _ = render.build_payload(
             conn,
             cfg.github_login,
-            cfg.repos,
             cfg.thresholds.stale_review_days,
-            command_templates=dataclasses.asdict(cfg.commands),
             ai_max_attempts=cfg.ai.max_attempts,
         )
     finally:
@@ -202,7 +199,7 @@ def get_diff_text(
 # --- projections -------------------------------------------------------------
 
 def summarize(item: dict) -> dict:
-    """Compact triage row: no body, Discussion, diffs, or commands."""
+    """Compact triage row: no body, Discussion or diffs."""
     return {
         "id": item["id"],
         "url": item.get("url"),
@@ -264,8 +261,8 @@ def _diff_meta(d: dict) -> dict:
 
 def detail(item: dict) -> dict:
     """Full item minus diff text: each diff entry is replaced by metadata plus a
-    parsed `files` list. Body, Discussion, reviewers, ci_failures, ai_reviews,
-    commands and task links are kept."""
+    parsed `files` list. Body, Discussion, reviewers, ci_failures, ai_reviews
+    and task links are kept."""
     out = copy.deepcopy(item)
     out["diffs"] = [_diff_meta(d) for d in item.get("diffs", [])]
     return out

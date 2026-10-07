@@ -88,7 +88,6 @@ def _item(pr_id, *, members=None, diffs=None, is_pair=False, **overrides):
         "my_review_state": "PENDING",
         "other_reviewers": [],
         "discussion": [],
-        "commands": [{"label": "test", "command": "otest"}],
         "diffs": diffs if diffs is not None else [_diff_entry(repo, num, _DIFF_TWO)],
         "state": "OPEN",
         "is_archived": False,
@@ -273,7 +272,7 @@ def test_get_diff_text_truncated_member():
 def test_summarize_omits_heavy_fields():
     item = _item("odoo/odoo#100")
     s = query.summarize(item)
-    for absent in ("body", "discussion", "diffs", "commands", "reviewers"):
+    for absent in ("body", "discussion", "diffs", "reviewers"):
         assert absent not in s
     assert s["id"] == "odoo/odoo#100"
     assert s["members"] == [
