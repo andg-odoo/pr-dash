@@ -7,7 +7,6 @@
 <style>{{ app_css|safe }}</style>
 </head>
 <body>
-  {% set views = ["queue", "tracked", "mine"] %}
   {% if offline %}
   <div class="banner">Offline mode{% if last_refresh %} - last refresh {{ last_refresh }}{% endif %}</div>
   {% endif %}

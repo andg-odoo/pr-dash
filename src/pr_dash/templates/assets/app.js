@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const { queue: PRS, tracked: TRACKED, mine: MINE } = window.TAB_DATA;
+  const TAB_DATA = window.TAB_DATA;
   const md = window.markdownit({
     html: false,        // strip raw HTML: prevents <script> in PR bodies from firing
     linkify: true,      // turn bare URLs into links
@@ -142,7 +142,7 @@
   }
 
   function updateKpi() {
-    const archived = PRS.filter(p => p.is_archived && p.archived_at);
+    const archived = TAB_DATA.queue.filter(p => p.is_archived && p.archived_at);
     if (!archived.length) { kpiEl.textContent = ""; return; }
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -165,7 +165,7 @@
   /** Render the review-history stats panel into the detail pane. */
   function renderStats() {
     openDtab = null;
-    const arch = PRS.filter(p => p.is_archived && p.archived_at);
+    const arch = TAB_DATA.queue.filter(p => p.is_archived && p.archived_at);
     if (!arch.length) {
       detailEl.innerHTML = '<div class="empty">No review history yet.</div>';
       return;
@@ -392,11 +392,11 @@
   // Dismissals are local-first like hides, and the `pr-dash mcp` listener stamps them when it runs.
   const dismissedKey = tab => `pr-dash:${tab}-dismissed:v1`;
   function loadDismissed(tab) { const d = loadJSON(dismissedKey(tab)); return d && typeof d === "object" ? d : {}; }
-  const dismissed = { tracked: loadDismissed("tracked"), mine: loadDismissed("mine") };
+  const dismissed = {};
   // A local entry beats the baked stamp, an ISO time dismissing and `false` restoring.
   const isDismissed = (tab, row) => row.id in dismissed[tab]
     ? dismissed[tab][row.id] !== false : !!row.dismissed_at;
-  for (const [tab, rows] of [["tracked", TRACKED], ["mine", MINE.flatMap(s => s.members)]]) {
+  function pruneDismissed(tab, rows) {
     const stamped = new Set(rows.filter(r => r.dismissed_at).map(r => r.id));
     // Once the listener cleared the stamp, a restore marker has nothing left to override.
     for (const id of Object.keys(dismissed[tab])) {
@@ -418,6 +418,19 @@
         ops: ids.map(id => ({ op: on ? "dismiss" : "restore", pr_id: id, dismissed_at: map[id] || null })),
       }),
     }).catch(() => {});
+  }
+
+  // The x mark that dismisses each of a row's `members` through its `route` on the listener.
+  function dismissMark(route, members) {
+    dismissed[route] = loadDismissed(route);
+    return {
+      label: "dismiss",
+      route,
+      members,
+      on: r => members(r).every(m => isDismissed(route, m)),
+      set: (r, on) => setDismissed(route, members(r).map(m => m.id), on),
+      show: "show-dismissed",
+    };
   }
 
   function trackedStateTag(t) {
@@ -640,7 +653,6 @@
   const VIEWS = {
     // PRs I was directly requested to review, the obligation the dashboard is built around.
     queue: {
-      rows: PRS,
       link: "pr",
       sortKey: "pr-dash:sort:v1",
       search: "Search title, #, author, module…  ( / )",
@@ -657,7 +669,7 @@
         bucket: { title: "Bucket", values: ["S", "M", "L", "XL"], of: pr => [pr.bucket] },
         branch: {
           title: "Branch",
-          values: [...new Set(PRS.map(p => p.target_branch))].sort(),
+          values: [...new Set(TAB_DATA.queue.map(p => p.target_branch))].sort(),
           of: pr => [pr.target_branch],
         },
         state: { title: "State", chips: [
@@ -688,15 +700,15 @@
       marks: { h: { label: "hide", on: isHidden, set: setHidden, show: "show-hidden" } },
       // A PR hidden with no row left to take stays in the detail, where the other views clear it.
       keepsDetail: true,
-      first: () => (PRS.find(p => !p.is_archived && !p.is_draft) || PRS[0])?.id,
+      first: () => (TAB_DATA.queue.find(p => !p.is_archived && !p.is_draft) || TAB_DATA.queue[0])?.id,
       badges: { pushed: "↑push", reply: "reply", ci: "ci", new: "new" },
 
       counts(visible) {
-        const hiddenN = PRS.filter(isHidden).length;
+        const hiddenN = TAB_DATA.queue.filter(isHidden).length;
         const view = filters.state.has("archived") ? "archived" : filters.state.has("drafts") ? "drafts" : "active";
-        const total = PRS.filter(p => view === "archived" ? p.is_archived
+        const total = TAB_DATA.queue.filter(p => view === "archived" ? p.is_archived
           : !p.is_archived && p.is_draft === (view === "drafts")).length;
-        const n = PRS.filter(p => !p.is_archived && !p.is_draft && p.since_last_look.length).length;
+        const n = TAB_DATA.queue.filter(p => !p.is_archived && !p.is_draft && p.since_last_look.length).length;
         return {
           visible: `${visible.length} / ${total}${hiddenN ? `  ·  ${hiddenN} hidden` : ""}`,
           total: `${view} PRs`,
@@ -1020,10 +1032,9 @@
 
     // PRs I subscribed to on GitHub or added with `pr-dash track`, watched until they land.
     tracked: {
-      rows: TRACKED,
       search: "Search tracked title, #, author…  ( / )",
       placeholder: "Select a tracked PR on the left.",
-      empty: () => TRACKED.length ? "Nothing matches. Clear the search or filters."
+      empty: () => TAB_DATA.tracked.length ? "Nothing matches. Clear the search or filters."
         : "Nothing tracked yet. Subscribe to a PR on GitHub, or run `pr-dash track <url>`.",
       haystack: t => [t.title, t.author, t.target_branch, t.repo, t.repo_short,
                       `${t.repo_short}#${t.number}`, String(t.number)].join(" "),
@@ -1046,22 +1057,15 @@
         age: { label: "oldest opened", by: (a, b) => (b.age_days - a.age_days) || byActivity(a, b) },
         repo: { label: "repo, then number", by: (a, b) => a.repo.localeCompare(b.repo) || a.number - b.number },
       },
-      marks: {
-        x: {
-          label: "dismiss",
-          on: t => isDismissed("tracked", t),
-          set: (t, on) => setDismissed("tracked", [t.id], on),
-          show: "show-dismissed",
-        },
-      },
+      marks: { x: dismissMark("tracked", t => [t]) },
       badges: { resolved: "done", reopened: "reopened", pushed: "↑push", reply: "reply", new: "new" },
 
       counts(visible) {
-        const live = TRACKED.filter(t => !isDismissed("tracked", t));
-        const gone = TRACKED.length - live.length;
+        const live = TAB_DATA.tracked.filter(t => !isDismissed("tracked", t));
+        const gone = TAB_DATA.tracked.length - live.length;
         const moved = live.filter(hasMoved).length;
         return {
-          visible: `${visible.length} / ${TRACKED.length}${gone ? `  ·  ${gone} dismissed` : ""}`,
+          visible: `${visible.length} / ${TAB_DATA.tracked.length}${gone ? `  ·  ${gone} dismissed` : ""}`,
           total: "tracked PRs",
           look: moved ? `${moved} moved` : "",
           lookTitle: moved ? "Show only tracked PRs that moved since your last visit" : "",
@@ -1140,10 +1144,9 @@
     },
 
     mine: {
-      rows: MINE,
       search: "Search title, #, branch, task…  ( / )",
       placeholder: "Select a Branch set on the left.",
-      empty: () => MINE.some(s => !isMineDismissed(s)) ? "Nothing matches. Clear the search."
+      empty: () => TAB_DATA.mine.some(s => !isMineDismissed(s)) ? "Nothing matches. Clear the search."
         : "No Authored PRs yet. The next refresh lists every open PR you opened.",
       haystack: s => [s.key, s.task || "", ...s.members.flatMap(m => [m.title, m.ref, m.repo, m.target_branch,
                                                                       ...m.fw.map(f => f.ref)])].join(" "),
@@ -1167,18 +1170,13 @@
             flushQueue();
           },
         },
-        x: {
-          label: "dismiss",
-          on: isMineDismissed,
-          set: (s, on) => setDismissed("mine", s.members.map(m => m.id), on),
-          show: "show-dismissed",
-        },
+        x: dismissMark("mine", s => s.members),
       },
       // Its buttons take the next row on dismiss like its keys, unlike Tracked's.
       clickAdvances: true,
 
       counts() {
-        const n = band => MINE.filter(s => !isMineDismissed(s) && mineBand(s) === band).length;
+        const n = band => TAB_DATA.mine.filter(s => !isMineDismissed(s) && mineBand(s) === band).length;
         return {
           visible: `${n("needs")} need you · ${n("open")} open · ${n("done")} done`,
           total: "",
@@ -1427,7 +1425,8 @@
   }
 
   for (const [key, d] of Object.entries(VIEWS)) {
-    Object.assign(d, { key, list: document.getElementById(`${key}-list`), selected: null, visible: [] });
+    Object.assign(d, { key, rows: TAB_DATA[key], list: document.getElementById(`${key}-list`), selected: null, visible: [] });
+    for (const m of Object.values(d.marks)) if (m.route) pruneDismissed(m.route, d.rows.flatMap(m.members));
     d.link ??= key;
     d.listHTML ??= (rows, rowHTML) => rows.map(rowHTML).join("");
     for (const g of Object.keys(d.chips)) filters[g] ??= new Set();
@@ -1448,7 +1447,7 @@
   }
 
   const TABS = Object.keys(VIEWS);
-  let activeTab = TABS.includes(localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : "queue";
+  let activeTab = TABS.includes(localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : TABS[0];
 
   detailEl.addEventListener("click", (e) => {
     const d = VIEWS[activeTab];
@@ -1459,7 +1458,7 @@
   const rerender = () => renderView(VIEWS[activeTab]);
 
   function setTab(tab) {
-    activeTab = TABS.includes(tab) ? tab : "queue";
+    activeTab = TABS.includes(tab) ? tab : TABS[0];
     localStorage.setItem(TAB_KEY, activeTab);
     tabsEl.querySelectorAll(".tab").forEach(b => b.classList.toggle("is-active", b.dataset.tab === activeTab));
     for (const t of TABS) {
