@@ -296,8 +296,8 @@ available as JSON from the shell for debugging: `pr-dash query list|show|diff|hi
 - Auto-open uses `xdg-open` (Linux). Elsewhere, use `--no-open` and open
   `~/.cache/pr-dash/index.html` yourself.
 - The dashboard is a single self-contained HTML file with all data inlined - no
-  server, no build step. View state (hidden PRs, filters, search) lives in
-  `localStorage`; durable bookkeeping (the archive, review snapshots) lives in
-  the SQLite cache.
+  server, no build step. View state (filters, the open tab) lives in
+  `localStorage`, as do mark changes until a later render bakes them in; marks
+  and durable bookkeeping (the archive, review snapshots) live in the SQLite cache.
 - Odoo-specific behavior (odoo↔enterprise pairing, module derivation, task and
   runbot links) is baked in; it's built for Odoo reviewers.

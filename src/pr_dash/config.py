@@ -79,7 +79,7 @@ class Config:
     companion: CompanionConfig = field(default_factory=CompanionConfig)
     cache_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "pr-dash")
     # Port the `pr-dash mcp` server binds on 127.0.0.1 for the dashboard's
-    # write-through hidden-state sync. First MCP instance to bind wins.
+    # write-through mark sync. First MCP instance to bind wins.
     hidden_sync_port: int = 7391
 
     @property
@@ -224,7 +224,7 @@ repo = "{branch_set.COMPANION_REPO}"
 [paths]
 cache_dir = "~/.cache/pr-dash"
 # Port the `pr-dash mcp` server binds on 127.0.0.1 so the dashboard page can
-# write hidden-PR changes back to disk. The first running MCP instance wins the
+# write mark changes back to disk. The first running MCP instance wins the
 # bind; the rest run without the listener.
 hidden_sync_port = 7391
 '''

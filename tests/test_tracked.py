@@ -412,7 +412,8 @@ def test_tracked_and_mine_payloads_ship_one_discussion_tree(tmp_path):
             for c in t["comments"]} == {"odoo#1"}
 
 
-def test_acknowledge_through_the_listener_and_fyi_clearing_on_a_look(tmp_path):
+def test_acknowledge_through_the_listener_and_fyi_clearing_on_a_look(tmp_path, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_schedule_rerender", lambda cfg: None)
     conn = _conn(tmp_path)
     ec, _, _ = _mine_sets(conn)
     cfg = SimpleNamespace(db_path=tmp_path / "t.db")
@@ -441,7 +442,8 @@ def test_acknowledge_through_the_listener_and_fyi_clearing_on_a_look(tmp_path):
     assert (sets[0]["key"], sets[0]["band"], db.marks(conn, "ack")) == (ec, "needs", {})
 
 
-def test_dismissed_mine_set_stays_hidden_after_a_refresh(tmp_path):
+def test_dismissed_mine_set_stays_hidden_after_a_refresh(tmp_path, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_schedule_rerender", lambda cfg: None)
     conn = _conn(tmp_path)
     ec, _, _ = _mine_sets(conn)
     cfg = SimpleNamespace(db_path=tmp_path / "t.db")

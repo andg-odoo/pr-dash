@@ -635,7 +635,7 @@ def refresh(force: bool = False) -> dict:
 
 
 def _make_handler(cfg: config.Config) -> type[BaseHTTPRequestHandler]:
-    class HiddenSyncHandler(BaseHTTPRequestHandler):
+    class MarksHandler(BaseHTTPRequestHandler):
         # The dashboard is opened as file:// (origin "null"), so every response
         # needs permissive CORS and a preflight answer.
         def _cors(self) -> None:
@@ -673,7 +673,7 @@ def _make_handler(cfg: config.Config) -> type[BaseHTTPRequestHandler]:
                 return
             self._send_json(200, {"ok": True, "count": _apply_mark_ops(cfg, ops)})
 
-    return HiddenSyncHandler
+    return MarksHandler
 
 
 # The mark kinds the listener stores, each mapped to whether setting one needs a guard.
@@ -681,7 +681,7 @@ _MARK_KINDS = {"hide": False, "dismiss_tracked": False, "dismiss_mine": False, "
 
 
 def _apply_mark_ops(cfg: config.Config, ops: list) -> int:
-    """Store set/clear mark ops on a connection of its own, returning how many were well formed."""
+    """Store set/clear mark ops, re-rendering when any applied, and return how many were."""
     applied = 0
     conn = db.connect(cfg.db_path)
     try:
@@ -698,6 +698,8 @@ def _apply_mark_ops(cfg: config.Config, ops: list) -> int:
                 applied += 1
     finally:
         conn.close()
+    if applied:
+        _schedule_rerender(cfg)
     return applied
 
 
@@ -709,18 +711,18 @@ def _hidden_count(cfg: config.Config) -> int:
         conn.close()
 
 
-def start_hidden_listener(cfg: config.Config) -> ThreadingHTTPServer | None:
-    """Bind the localhost hidden-state write-through listener. Returns the
+def start_marks_listener(cfg: config.Config) -> ThreadingHTTPServer | None:
+    """Bind the localhost mark write-through listener. Returns the
     server, or None if the port is already taken (another MCP instance owns it -
     first one wins)."""
     try:
         server = ThreadingHTTPServer(("127.0.0.1", cfg.hidden_sync_port), _make_handler(cfg))
     except OSError as e:
-        log.info("hidden-sync listener not started (port %d unavailable: %s)",
+        log.info("marks listener not started (port %d unavailable: %s)",
                  cfg.hidden_sync_port, e)
         return None
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    log.info("hidden-sync listener on 127.0.0.1:%d", server.server_address[1])
+    log.info("marks listener on 127.0.0.1:%d", server.server_address[1])
     return server
 
 
@@ -731,9 +733,9 @@ def main() -> None:
         format="%(levelname)s %(name)s: %(message)s",
     )
     try:
-        start_hidden_listener(_get_cfg())
+        start_marks_listener(_get_cfg())
     except (FileNotFoundError, ValueError) as e:
         # No usable config yet: run the server anyway (tools surface the error),
         # matching the prior behaviour where config was only loaded on first use.
-        log.warning("hidden-sync listener skipped: %s", e)
+        log.warning("marks listener skipped: %s", e)
     mcp.run()

@@ -117,21 +117,22 @@ def _render_from_cache(conn, cfg, *, offline=False):
     hides still holding. Returns (payload, seen_updates,
     tab_seen_updates keyed by tab); the caller decides whether to advance the
     since-last-look baselines."""
+    rendered_at = derive.now_utc("milliseconds")
     payload, seen_updates = render.build_payload(
         conn, cfg.github_login, cfg.thresholds.stale_review_days,
         ai_max_attempts=cfg.ai.max_attempts,
     )
+    hides = db.live_marks(conn, "hide", {p["id"]: p["heads_key"] for p in payload})
     for p in payload:
         p["my_login"] = cfg.github_login
-    hides = db.live_marks(conn, "hide", {p["id"]: p["heads_key"] for p in payload})
-    hidden_map = {key: {"head_sha": m["guard"], "hidden_at": m["at"]} for key, m in hides.items()}
+        p["hidden"] = p["id"] in hides
     tracked, tracked_seen = render.build_tracked_payload(conn, include_dismissed=True)
     mine, mine_seen = render.build_mine_payload(conn, cfg.github_login)
     # Built apart so a dismissed member never joins a live set sharing its head branch.
     dismissed_mine, _ = render.build_mine_payload(conn, cfg.github_login, dismissed_only=True)
     render.render(payload, cfg.html_path, offline=offline,
                   last_refresh=db.get_meta(conn, "last_refresh"),
-                  hidden_map=hidden_map, hidden_sync_port=cfg.hidden_sync_port,
+                  rendered_at=rendered_at, marks_port=cfg.hidden_sync_port,
                   tracked=tracked, mine=mine + dismissed_mine)
     return payload, seen_updates, {"tracked": tracked_seen, "mine": mine_seen}
 

@@ -55,8 +55,8 @@
 
   <script>
     window.TAB_DATA = {{ tab_data_json|safe }};
-    window.HIDDEN_SERVER = {{ hidden_server_json|safe }};
-    window.HIDDEN_SYNC_PORT = {{ hidden_sync_port }};
+    window.RENDERED_AT = "{{ rendered_at }}";
+    window.MARKS_PORT = {{ marks_port }};
   </script>
   <script>{{ diff2html_js|safe }}</script>
   <script>{{ markdown_it_js|safe }}</script>

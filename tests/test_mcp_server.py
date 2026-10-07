@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from pr_dash import db
+from pr_dash import db, derive
 from pr_dash.config import Config
 from tests.fakes import FakeGitHub
 
@@ -129,7 +129,7 @@ def test_marks_listener_applies_ops_and_answers_cors(tmp_path):
     from pr_dash import mcp_server
 
     cfg = _cfg(tmp_path, hidden_sync_port=0)
-    server = mcp_server.start_hidden_listener(cfg)
+    server = mcp_server.start_marks_listener(cfg)
     assert server is not None
     try:
         port = server.server_address[1]
@@ -173,15 +173,15 @@ def test_marks_listener_applies_ops_and_answers_cors(tmp_path):
         server.shutdown()
 
 
-def test_hidden_listener_second_bind_returns_none(tmp_path):
+def test_marks_listener_second_bind_returns_none(tmp_path):
     from pr_dash import mcp_server
 
-    first = mcp_server.start_hidden_listener(_cfg(tmp_path, hidden_sync_port=0))
+    first = mcp_server.start_marks_listener(_cfg(tmp_path, hidden_sync_port=0))
     assert first is not None
     try:
         port = first.server_address[1]
         # A second instance on the same fixed port loses the race -> None.
-        second = mcp_server.start_hidden_listener(_cfg(tmp_path, hidden_sync_port=port))
+        second = mcp_server.start_marks_listener(_cfg(tmp_path, hidden_sync_port=port))
         assert second is None
     finally:
         first.shutdown()
@@ -219,6 +219,35 @@ def test_hide_pr_falls_back_to_cached_sha(tmp_path, monkeypatch):
     monkeypatch.setattr(mcp_server, "_github", gh)
     mcp_server.hide_pr("odoo/odoo#1")
     assert _hides(cfg) == {"odoo/odoo#1": "stale"}
+
+
+def test_an_agent_unhide_shows_on_a_page_rendered_after_the_browser_hide(tmp_path, monkeypatch):
+    from pr_dash import cli
+
+    cfg, mcp_server = _seeded_cfg(
+        tmp_path, monkeypatch, lambda c: _seed_pr(c, "odoo/odoo#1", "sha1"),
+    )
+    pages = []
+
+    def _render():
+        conn = db.connect(cfg.db_path)
+        cli._render_from_cache(conn, cfg)
+        conn.close()
+        html = cfg.html_path.read_text()
+        queue = json.loads(html.split("window.TAB_DATA = ", 1)[1].split(";\n", 1)[0])["queue"]
+        rendered_at = html.split('window.RENDERED_AT = "', 1)[1].split('"', 1)[0]
+        pages.append((rendered_at, queue[0]["hidden"]))
+        return True
+
+    monkeypatch.setattr(mcp_server, "_run_rerender", _render)
+    mcp_server._apply_mark_ops(cfg, [
+        {"kind": "hide", "op": "set", "key": "odoo/odoo#1", "guard": "sha1", "at": "t"}])
+    # The browser keeps the op until a page rendered after this confirmation loads.
+    sent = derive.now_utc("milliseconds")
+    assert _wait_for(lambda: len(pages) == 1) and pages[0][1] is True
+    mcp_server.unhide_pr("odoo/odoo#1")
+    assert _wait_for(lambda: len(pages) == 2)
+    assert pages[1][1] is False and derive.parse_iso(pages[1][0]) > derive.parse_iso(sent)
 
 
 # --- set_ai_review ----------------------------------------------------------

@@ -607,8 +607,7 @@ def commit_seen_baseline(
 
 
 def render(payload: list[dict], html_path: Path, *, offline: bool = False,
-           last_refresh: str | None = None, hidden_map: dict | None = None,
-           hidden_sync_port: int = 7391,
+           last_refresh: str | None = None, rendered_at: str, marks_port: int = 7391,
            tracked: list[dict] | None = None, mine: list[dict] | None = None) -> None:
     env = _env()
     template = env.get_template("index.html.j2")
@@ -633,8 +632,8 @@ def render(payload: list[dict], html_path: Path, *, offline: bool = False,
         },
         offline=offline,
         last_refresh=last_refresh or "",
-        hidden_server_json=_json_for_script(hidden_map or {}),
-        hidden_sync_port=hidden_sync_port,
+        rendered_at=rendered_at,
+        marks_port=marks_port,
         app_js=(assets_dir / "app.js").read_text(),
         app_css=(assets_dir / "app.css").read_text(),
         diff2html_css=(assets_dir / "vendor" / "diff2html" / "diff2html.min.css").read_text(),

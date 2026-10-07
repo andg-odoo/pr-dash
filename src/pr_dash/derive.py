@@ -765,8 +765,8 @@ def bucket_for(score: float, M: float, L: float, XL: float) -> str:
     return "XL"
 
 
-def now_utc() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+def now_utc(timespec: str = "seconds") -> str:
+    return datetime.now(timezone.utc).isoformat(timespec=timespec)
 
 
 def parse_iso(s: str) -> datetime:
