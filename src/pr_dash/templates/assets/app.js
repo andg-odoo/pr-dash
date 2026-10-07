@@ -33,8 +33,14 @@
   const MARKS_PORT = window.MARKS_PORT || null;
 
   // Mark ops `{kind, op, key, guard?, at, sent?}`, oldest first, `sent` when the listener took it.
-  function loadQueue() { const q = loadJSON(MARK_QUEUE_KEY); return Array.isArray(q) ? q : []; }
-  function saveQueue(q) { localStorage.setItem(MARK_QUEUE_KEY, JSON.stringify(q)); }
+  let queue = null;
+  // Read once per page, re-read when another tab writes it.
+  addEventListener("storage", e => { if (e.key === MARK_QUEUE_KEY) queue = null; });
+  function loadQueue() {
+    if (!queue) { const q = loadJSON(MARK_QUEUE_KEY); queue = Array.isArray(q) ? q : []; }
+    return queue;
+  }
+  function saveQueue(q) { queue = q; localStorage.setItem(MARK_QUEUE_KEY, JSON.stringify(q)); }
   // Each call follows the post in flight, then posts what is still unsent.
   let flushing = Promise.resolve();
   function flushQueue() {
@@ -358,7 +364,6 @@
   function dismissMark(kind, members) {
     return {
       label: "dismiss",
-      kind,
       on: r => members(r).every(m => isDismissed(kind, m)),
       set: (r, on) => members(r).forEach(m => setMark(kind, m.id, on)),
       show: "show-dismissed",
@@ -623,7 +628,7 @@
         bucket: { label: "bucket size", by: by(bucketRank) },
         size: { label: "size desc", by: by(pr => -(pr.additions + pr.deletions)) },
       },
-      marks: { h: { label: "hide", kind: "hide", on: isHidden, set: setHidden, show: "show-hidden" } },
+      marks: { h: { label: "hide", on: isHidden, set: setHidden, show: "show-hidden" } },
       // A PR hidden with no row left to take stays in the detail, where the other views clear it.
       keepsDetail: true,
       first: () => (TAB_DATA.queue.find(p => !p.is_archived && !p.is_draft) || TAB_DATA.queue[0])?.id,
@@ -1086,7 +1091,6 @@
       marks: {
         a: {
           label: "acknowledge",
-          kind: "ack",
           on: isAcked,
           set(s, on) {
             if (mineBand(s) === "done" || !s.actions.length) return;
@@ -1452,6 +1456,12 @@
 
   // A page rendered after the listener confirmed an op already bakes it in.
   saveQueue(loadQueue().filter(op => !op.sent || new Date(op.sent) >= new Date(window.RENDERED_AT)));
+  // A hide or ack made against an older head or state is void, as the server would find it.
+  const guards = {
+    hide: Object.fromEntries(TAB_DATA.queue.map(pr => [pr.id, pr.heads_key])),
+    ack: Object.fromEntries(TAB_DATA.mine.map(s => [s.key, s.fingerprint])),
+  };
+  saveQueue(loadQueue().filter(op => !guards[op.kind] || guards[op.kind][op.key] === op.guard));
   // One-time upgrade: the old queue joins the new one, then each old map entry the page lacks.
   const oldQueue = loadJSON("pr-dash:hidden-queue:v1");
   if (Array.isArray(oldQueue)) {
