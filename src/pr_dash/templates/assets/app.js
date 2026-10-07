@@ -30,7 +30,7 @@
   const STATE_KEY = "pr-dash:filters:v1";
   const TAB_KEY = "pr-dash:tab:v1";
   const HIDDEN_KEY = "pr-dash:hidden:v1";
-  const HIDDEN_QUEUE_KEY = "pr-dash:hidden-queue:v1";
+  const MARK_QUEUE_KEY = "pr-dash:mark-queue:v1";
   const HIDDEN_SERVER = window.HIDDEN_SERVER || {};
   const HIDDEN_SYNC_PORT = window.HIDDEN_SYNC_PORT || null;
 
@@ -38,39 +38,46 @@
   const loadHidden = () => loadJSON(HIDDEN_KEY) || {};
   function saveHidden(h) { localStorage.setItem(HIDDEN_KEY, JSON.stringify(h)); }
 
-  // Unsynced listener ops, each posted to its route (`hidden` when unset) once it answers.
-  function loadQueue() { const q = loadJSON(HIDDEN_QUEUE_KEY); return Array.isArray(q) ? q : []; }
-  function saveQueue(q) { localStorage.setItem(HIDDEN_QUEUE_KEY, JSON.stringify(q)); }
+  // Mark ops not yet confirmed by the listener, each `{kind, op, key, guard?, at}`, oldest first.
+  function loadQueue() { const q = loadJSON(MARK_QUEUE_KEY); return Array.isArray(q) ? q : []; }
+  function saveQueue(q) { localStorage.setItem(MARK_QUEUE_KEY, JSON.stringify(q)); }
   function enqueueOp(op) { const q = loadQueue(); q.push(op); saveQueue(q); }
   function flushQueue() {
-    const q = loadQueue();
-    if (!q.length || !HIDDEN_SYNC_PORT) return;
-    for (const route of new Set(q.map(op => op.route || "hidden"))) {
-      const ops = q.filter(op => (op.route || "hidden") === route);
-      const sent = new Set(ops.map(op => JSON.stringify(op)));
-      fetch(`http://127.0.0.1:${HIDDEN_SYNC_PORT}/${route}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ops }),
-      }).then(r => {
-        if (r.ok) saveQueue(loadQueue().filter(op => !sent.has(JSON.stringify(op))));
-      }).catch(() => {});
-    }
+    const ops = loadQueue();
+    if (!ops.length || !HIDDEN_SYNC_PORT) return;
+    const sent = new Set(ops.map(op => JSON.stringify(op)));
+    fetch(`http://127.0.0.1:${HIDDEN_SYNC_PORT}/marks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ops }),
+    }).then(r => {
+      if (r.ok) saveQueue(loadQueue().filter(op => !sent.has(JSON.stringify(op))));
+    }).catch(() => {});
+  }
+  const pendingOp = (kind, key) => loadQueue().findLast(op => op.kind === kind && op.key === key);
+
+  // The hide and ack ops the old queue still holds go first on the new one, in its op shape.
+  const oldQueue = loadJSON("pr-dash:hidden-queue:v1");
+  if (Array.isArray(oldQueue)) {
+    saveQueue([...oldQueue.map(op => op.route === "mine-ack"
+      ? { kind: "ack", op: { ack: "set", unack: "clear" }[op.op], key: op.key, guard: op.fingerprint, at: op.at }
+      : { kind: "hide", op: { hide: "set", unhide: "clear" }[op.op], key: op.pr_id, guard: op.head_sha,
+          at: op.hidden_at }), ...loadQueue()]);
+    localStorage.removeItem("pr-dash:hidden-queue:v1");
   }
 
   // The server map wins, queued ops replay on top, and each legacy local-only hide is queued once.
   const localHidden = loadHidden();
-  const hideOps = () => loadQueue().filter(op => !op.route);
-  const queuedIds = new Set(hideOps().map(op => op.pr_id));
+  const hideOps = () => loadQueue().filter(op => op.kind === "hide");
+  const queuedIds = new Set(hideOps().map(op => op.key));
   for (const id of Object.keys(localHidden)) {
     if (HIDDEN_SERVER[id] || queuedIds.has(id)) continue;
-    enqueueOp({ op: "hide", pr_id: id,
-                head_sha: localHidden[id].head_sha, hidden_at: localHidden[id].hidden_at });
+    enqueueOp({ kind: "hide", op: "set", key: id, guard: localHidden[id].head_sha, at: localHidden[id].hidden_at });
   }
   let hidden = { ...HIDDEN_SERVER };
   for (const op of hideOps()) {
-    if (op.op === "hide") hidden[op.pr_id] = { head_sha: op.head_sha, hidden_at: op.hidden_at };
-    else delete hidden[op.pr_id];
+    if (op.op === "set") hidden[op.key] = { head_sha: op.guard, hidden_at: op.at };
+    else delete hidden[op.key];
   }
   saveHidden(hidden);
 
@@ -88,16 +95,11 @@
   }
 
   function setHidden(pr, on) {
-    if (on) {
-      const entry = { head_sha: pr.heads_key, hidden_at: new Date().toISOString() };
-      hidden[pr.id] = entry;
-      saveHidden(hidden);
-      enqueueOp({ op: "hide", pr_id: pr.id, head_sha: entry.head_sha, hidden_at: entry.hidden_at });
-    } else {
-      delete hidden[pr.id];
-      saveHidden(hidden);
-      enqueueOp({ op: "unhide", pr_id: pr.id, head_sha: null, hidden_at: null });
-    }
+    const at = new Date().toISOString();
+    if (on) hidden[pr.id] = { head_sha: pr.heads_key, hidden_at: at };
+    else delete hidden[pr.id];
+    saveHidden(hidden);
+    enqueueOp({ kind: "hide", op: on ? "set" : "clear", key: pr.id, guard: on ? pr.heads_key : null, at });
     flushQueue();
   }
 
@@ -390,45 +392,35 @@
   }
 
   // Dismissals are local-first like hides, and the `pr-dash mcp` listener stamps them when it runs.
-  const dismissedKey = tab => `pr-dash:${tab}-dismissed:v1`;
-  function loadDismissed(tab) { const d = loadJSON(dismissedKey(tab)); return d && typeof d === "object" ? d : {}; }
+  const dismissedKey = kind => `pr-dash:${kind.replace("dismiss_", "")}-dismissed:v1`;
   const dismissed = {};
-  // A local entry beats the baked stamp, an ISO time dismissing and `false` restoring.
-  const isDismissed = (tab, row) => row.id in dismissed[tab]
-    ? dismissed[tab][row.id] !== false : !!row.dismissed_at;
-  function pruneDismissed(tab, rows) {
-    const stamped = new Set(rows.filter(r => r.dismissed_at).map(r => r.id));
-    // Once the listener cleared the stamp, a restore marker has nothing left to override.
-    for (const id of Object.keys(dismissed[tab])) {
-      if (dismissed[tab][id] === false && !stamped.has(id)) delete dismissed[tab][id];
+  // A pending op beats the local entry, which beats the baked stamp.
+  function isDismissed(kind, row) {
+    const op = pendingOp(kind, row.id);
+    return op ? op.op === "set" : !!dismissed[kind][row.id] || !!row.dismissed_at;
+  }
+
+  function setDismissed(kind, rows, on) {
+    const at = new Date().toISOString();
+    for (const row of rows) {
+      if (on) dismissed[kind][row.id] = at;
+      else delete dismissed[kind][row.id];
+      row.dismissed_at = on ? at : null;
+      enqueueOp({ kind, op: on ? "set" : "clear", key: row.id, at });
     }
-    localStorage.setItem(dismissedKey(tab), JSON.stringify(dismissed[tab]));
+    localStorage.setItem(dismissedKey(kind), JSON.stringify(dismissed[kind]));
+    flushQueue();
   }
 
-  function setDismissed(tab, ids, on) {
-    const map = dismissed[tab];
-    const when = new Date().toISOString();
-    for (const id of ids) map[id] = on ? when : false;
-    localStorage.setItem(dismissedKey(tab), JSON.stringify(map));
-    if (!HIDDEN_SYNC_PORT) return;
-    fetch(`http://127.0.0.1:${HIDDEN_SYNC_PORT}/${tab}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        ops: ids.map(id => ({ op: on ? "dismiss" : "restore", pr_id: id, dismissed_at: map[id] || null })),
-      }),
-    }).catch(() => {});
-  }
-
-  // The x mark that dismisses each of a row's `members` through its `route` on the listener.
-  function dismissMark(route, members) {
-    dismissed[route] = loadDismissed(route);
+  // The x mark that dismisses each of a row's `members` as a mark of `kind`.
+  function dismissMark(kind, members) {
+    const map = loadJSON(dismissedKey(kind));
+    dismissed[kind] = map && typeof map === "object" ? map : {};
     return {
       label: "dismiss",
-      route,
-      members,
-      on: r => members(r).every(m => isDismissed(route, m)),
-      set: (r, on) => setDismissed(route, members(r).map(m => m.id), on),
+      kind,
+      on: r => members(r).every(m => isDismissed(kind, m)),
+      set: (r, on) => setDismissed(kind, members(r), on),
       show: "show-dismissed",
     };
   }
@@ -579,7 +571,7 @@
 
   // ---- mine: Authored PRs as Branch sets, one row per head branch, each member inline --
 
-  const isMineDismissed = s => s.members.every(m => isDismissed("mine", m));
+  const isMineDismissed = s => s.members.every(m => isDismissed("dismiss_mine", m));
 
   // Local-first like dismissals, an Acknowledge holds only for the fingerprint it was taken at.
   const ACK_KEY = "pr-dash:mine-ack:v1";
@@ -697,7 +689,7 @@
         bucket: { label: "bucket size", by: by(bucketRank) },
         size: { label: "size desc", by: by(pr => -(pr.additions + pr.deletions)) },
       },
-      marks: { h: { label: "hide", on: isHidden, set: setHidden, show: "show-hidden" } },
+      marks: { h: { label: "hide", kind: "hide", on: isHidden, set: setHidden, show: "show-hidden" } },
       // A PR hidden with no row left to take stays in the detail, where the other views clear it.
       keepsDetail: true,
       first: () => (TAB_DATA.queue.find(p => !p.is_archived && !p.is_draft) || TAB_DATA.queue[0])?.id,
@@ -1057,11 +1049,11 @@
         age: { label: "oldest opened", by: (a, b) => (b.age_days - a.age_days) || byActivity(a, b) },
         repo: { label: "repo, then number", by: (a, b) => a.repo.localeCompare(b.repo) || a.number - b.number },
       },
-      marks: { x: dismissMark("tracked", t => [t]) },
+      marks: { x: dismissMark("dismiss_tracked", t => [t]) },
       badges: { resolved: "done", reopened: "reopened", pushed: "↑push", reply: "reply", new: "new" },
 
       counts(visible) {
-        const live = TAB_DATA.tracked.filter(t => !isDismissed("tracked", t));
+        const live = TAB_DATA.tracked.filter(t => !isDismissed("dismiss_tracked", t));
         const gone = TAB_DATA.tracked.length - live.length;
         const moved = live.filter(hasMoved).length;
         return {
@@ -1075,7 +1067,7 @@
 
       rowHTML(t, badges) {
         const resolved = isResolved(t);
-        const gone = isDismissed("tracked", t);
+        const gone = isDismissed("dismiss_tracked", t);
         const ci = t.ci_state && t.ci_state !== "SUCCESS"
           ? `<span class="tr-ci tr-ci-${escapeHTML(String(t.ci_state).toLowerCase())}">ci ${escapeHTML(t.ci_state.toLowerCase())}</span>`
           : "";
@@ -1119,7 +1111,7 @@
         <div class="detail-links">
           <a href="${escapeHTML(t.url)}" target="_blank" rel="noopener">GitHub: ${escapeHTML(t.repo_short)}#${t.number} ↗</a>
           <button class="detail-hide" type="button"
-                  data-key="x">${isDismissed("tracked", t) ? "Restore" : "Dismiss"}</button>
+                  data-key="x">${isDismissed("dismiss_tracked", t) ? "Restore" : "Dismiss"}</button>
         </div>`, tabs: [{ label: "Overview", sections: () => `
         <section class="section">
           <h3>Status</h3>
@@ -1160,17 +1152,18 @@
       marks: {
         a: {
           label: "acknowledge",
+          kind: "ack",
           on: isAcked,
           set(s, on) {
             if (mineBand(s) === "done" || !s.actions.length) return;
             localAcks[s.key] = { fingerprint: s.fingerprint, on };
             localStorage.setItem(ACK_KEY, JSON.stringify(localAcks));
-            enqueueOp({ route: "mine-ack", op: on ? "ack" : "unack", key: s.key, fingerprint: s.fingerprint,
+            enqueueOp({ kind: "ack", op: on ? "set" : "clear", key: s.key, guard: s.fingerprint,
                         at: new Date().toISOString() });
             flushQueue();
           },
         },
-        x: dismissMark("mine", s => s.members),
+        x: dismissMark("dismiss_mine", s => s.members),
       },
       // Its buttons take the next row on dismiss like its keys, unlike Tracked's.
       clickAdvances: true,
@@ -1426,7 +1419,6 @@
 
   for (const [key, d] of Object.entries(VIEWS)) {
     Object.assign(d, { key, rows: TAB_DATA[key], list: document.getElementById(`${key}-list`), selected: null, visible: [] });
-    for (const m of Object.values(d.marks)) if (m.route) pruneDismissed(m.route, d.rows.flatMap(m.members));
     d.link ??= key;
     d.listHTML ??= (rows, rowHTML) => rows.map(rowHTML).join("");
     for (const g of Object.keys(d.chips)) filters[g] ??= new Set();

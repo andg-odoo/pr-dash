@@ -423,8 +423,8 @@ def test_acknowledge_through_the_listener_and_fyi_clearing_on_a_look(tmp_path):
     _mine(conn, "odoo/enterprise#132695", ec, "2026-10-05T06:00:00Z", comments=reply)
 
     sets, seen_updates = render.build_mine_payload(conn, "andg")
-    assert mcp_server._apply_ack_ops(cfg, [
-        {"op": "ack", "key": ec, "fingerprint": sets[0]["fingerprint"]}]) == 1
+    assert mcp_server._apply_mark_ops(cfg, [
+        {"kind": "ack", "op": "set", "key": ec, "guard": sets[0]["fingerprint"]}]) == 1
     sets, _ = render.build_mine_payload(conn, "andg")
     ec_set = next(s for s in sets if s["key"] == ec)
     # Acknowledged, it sits in Open with its Action items, and the reply shows until a look.
@@ -445,9 +445,9 @@ def test_dismissed_mine_set_stays_hidden_after_a_refresh(tmp_path):
     conn = _conn(tmp_path)
     ec, _, _ = _mine_sets(conn)
     cfg = SimpleNamespace(db_path=tmp_path / "t.db")
-    ops = [{"op": "dismiss", "pr_id": pr_id}
+    ops = [{"kind": "dismiss_mine", "op": "set", "key": pr_id}
            for pr_id in ("odoo/odoo#290109", "odoo/enterprise#132695")]
-    assert mcp_server._apply_dismiss_ops(cfg, "mine", ops) == 2
+    assert mcp_server._apply_mark_ops(cfg, ops) == 2
 
     # The next refresh writes fresh state for the same PRs.
     _mine(conn, "odoo/enterprise#132695", ec, "2026-10-05T00:00:00Z")

@@ -125,7 +125,7 @@ def test_list_prs_ignores_a_hide_made_before_a_push(tmp_path, monkeypatch):
 # --- listener ---------------------------------------------------------------
 
 
-def test_hidden_listener_post_get_and_cors(tmp_path):
+def test_marks_listener_applies_ops_and_answers_cors(tmp_path):
     from pr_dash import mcp_server
 
     cfg = _cfg(tmp_path, hidden_sync_port=0)
@@ -134,37 +134,40 @@ def test_hidden_listener_post_get_and_cors(tmp_path):
     try:
         port = server.server_address[1]
 
-        # POST ops -> stored, bad ones skipped, CORS header present.
+        # Every kind through one route, malformed ops skipped, an ack never stored unguarded.
         body = json.dumps({"ops": [
-            {"op": "hide", "pr_id": "odoo/odoo#1", "head_sha": "abc", "hidden_at": "t"},
-            {"op": "hide", "pr_id": "odoo/odoo#2", "head_sha": "def", "hidden_at": "t"},
-            {"op": "unhide", "pr_id": "odoo/odoo#2"},
-            {"op": "hide"},
-            {"op": "bogus", "pr_id": "odoo/odoo#3"},
+            {"kind": "hide", "op": "set", "key": "odoo/odoo#1", "guard": "abc", "at": "t"},
+            {"kind": "hide", "op": "set", "key": "odoo/odoo#2", "guard": "def", "at": "t"},
+            {"kind": "hide", "op": "clear", "key": "odoo/odoo#2"},
+            {"kind": "dismiss_mine", "op": "set", "key": "odoo/odoo#3", "at": "t"},
+            {"kind": "ack", "op": "set", "key": "feat"},
+            {"kind": "hide", "op": "bogus", "key": "odoo/odoo#4"},
+            {"kind": "bogus", "op": "set", "key": "odoo/odoo#4"},
+            {"op": "set"},
+            None,
         ]})
         conn = http.client.HTTPConnection("127.0.0.1", port)
-        conn.request("POST", "/hidden", body, {"Content-Type": "application/json"})
+        conn.request("POST", "/marks", body, {"Content-Type": "application/json"})
         resp = conn.getresponse()
         assert resp.status == 200
         assert resp.getheader("Access-Control-Allow-Origin") == "*"
-        assert json.loads(resp.read()) == {"ok": True, "count": 1}
+        assert json.loads(resp.read()) == {"ok": True, "count": 4}
         assert _hides(cfg) == {"odoo/odoo#1": "abc"}
+        conn = db.connect(cfg.db_path)
+        assert ([dict(m) for m in db.marks(conn, "dismiss_mine").values()], db.marks(conn, "ack")) \
+            == ([{"kind": "dismiss_mine", "key": "odoo/odoo#3", "guard": None, "at": "t"}], {})
+        conn.close()
 
-        # GET returns the current map.
         conn = http.client.HTTPConnection("127.0.0.1", port)
-        conn.request("GET", "/hidden")
-        resp = conn.getresponse()
-        assert resp.status == 200
-        assert json.loads(resp.read()) == {
-            "odoo/odoo#1": {"head_sha": "abc", "hidden_at": "t"},
-        }
+        conn.request("POST", "/marks", "{not json", {"Content-Type": "application/json"})
+        assert conn.getresponse().status == 400
 
         # OPTIONS preflight advertises the methods/headers.
         conn = http.client.HTTPConnection("127.0.0.1", port)
-        conn.request("OPTIONS", "/hidden")
+        conn.request("OPTIONS", "/marks")
         resp = conn.getresponse()
         assert resp.status == 204
-        assert resp.getheader("Access-Control-Allow-Methods") == "GET, POST, OPTIONS"
+        assert resp.getheader("Access-Control-Allow-Methods") == "POST, OPTIONS"
         assert resp.getheader("Access-Control-Allow-Headers") == "content-type"
     finally:
         server.shutdown()
@@ -198,8 +201,9 @@ def test_hide_pr_records_live_sha(tmp_path, monkeypatch):
     gh.add("odoo/odoo", 1, head_sha="live1")
     gh.add("odoo/enterprise", 2, head_sha="live2")
     monkeypatch.setattr(mcp_server, "_github", gh)
-    mcp_server.hide_pr("odoo/odoo#1")
+    assert mcp_server.hide_pr("odoo/odoo#1")["hidden_count"] == 1
     assert _hides(cfg) == {"odoo/odoo#1": "live1+live2"}
+    assert mcp_server.unhide_pr("odoo/odoo#1") == {"id": "odoo/odoo#1", "hidden": False, "hidden_count": 0}
 
 
 def test_hide_pr_falls_back_to_cached_sha(tmp_path, monkeypatch):

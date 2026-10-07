@@ -428,13 +428,14 @@ def hide_pr(ref: str) -> dict:
             pass
         members.append({**member, "head_sha": live or member["head_sha"]})
     live_set = branch_set.from_item(item, members)
-    count = _apply_hide_ops(cfg, [{
-        "op": "hide",
-        "pr_id": item["id"],
-        "head_sha": live_set.heads_key,
-        "hidden_at": derive.now_utc(),
+    _apply_mark_ops(cfg, [{
+        "kind": "hide",
+        "op": "set",
+        "key": item["id"],
+        "guard": live_set.heads_key,
+        "at": derive.now_utc(),
     }])
-    return {"id": item["id"], "hidden": True, "hidden_count": count}
+    return {"id": item["id"], "hidden": True, "hidden_count": _hidden_count(cfg)}
 
 
 @mcp.tool()
@@ -446,8 +447,8 @@ def unhide_pr(ref: str) -> dict:
     """
     cfg = _get_cfg()
     item = tab.QUEUE.find(cfg, ref)
-    count = _apply_hide_ops(cfg, [{"op": "unhide", "pr_id": item["id"]}])
-    return {"id": item["id"], "hidden": False, "hidden_count": count}
+    _apply_mark_ops(cfg, [{"kind": "hide", "op": "clear", "key": item["id"]}])
+    return {"id": item["id"], "hidden": False, "hidden_count": _hidden_count(cfg)}
 
 
 @mcp.tool()
@@ -640,7 +641,7 @@ def _make_handler(cfg: config.Config) -> type[BaseHTTPRequestHandler]:
         def _cors(self) -> None:
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Access-Control-Allow-Headers", "content-type")
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
 
         def _send_json(self, code: int, body: dict) -> None:
             payload = json.dumps(body).encode()
@@ -658,21 +659,8 @@ def _make_handler(cfg: config.Config) -> type[BaseHTTPRequestHandler]:
             self._cors()
             self.end_headers()
 
-        def do_GET(self) -> None:
-            if self.path.split("?", 1)[0] != "/hidden":
-                self._send_json(404, {"error": "not found"})
-                return
-            conn = db.connect(cfg.db_path)
-            try:
-                hides = db.marks(conn, "hide")
-            finally:
-                conn.close()
-            self._send_json(200, {key: {"head_sha": m["guard"], "hidden_at": m["at"]}
-                                  for key, m in hides.items()})
-
         def do_POST(self) -> None:
-            path = self.path.split("?", 1)[0]
-            if path not in ("/hidden", "/tracked", "/mine", "/mine-ack"):
+            if self.path.split("?", 1)[0] != "/marks":
                 self._send_json(404, {"error": "not found"})
                 return
             length = int(self.headers.get("Content-Length") or 0)
@@ -683,77 +671,42 @@ def _make_handler(cfg: config.Config) -> type[BaseHTTPRequestHandler]:
             except (ValueError, AttributeError):
                 self._send_json(400, {"error": "invalid body"})
                 return
-            if path == "/mine-ack":
-                self._send_json(200, {"ok": True, "count": _apply_ack_ops(cfg, ops)})
-                return
-            if path != "/hidden":
-                count = _apply_dismiss_ops(cfg, path[1:], ops)
-                self._send_json(200, {"ok": True, "count": count})
-                return
-            self._send_json(200, {"ok": True, "count": _apply_hide_ops(cfg, ops)})
+            self._send_json(200, {"ok": True, "count": _apply_mark_ops(cfg, ops)})
 
     return HiddenSyncHandler
 
 
-def _apply_hide_ops(cfg: config.Config, ops: list) -> int:
-    """Store hide/unhide ops, each hide guarded by the heads it was made at, returning the hides."""
+# The mark kinds the listener stores, each mapped to whether setting one needs a guard.
+_MARK_KINDS = {"hide": False, "dismiss_tracked": False, "dismiss_mine": False, "ack": True}
+
+
+def _apply_mark_ops(cfg: config.Config, ops: list) -> int:
+    """Store set/clear mark ops on a connection of its own, returning how many were well formed."""
+    applied = 0
     conn = db.connect(cfg.db_path)
     try:
         with db.transaction(conn):
             for op in ops:
-                pr_id = (op or {}).get("pr_id")
-                if pr_id and op.get("op") == "hide":
-                    db.set_mark(conn, "hide", pr_id, op.get("head_sha"), op.get("hidden_at"))
-                elif pr_id and op.get("op") == "unhide":
-                    db.clear_marks(conn, "hide", [pr_id])
+                kind, key, verb = ((op or {}).get(f) for f in ("kind", "key", "op"))
+                if kind not in _MARK_KINDS or not key or verb not in ("set", "clear") or (
+                        verb == "set" and _MARK_KINDS[kind] and not op.get("guard")):
+                    continue
+                if verb == "set":
+                    db.set_mark(conn, kind, key, op.get("guard"), op.get("at") or derive.now_utc())
+                else:
+                    db.clear_marks(conn, kind, [key])
+                applied += 1
+    finally:
+        conn.close()
+    return applied
+
+
+def _hidden_count(cfg: config.Config) -> int:
+    conn = db.connect(cfg.db_path)
+    try:
         return len(db.marks(conn, "hide"))
     finally:
         conn.close()
-
-
-def _apply_dismiss_ops(cfg: config.Config, tab: str, ops: list) -> int:
-    """Store dismiss/restore ops for `tab` on a connection of its own, the listener's thread."""
-    applied = 0
-    conn = db.connect(cfg.db_path)
-    try:
-        with db.transaction(conn):
-            for op in ops:
-                pr_id = (op or {}).get("pr_id")
-                kind = (op or {}).get("op")
-                if not pr_id or kind not in ("dismiss", "restore"):
-                    continue
-                if kind == "dismiss":
-                    db.set_mark(conn, f"dismiss_{tab}", pr_id, None,
-                                op.get("dismissed_at") or derive.now_utc())
-                else:
-                    db.clear_marks(conn, f"dismiss_{tab}", [pr_id])
-                applied += 1
-    finally:
-        conn.close()
-    return applied
-
-
-def _apply_ack_ops(cfg: config.Config, ops: list) -> int:
-    """Store dashboard Acknowledge ops, each an ack of a Branch set at the fingerprint it showed."""
-    applied = 0
-    conn = db.connect(cfg.db_path)
-    try:
-        with db.transaction(conn):
-            for op in ops:
-                key = (op or {}).get("key")
-                kind = (op or {}).get("op")
-                if not key or kind not in ("ack", "unack") or (
-                        kind == "ack" and not op.get("fingerprint")):
-                    continue
-                if kind == "ack":
-                    db.set_mark(conn, "ack", key, op["fingerprint"],
-                                op.get("at") or derive.now_utc())
-                else:
-                    db.clear_marks(conn, "ack", [key])
-                applied += 1
-    finally:
-        conn.close()
-    return applied
 
 
 def start_hidden_listener(cfg: config.Config) -> ThreadingHTTPServer | None:
