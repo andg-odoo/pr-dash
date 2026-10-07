@@ -1,9 +1,7 @@
 (function () {
   "use strict";
 
-  const PRS = window.PR_DATA || [];
-  const TRACKED = window.TRACKED_DATA || [];
-  const MINE = window.MINE_DATA || [];
+  const { queue: PRS, tracked: TRACKED, mine: MINE } = window.TAB_DATA;
   const md = window.markdownit({
     html: false,        // strip raw HTML: prevents <script> in PR bodies from firing
     linkify: true,      // turn bare URLs into links
@@ -18,28 +16,22 @@
     tokens[idx].attrSet("rel", "noopener");
     return _defaultLinkOpen(tokens, idx, options, env, self);
   };
-  const listEl = document.getElementById("pr-list");
+  const listEl = document.getElementById("queue-list");
   const detailEl = document.getElementById("detail");
   const visibleCountEl = document.getElementById("visible-count");
   const totalCountEl = document.getElementById("total-count");
   const kpiEl = document.getElementById("kpi");
   const lookCountEl = document.getElementById("look-count");
   const lastRefreshEl = document.getElementById("last-refresh");
-  const sortEl = document.getElementById("sort");
+  const sortEl = document.getElementById("queue-sort");
   const resetBtn = document.getElementById("reset-filters");
   const searchEl = document.getElementById("search");
 
   const trackedListEl = document.getElementById("tracked-list");
   const tabsEl = document.getElementById("tabs");
   const trackedTabCountEl = document.getElementById("tracked-tab-count");
-  const queueFiltersEl = document.getElementById("queue-filters");
-  const trackedFiltersEl = document.getElementById("tracked-filters");
-  const queueSortBarEl = document.getElementById("queue-sort-bar");
-  const trackedSortBarEl = document.getElementById("tracked-sort-bar");
   const mineListEl = document.getElementById("mine-list");
   const mineTabCountEl = document.getElementById("mine-tab-count");
-  const mineSortBarEl = document.getElementById("mine-sort-bar");
-  const mineFiltersEl = document.getElementById("mine-filters");
 
   const STATE_KEY = "pr-dash:filters:v1";
   const TAB_KEY = "pr-dash:tab:v1";
@@ -214,7 +206,7 @@
   }
 
   function buildChips(groupId, values, getLabel) {
-    const host = document.getElementById(groupId + "-chips");
+    const host = document.querySelector(`.filter-group[data-group="${groupId}"] .chips`);
     host.innerHTML = "";
     values.forEach(v => {
       const chip = document.createElement("button");
@@ -1722,15 +1714,11 @@
     tabsEl.querySelectorAll(".tab").forEach(b => {
       b.classList.toggle("is-active", b.dataset.tab === activeTab);
     });
-    listEl.hidden = activeTab !== "queue";
-    trackedListEl.hidden = activeTab !== "tracked";
-    mineListEl.hidden = activeTab !== "mine";
-    queueFiltersEl.hidden = activeTab !== "queue";
-    trackedFiltersEl.hidden = activeTab !== "tracked";
-    mineFiltersEl.hidden = activeTab !== "mine";
-    queueSortBarEl.hidden = activeTab !== "queue";
-    trackedSortBarEl.hidden = activeTab !== "tracked";
-    mineSortBarEl.hidden = activeTab !== "mine";
+    for (const tab of TABS) {
+      for (const part of ["filters", "sort-bar", "list"]) {
+        document.getElementById(`${tab}-${part}`).hidden = tab !== activeTab;
+      }
+    }
     searchEl.placeholder = {
       queue: "Search title, #, author, module…  ( / )",
       tracked: "Search tracked title, #, author…  ( / )",

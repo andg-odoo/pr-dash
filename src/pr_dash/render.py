@@ -613,13 +613,15 @@ def render(payload: list[dict], html_path: Path, *, offline: bool = False,
     template = env.get_template("index.html.j2")
     assets_dir = TEMPLATES_DIR / "assets"
     html = template.render(
-        prs_json=_json_for_script(payload),
+        tab_data_json=_json_for_script(
+            {"queue": payload, "tracked": tracked or [], "mine": mine or []}
+        ),
         pr_count=len(payload),
-        tracked_json=_json_for_script(tracked or []),
-        tracked_count=sum(not t["dismissed_at"] for t in tracked or []),
-        mine_json=_json_for_script(mine or []),
-        mine_count=sum(s["band"] != "done" and not all(m["dismissed_at"] for m in s["members"])
-                       for s in mine or []),
+        counts={
+            "tracked": sum(not t["dismissed_at"] for t in tracked or []),
+            "mine": sum(s["band"] != "done" and not all(m["dismissed_at"] for m in s["members"])
+                        for s in mine or []),
+        },
         offline=offline,
         last_refresh=last_refresh or "",
         hidden_server_json=_json_for_script(hidden_map or {}),

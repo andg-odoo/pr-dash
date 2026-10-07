@@ -7,6 +7,18 @@
 <style>{{ app_css|safe }}</style>
 </head>
 <body>
+  {% set views = [
+    {"key": "queue", "marks": [("h", "hide")],
+     "groups": [("repo", "Repo"), ("bucket", "Bucket"), ("branch", "Branch"), ("state", "State")],
+     "sorts": [("default", "default"), ("req_age_desc", "requested oldest"),
+               ("req_age_asc", "requested newest"), ("bucket", "bucket size"), ("size", "size desc")]},
+    {"key": "tracked", "marks": [("x", "dismiss")], "groups": [("tracked-state", "Show")],
+     "sorts": [("active", "active first"), ("moved", "moved since last look"),
+               ("resolved", "merged / closed first"), ("age", "oldest opened"),
+               ("repo", "repo, then number")]},
+    {"key": "mine", "marks": [("a", "acknowledge"), ("x", "dismiss")],
+     "groups": [("mine-state", "Show")], "sorts": []},
+  ] %}
   {% if offline %}
   <div class="banner">Offline mode{% if last_refresh %} - last refresh {{ last_refresh }}{% endif %}</div>
   {% endif %}
@@ -16,13 +28,12 @@
       <header class="left-header">
         <h1>pr-dash</h1>
         <nav class="tabs" id="tabs">
-          <button type="button" class="tab is-active" data-tab="queue">queue</button>
-          <button type="button" class="tab" data-tab="tracked">
-            tracked <span class="tab-count" id="tracked-tab-count">{{ tracked_count }}</span>
+          {% for v in views %}
+          <button type="button" class="tab{% if loop.first %} is-active{% endif %}" data-tab="{{ v.key }}">
+            {{ v.key }}
+            {% if v.key in counts %}<span class="tab-count" id="{{ v.key }}-tab-count">{{ counts[v.key] }}</span>{% endif %}
           </button>
-          <button type="button" class="tab" data-tab="mine">
-            mine <span class="tab-count" id="mine-tab-count">{{ mine_count }}</span>
-          </button>
+          {% endfor %}
         </nav>
         <div class="meta">
           <span class="count-line">
@@ -41,76 +52,32 @@
                placeholder="Search title, #, author, module…  ( / )">
       </div>
 
-      <section class="filters" id="tracked-filters" hidden>
-        <div class="filter-group" data-group="tracked-state">
-          <div class="filter-label">Show</div>
-          <div class="chips" id="tracked-state-chips"></div>
+      {% for v in views %}
+      <section class="filters" id="{{ v.key }}-filters"{% if not loop.first %} hidden{% endif %}>
+        {% for group, label in v.groups %}
+        <div class="filter-group" data-group="{{ group }}">
+          <div class="filter-label">{{ label }}</div>
+          <div class="chips"></div>
         </div>
+        {% endfor %}
       </section>
 
-      <section class="filters" id="mine-filters" hidden>
-        <div class="filter-group" data-group="mine-state">
-          <div class="filter-label">Show</div>
-          <div class="chips" id="mine-state-chips"></div>
-        </div>
-      </section>
-
-      <section class="filters" id="queue-filters">
-        <div class="filter-group" data-group="repo">
-          <div class="filter-label">Repo</div>
-          <div class="chips" id="repo-chips"></div>
-        </div>
-        <div class="filter-group" data-group="bucket">
-          <div class="filter-label">Bucket</div>
-          <div class="chips" id="bucket-chips"></div>
-        </div>
-        <div class="filter-group" data-group="branch">
-          <div class="filter-label">Branch</div>
-          <div class="chips" id="branch-chips"></div>
-        </div>
-        <div class="filter-group" data-group="state">
-          <div class="filter-label">State</div>
-          <div class="chips" id="state-chips"></div>
-        </div>
-      </section>
-
-      <div class="sort-bar" id="queue-sort-bar">
+      <div class="sort-bar" id="{{ v.key }}-sort-bar"{% if not loop.first %} hidden{% endif %}>
+        {% if v.sorts %}
         <label>Sort:</label>
-        <select id="sort">
-          <option value="default">default</option>
-          <option value="req_age_desc">requested oldest</option>
-          <option value="req_age_asc">requested newest</option>
-          <option value="bucket">bucket size</option>
-          <option value="size">size desc</option>
+        <select id="{{ v.key }}-sort">
+          {% for value, label in v.sorts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
         </select>
-        <span class="kbd-hint" title="j/k move · o or enter open on GitHub · h hide · / search">
-          <kbd>j</kbd><kbd>k</kbd> move · <kbd>o</kbd> open · <kbd>h</kbd> hide
+        {% endif %}
+        {% set marks = v.marks|map("join", " ")|join(" · ") %}
+        <span class="kbd-hint" title="j/k move · o or enter open on GitHub · {{ marks }}{% if loop.first %} · / search{% endif %}">
+          <kbd>j</kbd><kbd>k</kbd> move · <kbd>o</kbd> open
+          {%- for k, label in v.marks %} · <kbd>{{ k }}</kbd> {{ label }}{% endfor %}
         </span>
       </div>
 
-      <div class="sort-bar" id="tracked-sort-bar" hidden>
-        <label>Sort:</label>
-        <select id="tracked-sort">
-          <option value="active">active first</option>
-          <option value="moved">moved since last look</option>
-          <option value="resolved">merged / closed first</option>
-          <option value="age">oldest opened</option>
-          <option value="repo">repo, then number</option>
-        </select>
-        <span class="kbd-hint" title="j/k move · o or enter open on GitHub · x dismiss">
-          <kbd>j</kbd><kbd>k</kbd> move · <kbd>o</kbd> open · <kbd>x</kbd> dismiss
-        </span>
-      </div>
-
-      <div class="sort-bar" id="mine-sort-bar" hidden>
-        <span class="kbd-hint" title="j/k move · o or enter open on GitHub · a acknowledge · x dismiss">
-          <kbd>j</kbd><kbd>k</kbd> move · <kbd>o</kbd> open · <kbd>a</kbd> acknowledge · <kbd>x</kbd> dismiss
-        </span>
-      </div>
-
-      <ol class="pr-list" id="pr-list"></ol>
-      <ol class="pr-list" id="tracked-list" hidden></ol>
-      <ol class="pr-list" id="mine-list" hidden></ol>
+      <ol class="pr-list" id="{{ v.key }}-list"{% if not loop.first %} hidden{% endif %}></ol>
+      {% endfor %}
     </aside>
 
     <main class="right" id="detail">
@@ -119,12 +86,9 @@
   </div>
 
   <script>
-    window.PR_DATA = {{ prs_json|safe }};
-    window.MY_LOGIN = window.PR_DATA[0]?.my_login || null;
+    window.TAB_DATA = {{ tab_data_json|safe }};
     window.HIDDEN_SERVER = {{ hidden_server_json|safe }};
     window.HIDDEN_SYNC_PORT = {{ hidden_sync_port }};
-    window.TRACKED_DATA = {{ tracked_json|safe }};
-    window.MINE_DATA = {{ mine_json|safe }};
   </script>
   <script>{{ diff2html_js|safe }}</script>
   <script>{{ markdown_it_js|safe }}</script>
