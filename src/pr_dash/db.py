@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import json
-import logging
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-log = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 30
 # A fetched_at no fetch ever wrote, so the row is fetched in full, its Discussion with it.
@@ -321,7 +319,6 @@ def _migrate(conn: sqlite3.Connection, db_path: Path) -> None:
     if current == SCHEMA_VERSION:
         return
     # The v30 move of the marks cannot be undone, so the old cache is kept for a rollback by hand.
-    hidden_json = db_path.parent / "hidden.json"
     backup_path = db_path.with_name(f"{db_path.name}.bak-v{current}")
     # A rerun after old code reopened a migrated cache must not overwrite the first, clean backup.
     if 0 < current < 30 and not backup_path.exists():
@@ -330,8 +327,6 @@ def _migrate(conn: sqlite3.Connection, db_path: Path) -> None:
             conn.backup(backup)
         finally:
             backup.close()
-    if 0 < current < 30 and hidden_json.exists():
-        hidden_json.replace(hidden_json.with_name("hidden.json.bak"))
     if current == 0:
         conn.executescript(SCHEMA_SQL)
     if current < 2:
@@ -569,14 +564,6 @@ def _migrate(conn: sqlite3.Connection, db_path: Path) -> None:
         conn.execute("UPDATE pr SET fetched_at = ?", (UNFETCHED,))
         conn.execute("DELETE FROM meta WHERE key = 'last_queue_refresh'")
     if current < 30:
-        hides = {}
-        if current:
-            try:
-                hides = json.loads(hidden_json.with_name("hidden.json.bak").read_text())
-            except FileNotFoundError:
-                pass
-            except (OSError, ValueError) as e:
-                log.warning("hides not migrated, hidden.json.bak kept as is: %s", e)
         with transaction(conn):
             tables = {
                 r[0] for r in conn.execute(
@@ -585,11 +572,6 @@ def _migrate(conn: sqlite3.Connection, db_path: Path) -> None:
             }
             if "mark" not in tables:
                 conn.execute(MARK_SCHEMA_SQL)
-            conn.executemany(
-                "INSERT OR REPLACE INTO mark (kind, key, guard, at) VALUES ('hide', ?, ?, ?)",
-                [(pr_id, (entry or {}).get("head_sha"), (entry or {}).get("hidden_at"))
-                 for pr_id, entry in (hides if isinstance(hides, dict) else {}).items()],
-            )
             for table in ("tracked", "mine"):
                 cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
                 if "dismissed_at" in cols:

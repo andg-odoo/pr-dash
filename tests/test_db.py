@@ -1,7 +1,6 @@
 import sqlite3
 from pathlib import Path
 
-import pytest
 
 from pr_dash import db
 
@@ -292,7 +291,7 @@ def test_same_second_comments_keep_their_stream_order(tmp_path):
     assert [c["comment_id"] for c in db.list_discussions(conn, "pr")["odoo/odoo#1"]] == ["b", "a"]
 
 
-def _v29_db(path, hidden_json):
+def _v29_db(path):
     conn = sqlite3.connect(path, isolation_level=None)
     conn.executescript(
         db.SCHEMA_SQL.replace(db.MARK_SCHEMA_SQL, "")
@@ -306,18 +305,16 @@ def _v29_db(path, hidden_json):
         + "INSERT INTO mine_ack VALUES ('branch', 'fp', 'a1');")
     conn.execute("PRAGMA user_version = 29")
     conn.close()
-    if hidden_json is not None:
-        (path.parent / "hidden.json").write_text(hidden_json)
 
 
 def test_migration_moves_every_mark_of_a_v29_cache_into_one_table(tmp_path):
     path = tmp_path / "pr_dash.db"
-    _v29_db(path, '{"odoo/odoo#9": {"head_sha": "a+b", "hidden_at": "h1"}}')
+    _v29_db(path)
 
     conn = db.connect(path)
     assert sorted(tuple(r) for r in conn.execute("SELECT * FROM mark")) == [
         ("ack", "branch", "fp", "a1"), ("dismiss_mine", "odoo/odoo#2", None, "d2"),
-        ("dismiss_tracked", "odoo/odoo#1", None, "d1"), ("hide", "odoo/odoo#9", "a+b", "h1")]
+        ("dismiss_tracked", "odoo/odoo#1", None, "d1")]
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert "mine_ack" not in tables
     assert all("dismissed_at" not in {r[1] for r in conn.execute(f"PRAGMA table_info({tab})")}
@@ -328,18 +325,6 @@ def test_migration_moves_every_mark_of_a_v29_cache_into_one_table(tmp_path):
     backup = sqlite3.connect(tmp_path / "pr_dash.db.bak-v29")
     assert (backup.execute("PRAGMA user_version").fetchone()[0],
             backup.execute("SELECT dismissed_at FROM tracked").fetchall()) == (29, [("d1",)])
-    assert sorted(p.name for p in tmp_path.glob("hidden.json*")) == ["hidden.json.bak"]
-
-
-@pytest.mark.parametrize("hidden_json", [None, "{not json"])
-def test_migration_without_a_readable_hidden_json_moves_the_other_marks(tmp_path, hidden_json):
-    path = tmp_path / "pr_dash.db"
-    _v29_db(path, hidden_json)
-
-    conn = db.connect(path)
-    assert (conn.execute("PRAGMA user_version").fetchone()[0], db.marks(conn, "hide"),
-            len(db.marks(conn, "dismiss_mine"))) == (db.SCHEMA_VERSION, {}, 1)
-    assert (tmp_path / "hidden.json.bak").exists() == (hidden_json is not None)
 
 
 def test_a_mark_whose_guard_moved_or_whose_row_is_gone_counts_as_none(tmp_path):

@@ -1462,37 +1462,6 @@
     ack: Object.fromEntries(TAB_DATA.mine.map(s => [s.key, s.fingerprint])),
   };
   saveQueue(loadQueue().filter(op => !guards[op.kind] || guards[op.kind][op.key] === op.guard));
-  // One-time upgrade: the old queue joins the new one, then each old map entry the page lacks.
-  const oldQueue = loadJSON("pr-dash:hidden-queue:v1");
-  if (Array.isArray(oldQueue)) {
-    saveQueue([...oldQueue.map(op => op.route === "mine-ack"
-      ? { kind: "ack", op: { ack: "set", unack: "clear" }[op.op], key: op.key, guard: op.fingerprint, at: op.at }
-      : { kind: "hide", op: { hide: "set", unhide: "clear" }[op.op], key: op.pr_id, guard: op.head_sha,
-          at: op.hidden_at }), ...loadQueue()]);
-    localStorage.removeItem("pr-dash:hidden-queue:v1");
-  }
-  const dismissEntry = (kind, rows) => (id, at) => {
-    const row = rows.find(r => r.id === id);
-    return row && [kind, at !== false, isDismissed(kind, row), undefined, at || undefined];
-  };
-  for (const [oldKey, entryMark] of Object.entries({
-    "pr-dash:hidden:v1": (id, h) => {
-      const pr = TAB_DATA.queue.find(p => p.id === id && p.heads_key === h?.head_sha);
-      return pr && ["hide", true, isHidden(pr), h.head_sha, h.hidden_at];
-    },
-    "pr-dash:tracked-dismissed:v1": dismissEntry("dismiss_tracked", TAB_DATA.tracked),
-    "pr-dash:mine-dismissed:v1": dismissEntry("dismiss_mine", TAB_DATA.mine.flatMap(s => s.members)),
-    "pr-dash:mine-ack:v1": (key, a) => {
-      const s = TAB_DATA.mine.find(s => s.key === key && s.fingerprint === a?.fingerprint);
-      return s && ["ack", a.on, isAcked(s), a.fingerprint];
-    },
-  })) {
-    for (const [key, entry] of Object.entries(loadJSON(oldKey) || {})) {
-      const [kind, on, shown, guard, at] = entryMark(key, entry) || [];
-      if (kind && on !== shown) setMark(kind, key, on, guard, at);
-    }
-    localStorage.removeItem(oldKey);
-  }
   flushQueue();
 
   updateKpi();
