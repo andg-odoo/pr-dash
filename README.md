@@ -238,6 +238,8 @@ must not be relied on:
 Because of both, tracking is **sticky, not a mirror**: once a PR is in, it stays
 until you dismiss or `untrack` it.
 
+A subscribed PR missing from the tab has never notified, so add it with `pr-dash track <ref>`.
+
 `pr-dash track <url>` also works for PRs you want to watch without subscribing
 on GitHub at all - and since pr-dash polls state itself, that's now a reasonable
 way to use it.

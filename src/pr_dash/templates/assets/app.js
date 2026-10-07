@@ -966,7 +966,7 @@
       search: "Search tracked title, #, author…  ( / )",
       placeholder: "Select a tracked PR on the left.",
       empty: () => TAB_DATA.tracked.length ? "Nothing matches. Clear the search or filters."
-        : "Nothing tracked yet. Subscribe to a PR on GitHub, or run `pr-dash track <url>`.",
+        : "Nothing tracked yet. Run `pr-dash track <url>`, as a GitHub subscription shows up only once it notifies.",
       haystack: t => [t.title, t.author, t.target_branch, t.repo, t.repo_short,
                       `${t.repo_short}#${t.number}`, String(t.number)].join(" "),
       chips: {
@@ -998,6 +998,7 @@
         return {
           visible: `${visible.length} / ${TAB_DATA.tracked.length}${gone ? `  ·  ${gone} dismissed` : ""}`,
           total: "tracked PRs",
+          totalTitle: "A subscribed PR that never notified is missing here until you run `pr-dash track <url>`.",
           look: moved ? `${moved} moved` : "",
           lookTitle: moved ? "Show only tracked PRs that moved since your last visit" : "",
           tab: live.length,
@@ -1215,6 +1216,7 @@
     const counts = d.counts(d.visible);
     visibleCountEl.textContent = counts.visible;
     totalCountEl.textContent = counts.total;
+    totalCountEl.title = counts.totalTitle ?? "";
     lookCountEl.textContent = counts.look;
     lookCountEl.title = counts.lookTitle;
     const tabCountEl = document.getElementById(`${d.key}-tab-count`);
