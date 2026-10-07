@@ -298,44 +298,12 @@ def mine_detail(cfg: Config, branch_set: dict) -> dict:
 # --- tracked PRs -------------------------------------------------------------
 
 def load_tracked(cfg: Config, *, include_dismissed: bool = False) -> list[dict]:
-    """Build the tracked list from the cache, read-only.
-
-    Like load_items, this deliberately skips commit_tab_seen_baseline: an
-    agent peeking must not consume the since-last-look deltas the dashboard is
-    about to show the user.
-    """
+    """Build the tracked list from the cache without moving the since-last-look baseline."""
     conn = db.connect(cfg.db_path)
     try:
-        items, _ = render.build_tracked_payload(conn)
-        if include_dismissed:
-            # build_tracked_payload only returns undismissed rows; fold the rest
-            # back in, flagged, rather than duplicating its shaping here.
-            live = {it["id"] for it in items}
-            for row in db.list_tracked(conn, include_dismissed=True):
-                if row["id"] in live or row["dismissed_at"] is None:
-                    continue
-                items.append({
-                    "id": row["id"], "repo": row["repo"],
-                    "repo_short": row["repo"].split("/")[-1],
-                    "number": row["number"], "url": row["url"],
-                    "title": row["title"], "author": row["author"],
-                    "state": row["state"], "is_draft": bool(row["is_draft"]),
-                    "target_branch": row["target_branch"],
-                    "ci_state": row["ci_state"], "body": row["body"],
-                    "comment_count": row["comment_count"] or 0,
-                    "review_count": row["review_count"] or 0,
-                    "thread_count": row["thread_count"] or 0,
-                    "activity_count": row["activity_count"] or 0,
-                    "unresolved_threads": row["unresolved_threads"] or 0,
-                    "discussion": [], "source": row["source"],
-                    "added_at": row["added_at"], "updated_at": row["updated_at"],
-                    "merged_at": row["merged_at"], "closed_at": row["closed_at"],
-                    "age_days": 0, "idle_days": 0, "since_last_look": [],
-                    "dismissed_at": row["dismissed_at"],
-                })
+        return render.build_tracked_payload(conn, include_dismissed=include_dismissed)[0]
     finally:
         conn.close()
-    return items
 
 
 _TRACKED_KEYS = (

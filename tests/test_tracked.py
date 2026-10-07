@@ -533,6 +533,8 @@ def test_load_tracked_include_dismissed_flags_them(tmp_path):
     _add(conn, "odoo/odoo#1")
     _add(conn, "odoo/odoo#2")
     db.set_dismissed(conn, "tracked", "odoo/odoo#2", "2026-08-02T00:00:00+00:00")
+    db.replace_discussion(conn, "odoo/odoo#2", derive.discussion_stream({"comments": {"nodes": [
+        {"author": {"login": "jov-odoo"}, "createdAt": "2026-08-01T00:00:00Z", "url": "c1", "body": "hi"}]}}))
     conn.close()
 
     cfg = SimpleNamespace(db_path=tmp_path / "t.db")
@@ -542,3 +544,4 @@ def test_load_tracked_include_dismissed_flags_them(tmp_path):
     assert {t["id"] for t in both} == {"odoo/odoo#1", "odoo/odoo#2"}
     dismissed = next(t for t in both if t["id"] == "odoo/odoo#2")
     assert dismissed["dismissed_at"] == "2026-08-02T00:00:00+00:00"
+    assert [g["entry"]["url"] for g in dismissed["discussion"]] == ["c1"]
