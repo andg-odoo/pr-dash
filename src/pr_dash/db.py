@@ -1037,17 +1037,21 @@ def update_tab_state(conn: sqlite3.Connection, tab: str, pr_id: str, row: dict) 
     conn.execute(f"UPDATE {tab} SET {sets} WHERE id = :id", {**values, "id": pr_id})
 
 
+_TRACKED_SELECT = (
+    "SELECT tracked.*, mark.at AS dismissed_at FROM tracked"
+    " LEFT JOIN mark ON mark.kind = 'dismiss_tracked' AND mark.key = tracked.id"
+)
+
+
 def get_tracked(conn: sqlite3.Connection, pr_id: str) -> sqlite3.Row | None:
-    return conn.execute("SELECT * FROM tracked WHERE id = ?", (pr_id,)).fetchone()
+    return conn.execute(f"{_TRACKED_SELECT} WHERE tracked.id = ?", (pr_id,)).fetchone()
 
 
 def list_tracked(conn: sqlite3.Connection, *,
                  include_dismissed: bool = False) -> list[sqlite3.Row]:
     where = "" if include_dismissed else " WHERE mark.key IS NULL"
     return conn.execute(
-        "SELECT tracked.*, mark.at AS dismissed_at FROM tracked"
-        " LEFT JOIN mark ON mark.kind = 'dismiss_tracked' AND mark.key = tracked.id"
-        f"{where} ORDER BY updated_at DESC, number DESC"
+        f"{_TRACKED_SELECT}{where} ORDER BY updated_at DESC, number DESC"
     ).fetchall()
 
 

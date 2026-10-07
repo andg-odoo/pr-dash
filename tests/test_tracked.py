@@ -48,6 +48,7 @@ def test_notification_seed_does_not_revive_dismissed(tmp_path):
 
     _add(conn, "odoo/odoo#1", source="notif")
     assert db.list_tracked(conn) == []
+    assert db.get_tracked(conn, "odoo/odoo#1")["dismissed_at"] == "2026-08-02T00:00:00+00:00"
     assert len(db.list_tracked(conn, include_dismissed=True)) == 1
 
 
