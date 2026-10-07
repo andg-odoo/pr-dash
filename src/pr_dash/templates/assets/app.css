@@ -1360,7 +1360,8 @@ body {
 
 .disc-verdict,
 .disc-onpath,
-.disc-unresolved {
+.disc-unresolved,
+.disc-awaits {
   border-radius: 3px;
   font-size: 10px;
   font-weight: 600;
@@ -1372,6 +1373,7 @@ body {
 .disc-verdict-dim { background: var(--chip-bg); color: var(--fg-faint); }
 .disc-onpath      { background: var(--chip-bg); color: var(--fg-dim); font-weight: 400; }
 .disc-unresolved  { background: var(--unresolved-bg); color: var(--yellow); }
+.disc-awaits      { background: var(--accent); color: var(--bg); }
 
 /* Discussion tree. Top-level entries (reviews, conversation comments) are
    cards; the threads they opened nest inside, folded unless unresolved. */
@@ -1436,6 +1438,7 @@ body {
 }
 
 .disc-thread-open { border-left-color: var(--yellow); }
+.disc-thread-awaits { border-left-color: var(--accent); }
 
 .disc-thread-head {
   align-items: baseline;

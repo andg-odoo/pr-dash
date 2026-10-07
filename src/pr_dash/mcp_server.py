@@ -299,7 +299,8 @@ def get_comments(ref: str) -> dict:
     A Review queue PR returns {id, discussion}, both halves of a pair merged with each
     entry's member set. An Authored PR returns its Branch set as get_mine does, a
     Tracked PR its detail as get_tracked does. Every discussion has the get_tracked
-    Discussion tree shape, bots included with is_bot: true.
+    Discussion tree shape, bots included with is_bot: true, unsent review drafts
+    (visible only to their author) with is_pending: true.
     """
     return query.get_comments(_get_cfg(), ref)
 
@@ -353,9 +354,6 @@ def get_tracked(ref: str) -> dict:
     under the review that opened them. Entries carry author, created_at, body, url,
     is_bot (robodoo, fw-bot, *[bot]) and, for reviews, state (APPROVED /
     CHANGES_REQUESTED / COMMENTED / DISMISSED). A bot review's threads are orphans.
-
-    Only a recent window is cached (last 10 reviews, last 15 threads), so
-    review_count / thread_count can exceed what appears here on a busy PR.
     """
     cfg = _get_cfg()
     items = query.load_tracked(cfg, include_dismissed=True)

@@ -1036,12 +1036,16 @@ def list_discussions(conn: sqlite3.Connection, tab: str) -> dict[str, list[dict]
     """The Discussion stream of every PR in the `tab` table, keyed by PR id."""
     rows = conn.execute(
         f"SELECT pr_id, {', '.join(_DISCUSSION_COLS)} FROM comment "
-        f"WHERE pr_id IN (SELECT id FROM {tab}) ORDER BY pr_id, created_at",
+        f"WHERE pr_id IN (SELECT id FROM {tab}) ORDER BY pr_id, created_at, rowid",
     ).fetchall()
     out: dict[str, list[dict]] = {}
     for r in rows:
         out.setdefault(r["pr_id"], []).append(dict(r))
     return out
+
+
+def mark_fetched(conn: sqlite3.Connection, pr_ids: list[str], stamp: str) -> None:
+    conn.executemany("UPDATE pr SET fetched_at = ? WHERE id = ?", [(stamp, i) for i in pr_ids])
 
 
 def sweep_discussions(conn: sqlite3.Connection) -> None:

@@ -281,3 +281,11 @@ def test_migration_stores_comments_once_and_refetches_a_v27_db(tmp_path):
     # The queue refreshes on the next tick instead of after its hourly gate.
     assert db.get_meta(conn, "last_queue_refresh") is None
     assert [r["fetched_at"] for r in [*db.list_tracked(conn), *db.list_mine(conn)]] == [None] * 2
+
+
+def test_same_second_comments_keep_their_stream_order(tmp_path):
+    conn = _conn(tmp_path)
+    _insert(conn, "odoo/odoo#1", reviewed=0)
+    db.replace_discussion(conn, "odoo/odoo#1", [
+        {"comment_id": cid, "kind": "issue", "created_at": "t"} for cid in ("b", "a")])
+    assert [c["comment_id"] for c in db.list_discussions(conn, "pr")["odoo/odoo#1"]] == ["b", "a"]

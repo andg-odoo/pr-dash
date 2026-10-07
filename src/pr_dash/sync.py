@@ -584,9 +584,16 @@ class Sync:
             dict(p) for p in db.list_prs(self.conn)
             if p["id"] not in kept_ids and p["archived_at"] and p["fetched_at"] == db.UNFETCHED
         ]
-        if unfetched:
-            self._phase(f"Fetching {len(unfetched)} archived Discussions...")
-        return self._refresh_pr_rows(unfetched[:_PRIME_BATCH], force=False)
+        if not unfetched:
+            return 0
+        self._phase(f"Fetching {len(unfetched)} archived Discussions...")
+        batch, returned = unfetched[:_PRIME_BATCH], set()
+        refreshed = self._refresh_pr_rows(batch, force=False, kept_ids=returned)
+        # An empty answer may be a failed call, so only a partial one marks the gone PRs as tried.
+        if returned:
+            db.mark_fetched(self.conn, [p["id"] for p in batch if p["id"] not in returned],
+                            self._stamp())
+        return refreshed
 
     def _refresh_companions(self, kept_ids: set[str], report: RefreshReport) -> str:
         """Attach each Branch set's migration PR by head branch, returning the repo searched."""

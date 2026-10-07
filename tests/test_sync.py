@@ -240,10 +240,11 @@ def test_a_queue_rows_thread_signals_follow_its_discussion(w):
     discussion = query.get_comments(w.cfg, "odoo#1")["discussion"]
     assert discussion == items[0]["discussion"]
     assert discussion[0]["entry"]["member"] == "odoo"
-    assert [(g["kind"], g["entry"] and (g["entry"]["author"], g["entry"]["is_bot"]))
+    assert [(g["kind"], g["entry"] and (g["entry"]["author"], g["entry"]["is_bot"],
+                                        g["entry"]["is_pending"]))
             for g in discussion] == [
-        ("issue", ("robodoo", True)), ("review", ("clbr", False)), ("review", ("me", False)),
-        ("orphan", None)]
+        ("issue", ("robodoo", True, False)), ("review", ("clbr", False, False)),
+        ("review", ("me", False, True)), ("orphan", None)]
 
 
 # --- Companions --------------------------------------------------------------
@@ -436,9 +437,13 @@ def test_backfilled_rows_fetch_their_discussion_a_batch_a_refresh(w, monkeypatch
                  reviews=[{"author": "me", "state": "APPROVED", "at": T0, "commit": "sha1"}])
         w.gh.comment(f"odoo/odoo#{n}", "alice", "thanks")
     assert w.sync.backfill(since=None, limit=1000).added == 3
+    # Gone from GitHub, so it is tried once and never holds a batch slot again.
+    insert_pr(w.conn, "odoo/odoo#9", archived_at=T0, fetched_at=db.UNFETCHED)
 
-    assert [w.refresh().refreshed for _ in range(3)] == [2, 1, 0]
+    assert sum(w.refresh().refreshed for _ in range(3)) == 3
+    assert w.refresh().refreshed == 0
     assert sorted(db.list_discussions(w.conn, "pr")) == ["odoo/odoo#1", "odoo/odoo#2", "odoo/odoo#3"]
+    assert w.row("odoo/odoo#9")["fetched_at"] != db.UNFETCHED
     assert all(w.row(f"odoo/odoo#{n}")["archived_at"] == T0 for n in (1, 2, 3))
 
 

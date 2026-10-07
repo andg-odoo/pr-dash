@@ -871,8 +871,8 @@
         </section>
 
         <section class="section">
-          <h3>Discussion ${pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank" rel="noopener" class="disc-repo-link">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")}</h3>
-          ${discussionHTML(pr.discussion, pr.is_pair)}
+          <h3>Discussion ${pr.awaiting_my_reply ? '<span class="disc-awaits">awaiting your reply</span>' : ""}${pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank" rel="noopener" class="disc-repo-link">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")}</h3>
+          ${discussionHTML(pr.discussion, pr.is_pair, undefined, pr.my_login)}
         </section>
 
         ${pr.diffs.map((d, i) => `
@@ -1314,22 +1314,33 @@
       </div>`;
   }
 
-  function threadsHTML(threads, showMember) {
+  // An unresolved thread I took part in that ends on someone else's comment.
+  function awaitsMe(t, login) {
+    const last = t.comments[t.comments.length - 1];
+    return Boolean(login) && t.state === "UNRESOLVED" && last.author !== login
+      && t.comments.some(c => c.author === login);
+  }
+
+  function threadsHTML(threads, showMember, login) {
     if (!threads.length) return "";
     const unresolved = threads.filter(t => t.state === "UNRESOLVED").length;
+    const awaiting = threads.filter(t => awaitsMe(t, login)).length;
     const n = threads.length;
     return `
       <details class="disc-threads"${unresolved ? " open" : ""}>
         <summary>
           ${n} thread${n === 1 ? "" : "s"}
           ${unresolved ? `<span class="disc-unresolved">${unresolved} unresolved</span>` : ""}
+          ${awaiting ? `<span class="disc-awaits">${awaiting} await${awaiting === 1 ? "s" : ""} your reply</span>` : ""}
         </summary>
         ${threads.map(t => `
-          <div class="disc-thread${t.state === "UNRESOLVED" ? " disc-thread-open" : ""}">
+          <div class="disc-thread${awaitsMe(t, login) ? " disc-thread-awaits"
+            : t.state === "UNRESOLVED" ? " disc-thread-open" : ""}">
             <div class="disc-thread-head">
               ${showMember ? memberTag(t.comments[0]) : ""}
               <span class="disc-onpath" title="${escapeHTML(t.path || "")}">${escapeHTML((t.path || "?").split("/").pop())}</span>
               ${t.state === "UNRESOLVED" ? '<span class="disc-unresolved">unresolved</span>' : ""}
+              ${awaitsMe(t, login) ? '<span class="disc-awaits">your reply</span>' : ""}
             </div>
             ${commentHTML(t.comments[0])}
             ${t.comments.length > 1 ? `<div class="disc-replies">${
@@ -1344,7 +1355,7 @@
   }
 
   // The Discussion tree with bot entries hidden, newest group first.
-  function discussionHTML(discussion, showMember = false, empty = "No discussion cached.") {
+  function discussionHTML(discussion, showMember = false, empty = "No discussion cached.", login = "") {
     const groups = discussion.flatMap(g => {
       const threads = g.threads.map(t => ({ ...t, comments: t.comments.filter(c => !c.is_bot) }))
         .filter(t => t.comments.length);
@@ -1353,7 +1364,7 @@
     if (!groups.length) return `<div class="disc-none">${empty}</div>`;
     return groups.map(g => {
       if (g.kind === "orphan") {
-        return `<article class="disc-entry disc-entry-orphan">${threadsHTML(g.threads, showMember)}</article>`;
+        return `<article class="disc-entry disc-entry-orphan">${threadsHTML(g.threads, showMember, login)}</article>`;
       }
       const c = g.entry;
       const v = c.kind === "review" ? VERDICT[c.state] : null;
@@ -1362,7 +1373,7 @@
       return `
         <article class="disc-entry">
           ${commentHTML(c, { badge })}
-          ${threadsHTML(g.threads, showMember)}
+          ${threadsHTML(g.threads, showMember, login)}
         </article>`;
     }).join("");
   }

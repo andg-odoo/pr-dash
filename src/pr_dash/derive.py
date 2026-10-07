@@ -345,7 +345,8 @@ def group_discussion(stream: list[dict]) -> list[dict]:
     """Nest a Discussion stream into groups holding their threads, newest group first."""
     groups, threads = [], {}
     for c in stream:
-        c = {**c, "is_bot": is_bot(c["author"])}
+        c = {**c, "is_bot": is_bot(c["author"]),
+             "is_pending": c["kind"] == "review" and (c["state"] == "PENDING" or not c["created_at"])}
         if c["kind"] != "thread":
             groups.append({"kind": c["kind"], "entry": c, "threads": []})
             continue
