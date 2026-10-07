@@ -613,12 +613,15 @@ def render(payload: list[dict], html_path: Path, *, offline: bool = False,
     template = env.get_template("index.html.j2")
     assets_dir = TEMPLATES_DIR / "assets"
     html = template.render(
-        tab_data_json=_json_for_script(
-            {"queue": payload, "tracked": tracked or [],
-             # A dismissed and a live Branch set can share a head branch.
-             "mine": [{**s, "id": s["key"] + ("~dismissed" if all(m["dismissed_at"] for m in s["members"]) else "")}
-                      for s in mine or []]}
-        ),
+        tab_data_json=_json_for_script({
+            "queue": payload,
+            "tracked": tracked or [],
+            # A dismissed and a live Branch set can share a head branch.
+            "mine": [
+                {**s, "id": s["key"] + ("~dismissed" if all(m["dismissed_at"] for m in s["members"]) else "")}
+                for s in mine or []
+            ],
+        }),
         pr_count=len(payload),
         counts={
             "tracked": sum(not t["dismissed_at"] for t in tracked or []),

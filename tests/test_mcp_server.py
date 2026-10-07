@@ -320,7 +320,7 @@ def test_set_ai_review_records_sibling_pair_context(tmp_path, monkeypatch):
 
     cfg, mcp_server = _seeded_cfg(tmp_path, monkeypatch, seed)
 
-    # The ref picks the half. resolve_item collapses either number onto the same
+    # The ref picks the half. tab.QUEUE.resolve collapses either number onto the same
     # item, so an enterprise ref must still land on the enterprise head - and it
     # carries the odoo half as pair context, whose diff is cached.
     out = mcp_server.set_ai_review("enterprise#2", summary="Enterprise half.",

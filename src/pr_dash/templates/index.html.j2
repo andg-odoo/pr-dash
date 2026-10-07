@@ -7,18 +7,7 @@
 <style>{{ app_css|safe }}</style>
 </head>
 <body>
-  {% set views = [
-    {"key": "queue", "marks": [("h", "hide")],
-     "groups": [("repo", "Repo"), ("bucket", "Bucket"), ("branch", "Branch"), ("state", "State")],
-     "sorts": [("default", "default"), ("req_age_desc", "requested oldest"),
-               ("req_age_asc", "requested newest"), ("bucket", "bucket size"), ("size", "size desc")]},
-    {"key": "tracked", "marks": [("x", "dismiss")], "groups": [("tracked-state", "Show")],
-     "sorts": [("active", "active first"), ("moved", "moved since last look"),
-               ("resolved", "merged / closed first"), ("age", "oldest opened"),
-               ("repo", "repo, then number")]},
-    {"key": "mine", "marks": [("a", "acknowledge"), ("x", "dismiss")],
-     "groups": [("mine-state", "Show")], "sorts": []},
-  ] %}
+  {% set views = ["queue", "tracked", "mine"] %}
   {% if offline %}
   <div class="banner">Offline mode{% if last_refresh %} - last refresh {{ last_refresh }}{% endif %}</div>
   {% endif %}
@@ -28,10 +17,10 @@
       <header class="left-header">
         <h1>pr-dash</h1>
         <nav class="tabs" id="tabs">
-          {% for v in views %}
-          <button type="button" class="tab{% if loop.first %} is-active{% endif %}" data-tab="{{ v.key }}">
-            {{ v.key }}
-            {% if v.key in counts %}<span class="tab-count" id="{{ v.key }}-tab-count">{{ counts[v.key] }}</span>{% endif %}
+          {% for key in views %}
+          <button type="button" class="tab{% if loop.first %} is-active{% endif %}" data-tab="{{ key }}">
+            {{ key }}
+            {% if key in counts %}<span class="tab-count" id="{{ key }}-tab-count">{{ counts[key] }}</span>{% endif %}
           </button>
           {% endfor %}
         </nav>
@@ -52,31 +41,10 @@
                placeholder="Search title, #, author, module…  ( / )">
       </div>
 
-      {% for v in views %}
-      <section class="filters" id="{{ v.key }}-filters"{% if not loop.first %} hidden{% endif %}>
-        {% for group, label in v.groups %}
-        <div class="filter-group" data-group="{{ group }}">
-          <div class="filter-label">{{ label }}</div>
-          <div class="chips"></div>
-        </div>
-        {% endfor %}
-      </section>
-
-      <div class="sort-bar" id="{{ v.key }}-sort-bar"{% if not loop.first %} hidden{% endif %}>
-        {% if v.sorts %}
-        <label>Sort:</label>
-        <select id="{{ v.key }}-sort">
-          {% for value, label in v.sorts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-        </select>
-        {% endif %}
-        {% set marks = v.marks|map("join", " ")|join(" · ") %}
-        <span class="kbd-hint" title="j/k move · o or enter open on GitHub · {{ marks }}{% if loop.first %} · / search{% endif %}">
-          <kbd>j</kbd><kbd>k</kbd> move · <kbd>o</kbd> open
-          {%- for k, label in v.marks %} · <kbd>{{ k }}</kbd> {{ label }}{% endfor %}
-        </span>
-      </div>
-
-      <ol class="pr-list" id="{{ v.key }}-list"{% if not loop.first %} hidden{% endif %}></ol>
+      {% for key in views %}
+      <section class="filters" id="{{ key }}-filters"{% if not loop.first %} hidden{% endif %}></section>
+      <div class="sort-bar" id="{{ key }}-sort-bar"{% if not loop.first %} hidden{% endif %}></div>
+      <ol class="pr-list" id="{{ key }}-list"{% if not loop.first %} hidden{% endif %}></ol>
       {% endfor %}
     </aside>
 

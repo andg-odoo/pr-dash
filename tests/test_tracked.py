@@ -501,7 +501,7 @@ def _tracked_item(**over):
     return item
 
 
-def test_resolve_tracked_accepts_short_and_full_refs():
+def test_tracked_tab_resolves_short_and_full_refs():
     items = [_tracked_item(), _tracked_item(
         id="odoo/enterprise#2", repo="odoo/enterprise", repo_short="enterprise",
         number=2)]
@@ -513,7 +513,7 @@ def test_resolve_tracked_accepts_short_and_full_refs():
         tab.TRACKED.resolve(items, "999")
 
 
-def test_resolve_tracked_rejects_ambiguous_number():
+def test_tracked_tab_rejects_ambiguous_number():
     # Same number in both repos, no repo given -> must not silently pick one.
     items = [_tracked_item(), _tracked_item(
         id="odoo/enterprise#1", repo="odoo/enterprise", repo_short="enterprise")]

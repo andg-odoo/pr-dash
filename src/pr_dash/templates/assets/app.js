@@ -58,12 +58,7 @@
     }
   }
 
-  // Reconcile the three hidden sources at load. The server map is authoritative
-  // (a server-side unhide must beat a stale local entry), and queued ops are
-  // newer than the bake so they replay on top. Legacy hides made before the
-  // queue existed are local-only and never synced, so migrate each into the
-  // queue exactly once - skipping ids already in the server map or already
-  // referenced by a queued op.
+  // The server map wins, queued ops replay on top, and each legacy local-only hide is queued once.
   const localHidden = loadHidden();
   const hideOps = () => loadQueue().filter(op => !op.route);
   const queuedIds = new Set(hideOps().map(op => op.pr_id));
@@ -268,7 +263,7 @@
     return stars + "\n" + links.join("\n");
   }
 
-  // Star-picker popover on the "discord" button: hover previews the rating, click copies the message.
+  // The "discord" star picker: hover previews the rating, click copies the message.
   function wireDiscordCopy(root, pr) {
     const wrap = root.querySelector(".discord-copy");
     const btn = wrap.querySelector(".discord-btn");
@@ -394,10 +389,7 @@
     return stub;
   }
 
-  /** Dismissals are local-first, like hides: the row drops out of the list here
-   *  and the op is flushed to the `pr-dash mcp` listener when it happens to be
-   *  running, which stamps dismissed_at so the next render bakes it in. Without
-   *  the listener the dismissal still holds in this browser. */
+  // Dismissals are local-first like hides, and the `pr-dash mcp` listener stamps them when it runs.
   const dismissedKey = tab => `pr-dash:${tab}-dismissed:v1`;
   function loadDismissed(tab) { const d = loadJSON(dismissedKey(tab)); return d && typeof d === "object" ? d : {}; }
   const dismissed = { tracked: loadDismissed("tracked"), mine: loadDismissed("mine") };
@@ -437,11 +429,7 @@
 
   function isResolved(t) { return t.state === "MERGED" || t.state === "CLOSED"; }
 
-  /** "2 comments · 4 reviews · 15 threads", omitting the zeroes.
-   *
-   *  The summed activity_count that drives the since-last-look delta is not a
-   *  quantity a human has a feel for - "91 discussion" says nothing about
-   *  whether that is one long argument or sixty rubber stamps. */
+  /** "2 comments · 4 reviews · 15 threads", omitting the zeroes. */
   function discussionParts(t) {
     const parts = [];
     const push = (n, one, many) => { if (n) parts.push(`${n} ${n === 1 ? one : many}`); };
@@ -539,7 +527,8 @@
   }
 
   // The Discussion Detail tab, bots hidden, newest first, its label counting the open threads.
-  function discussionTab(discussion, showMember = false, empty = "No discussion cached.", login = "", links = "") {
+  function discussionTab(discussion, showMember = false, empty = "No discussion cached.", login = "",
+                         links = "") {
     const groups = discussion.flatMap(g => {
       const threads = g.threads.map(t => ({ ...t, comments: t.comments.filter(c => !c.is_bot) }))
         .filter(t => t.comments.length);
@@ -548,6 +537,7 @@
     const threads = groups.flatMap(g => g.threads);
     const open = threads.filter(t => t.state === "UNRESOLVED").length;
     const awaits = threads.filter(t => awaitsMe(t, login)).length;
+
     const tree = () => !groups.length ? `<div class="disc-none">${empty}</div>` : groups.map(g => {
       if (g.kind === "orphan") {
         return `<article class="disc-entry disc-entry-orphan">${threadsHTML(g.threads, showMember, login)}</article>`;
@@ -562,8 +552,16 @@
           ${threadsHTML(g.threads, showMember, login)}
         </article>`;
     }).join("");
-    return { label: "Discussion", awaits, sections: () => `<section class="section"><h3>Discussion ${links}</h3>${tree()}</section>`,
-             count: [open && `${open} unresolved`, awaits && `${awaits} await${awaits === 1 ? "s" : ""} you`].filter(Boolean).join(" · ") };
+    const count = [
+      open && `${open} unresolved`,
+      awaits && `${awaits} await${awaits === 1 ? "s" : ""} you`,
+    ].filter(Boolean).join(" · ");
+    return {
+      label: "Discussion",
+      count,
+      awaits,
+      sections: () => `<section class="section"><h3>Discussion ${links}</h3>${tree()}</section>`,
+    };
   }
 
   // ---- mine: Authored PRs as Branch sets, one row per head branch, each member inline --
@@ -650,10 +648,19 @@
       haystack: pr => [pr.title, pr.author, pr.target_branch, pr.head_branch, pr.bucket, ...pr.modules,
                        ...pr.members.flatMap(m => [`${m.repo_short}#${m.number}`, m.repo, String(m.number)])].join(" "),
       chips: {
-        repo: { values: ["odoo/odoo", "odoo/enterprise"], label: v => v.split("/")[1], of: pr => pr.members.map(m => m.repo) },
-        bucket: { values: ["S", "M", "L", "XL"], of: pr => [pr.bucket] },
-        branch: { values: [...new Set(PRS.map(p => p.target_branch))].sort(), of: pr => [pr.target_branch] },
-        state: [
+        repo: {
+          title: "Repo",
+          values: ["odoo/odoo", "odoo/enterprise"],
+          label: v => v.split("/")[1],
+          of: pr => pr.members.map(m => m.repo),
+        },
+        bucket: { title: "Bucket", values: ["S", "M", "L", "XL"], of: pr => [pr.bucket] },
+        branch: {
+          title: "Branch",
+          values: [...new Set(PRS.map(p => p.target_branch))].sort(),
+          of: pr => [pr.target_branch],
+        },
+        state: { title: "State", chips: [
           { id: "updated", label: "updated since visit", test: pr => pr.since_last_look.length },
           { id: "ball-in-my-court", label: "ball in my court", test: pr => pr.my_review_state === "PENDING" },
           { id: "awaiting-my-reply", label: "awaiting my reply", test: pr => pr.awaiting_my_reply },
@@ -665,33 +672,39 @@
           { id: "drafts", label: "drafts (backlog)" },
           { id: "archived", label: "archived" },
           { id: "show-hidden", label: "show hidden" },
-        ],
+        ] },
       },
-      // Archived and drafts are exclusive views, and pinged or pushed only ever apply to archived rows.
+      // Archived and drafts are exclusive, and pinged or pushed only apply to archived rows.
       keep: pr => pr.is_archived === ["archived", "pinged", "pushed"].some(s => filters.state.has(s))
         && pr.is_draft === filters.state.has("drafts"),
       lookChip: ["state", "updated"],
       sorts: {
-        default: by(pr => bucketRank(pr) * 10000 - pr.req_age_days),
-        req_age_desc: by(pr => -pr.req_age_days),
-        req_age_asc: by(pr => pr.req_age_days),
-        bucket: by(bucketRank),
-        size: by(pr => -(pr.additions + pr.deletions)),
+        default: { label: "default", by: by(pr => bucketRank(pr) * 10000 - pr.req_age_days) },
+        req_age_desc: { label: "requested oldest", by: by(pr => -pr.req_age_days) },
+        req_age_asc: { label: "requested newest", by: by(pr => pr.req_age_days) },
+        bucket: { label: "bucket size", by: by(bucketRank) },
+        size: { label: "size desc", by: by(pr => -(pr.additions + pr.deletions)) },
       },
-      marks: { h: { on: isHidden, set: setHidden, show: "show-hidden" } },
+      marks: { h: { label: "hide", on: isHidden, set: setHidden, show: "show-hidden" } },
       // A PR hidden with no row left to take stays in the detail, where the other views clear it.
       keepsDetail: true,
       first: () => (PRS.find(p => !p.is_archived && !p.is_draft) || PRS[0])?.id,
       badges: { pushed: "↑push", reply: "reply", ci: "ci", new: "new" },
+
       counts(visible) {
         const hiddenN = PRS.filter(isHidden).length;
         const view = filters.state.has("archived") ? "archived" : filters.state.has("drafts") ? "drafts" : "active";
         const total = PRS.filter(p => view === "archived" ? p.is_archived
           : !p.is_archived && p.is_draft === (view === "drafts")).length;
         const n = PRS.filter(p => !p.is_archived && !p.is_draft && p.since_last_look.length).length;
-        return [`${visible.length} / ${total}${hiddenN ? `  ·  ${hiddenN} hidden` : ""}`, `${view} PRs`,
-                n ? `${n} updated` : "", n ? "Show only PRs updated since your last visit" : ""];
+        return {
+          visible: `${visible.length} / ${total}${hiddenN ? `  ·  ${hiddenN} hidden` : ""}`,
+          total: `${view} PRs`,
+          look: n ? `${n} updated` : "",
+          lookTitle: n ? "Show only PRs updated since your last visit" : "",
+        };
       },
+
       rowHTML(pr, lookBadges) {
         const itemHidden = isHidden(pr);
         const idBlock = pr.members.map(m => {
@@ -735,11 +748,13 @@
         const failedTag = pr.ai_failed
           ? `<span class="ai-failed-tag" title="AI first pass gave up after ${pr.ai_failed.attempts} attempts (${escapeHTML(pr.ai_failed.error)})">AI ✕${pr.ai_failed.attempts}</span>`
           : "";
-        return `<li class="pr-row${itemHidden ? " hidden-row" : ""}${pr.is_archived ? " archived-row" : ""}" data-id="${escapeHTML(pr.id)}">
+        return `<li class="pr-row${itemHidden ? " hidden-row" : ""}${pr.is_archived ? " archived-row" : ""}"
+                    data-id="${escapeHTML(pr.id)}">
           <span class="pr-id-group">${idBlock}${pairTag}${companionTag}${draftTag}${archivedTag}${verdictTag}${failedTag}${lookBadges}</span>
           <span class="pr-title" title="${escapeHTML(pr.title)}">${escapeHTML(pr.title)}</span>
           <span class="pr-bucket ${pr.bucket}">${pr.bucket}</span>
-          <button class="pr-hide" type="button" title="${itemHidden ? "Unhide" : "Hide until next push"}" data-key="h">${itemHidden ? "↺" : "×"}</button>
+          <button class="pr-hide" type="button" title="${itemHidden ? "Unhide" : "Hide until next push"}"
+                  data-key="h">${itemHidden ? "↺" : "×"}</button>
           <span class="pr-sub">
             <span class="pr-author">@${escapeHTML(pr.author)}</span>
             <span class="pr-flags">${pr.flags.map(f => `<span class="pr-flag ${cssClass(f)}">${escapeHTML(f)}</span>`).join("")}</span>
@@ -749,6 +764,7 @@
           </span>
         </li>`;
       },
+
       detail(pr) {
         const taskLink = pr.task_url
           ? `<a href="${escapeHTML(pr.task_url)}" target="_blank" rel="noopener">${escapeHTML(pr.linked_task_label || ("task-" + pr.linked_task))} ↗</a>`
@@ -817,7 +833,8 @@
                 <span>${crumbsId}</span> ·
                 <span>@${escapeHTML(pr.author)}</span> ·
                 <span>${escapeHTML(pr.target_branch)} ← ${escapeHTML(pr.head_branch)}</span>
-                ${pr.awaiting_my_reply ? '<button class="disc-awaits disc-awaits-jump" type="button">awaiting your reply ↓</button>' : ""}
+                ${pr.awaiting_my_reply ? `<button class="disc-awaits disc-awaits-jump"
+                  type="button">awaiting your reply ↓</button>` : ""}
               </div>
             </div>
 
@@ -835,7 +852,8 @@
                   </span>
                 </div>
               </div>
-              <button class="detail-hide" type="button" data-key="h">${isHidden(pr) ? "Unhide" : "Hide until next push"}</button>
+              <button class="detail-hide" type="button"
+                      data-key="h">${isHidden(pr) ? "Unhide" : "Hide until next push"}</button>
             </div>
 
             ${mixedNotice}
@@ -855,6 +873,7 @@
               <span class="ping-snippet">pushed since your review</span>
             </div>
             ` : ""}`;
+
         const overview = () => `
             <section class="section">
               <h3>Status</h3>
@@ -925,6 +944,7 @@
               `).join("")}
             </section>
             ` : ""}`;
+
         const diffs = () => pr.diffs.map((d, i) => `
             <section class="diff-section${(d.closed || (d.reviewed && !pr.is_archived)) ? " diff-section-closed" : ""}">
               <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--fg-dim);">
@@ -938,54 +958,66 @@
               </div>
             </section>
             `).join("");
+
+        const wireDiffs = pane => pr.diffs.forEach((d, i) => {
+          if (!d.available || !d.diff) return;
+          const container = pane.querySelector(`.diff-container[data-diff-idx="${i}"]`);
+          container.innerHTML = "";
+
+          // A truncated diff says so, lest its stubs read as the PR's own doing.
+          if (d.truncated) {
+            const notice = document.createElement("div");
+            notice.className = "diff-partial-notice";
+            notice.innerHTML = `Partial diff: oversized or generated files were replaced by a pr-dash stub. <a href="${escapeHTML(d.url)}/files" target="_blank" rel="noopener">Full diff on GitHub ↗</a>`;
+            container.appendChild(notice);
+          }
+
+          // Files keep PR order, and reviewed or heavy ones fold into stubs drawn on expand.
+          const files = splitDiffFiles(d.diff);
+          const changedSet = d.review_changed_paths ? new Set(d.review_changed_paths) : null;
+          const isReviewed = f => changedSet && !changedSet.has(f.path);
+          const willFold = f => isReviewed(f) || isHeavyFile(f);
+          // Folds split the diff into blocks, so each block drops its file list.
+          const split = files.some(willFold);
+          let run = [];
+          const flush = () => {
+            if (!run.length) return;
+            const host = document.createElement("div");
+            container.appendChild(host);
+            renderDiffInto(host, run.map(f => f.chunk).join(""), { fileList: !split });
+            run = [];
+          };
+          files.forEach(f => {
+            if (isReviewed(f)) {
+              flush();
+              container.appendChild(buildFileStub(f, "reviewed"));
+            } else if (isHeavyFile(f)) {
+              flush();
+              container.appendChild(buildFileStub(f, changedSet ? "changed" : "heavy"));
+            } else {
+              run.push(f);  // new/changed (or no-baseline) small file → render inline
+            }
+          });
+          flush();
+        });
+        const threadLinks = pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank"`
+          + ` rel="noopener" class="disc-repo-link">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("");
+
         return { head, tabs: [
           { label: "Overview", sections: overview },
-          discussionTab(pr.discussion, pr.is_pair, undefined, pr.my_login, pr.members.map(m => `<a href="${escapeHTML(m.url)}#discussion-overview" target="_blank" rel="noopener" class="disc-repo-link">Open threads on ${escapeHTML(m.repo_short)} ↗</a>`).join("")),
-          { label: "Diff", count: `${pr.changed_files} file${pr.changed_files === 1 ? "" : "s"}`, sections: diffs,
-            wire: pane => pr.diffs.forEach((d, i) => {
-              if (!d.available || !d.diff) return;
-              const container = pane.querySelector(`.diff-container[data-diff-idx="${i}"]`);
-              container.innerHTML = "";
-              // A truncated cached diff says so, rather than let its stubs read as the PR's own doing.
-              if (d.truncated) {
-                const notice = document.createElement("div");
-                notice.className = "diff-partial-notice";
-                notice.innerHTML = `Partial diff: oversized or generated files were replaced by a pr-dash stub. <a href="${escapeHTML(d.url)}/files" target="_blank" rel="noopener">Full diff on GitHub ↗</a>`;
-                container.appendChild(notice);
-              }
-
-              // Files keep PR order, unchanged since my review or heavy ones fold into stubs drawn on expand.
-              const files = splitDiffFiles(d.diff);
-              const changedSet = d.review_changed_paths ? new Set(d.review_changed_paths) : null;
-              const isReviewed = f => changedSet && !changedSet.has(f.path);
-              const willFold = f => isReviewed(f) || isHeavyFile(f);
-              // Folds split the diff into several blocks, so each block drops its repeated file list.
-              const split = files.some(willFold);
-              let run = [];
-              const flush = () => {
-                if (!run.length) return;
-                const host = document.createElement("div");
-                container.appendChild(host);
-                renderDiffInto(host, run.map(f => f.chunk).join(""), { fileList: !split });
-                run = [];
-              };
-              files.forEach(f => {
-                if (isReviewed(f)) {
-                  flush();
-                  container.appendChild(buildFileStub(f, "reviewed"));
-                } else if (isHeavyFile(f)) {
-                  flush();
-                  container.appendChild(buildFileStub(f, changedSet ? "changed" : "heavy"));
-                } else {
-                  run.push(f);  // new/changed (or no-baseline) small file → render inline
-                }
-              });
-              flush();
-            }) },
+          discussionTab(pr.discussion, pr.is_pair, undefined, pr.my_login, threadLinks),
+          {
+            label: "Diff",
+            count: `${pr.changed_files} file${pr.changed_files === 1 ? "" : "s"}`,
+            sections: diffs,
+            wire: wireDiffs,
+          },
         ] };
       },
+
       wire: pr => wireDiscordCopy(detailEl, pr),
     },
+
     // PRs I subscribed to on GitHub or added with `pr-dash track`, watched until they land.
     tracked: {
       rows: TRACKED,
@@ -996,34 +1028,47 @@
       haystack: t => [t.title, t.author, t.target_branch, t.repo, t.repo_short,
                       `${t.repo_short}#${t.number}`, String(t.number)].join(" "),
       chips: {
-        "tracked-state": [
+        "tracked-state": { title: "Show", chips: [
           { id: "resolved", label: "merged / closed", test: isResolved },
           { id: "moved", label: "moved since last look", test: hasMoved },
           { id: "show-dismissed", label: "show dismissed" },
-        ],
+        ] },
       },
       lookChip: ["tracked-state", "moved"],
       // Active first by default, as a watch list grows a long tail of PRs closed months ago.
       sorts: {
-        active: (a, b) => (isResolved(a) - isResolved(b)) || byActivity(a, b),
-        moved: (a, b) => (hasMoved(b) - hasMoved(a)) || byActivity(a, b),
-        resolved: (a, b) => (isResolved(b) - isResolved(a)) || byActivity(a, b),
-        age: (a, b) => (b.age_days - a.age_days) || byActivity(a, b),
-        repo: (a, b) => a.repo.localeCompare(b.repo) || a.number - b.number,
+        active: { label: "active first", by: (a, b) => (isResolved(a) - isResolved(b)) || byActivity(a, b) },
+        moved: { label: "moved since last look", by: (a, b) => (hasMoved(b) - hasMoved(a)) || byActivity(a, b) },
+        resolved: {
+          label: "merged / closed first",
+          by: (a, b) => (isResolved(b) - isResolved(a)) || byActivity(a, b),
+        },
+        age: { label: "oldest opened", by: (a, b) => (b.age_days - a.age_days) || byActivity(a, b) },
+        repo: { label: "repo, then number", by: (a, b) => a.repo.localeCompare(b.repo) || a.number - b.number },
       },
       marks: {
-        x: { on: t => isDismissed("tracked", t), set: (t, on) => setDismissed("tracked", [t.id], on),
-             show: "show-dismissed" },
+        x: {
+          label: "dismiss",
+          on: t => isDismissed("tracked", t),
+          set: (t, on) => setDismissed("tracked", [t.id], on),
+          show: "show-dismissed",
+        },
       },
       badges: { resolved: "done", reopened: "reopened", pushed: "↑push", reply: "reply", new: "new" },
+
       counts(visible) {
         const live = TRACKED.filter(t => !isDismissed("tracked", t));
         const gone = TRACKED.length - live.length;
         const moved = live.filter(hasMoved).length;
-        return [`${visible.length} / ${TRACKED.length}${gone ? `  ·  ${gone} dismissed` : ""}`, "tracked PRs",
-                moved ? `${moved} moved` : "", moved ? "Show only tracked PRs that moved since your last visit" : "",
-                live.length];
+        return {
+          visible: `${visible.length} / ${TRACKED.length}${gone ? `  ·  ${gone} dismissed` : ""}`,
+          total: "tracked PRs",
+          look: moved ? `${moved} moved` : "",
+          lookTitle: moved ? "Show only tracked PRs that moved since your last visit" : "",
+          tab: live.length,
+        };
       },
+
       rowHTML(t, badges) {
         const resolved = isResolved(t);
         const gone = isDismissed("tracked", t);
@@ -1033,7 +1078,8 @@
         const when = resolved
           ? `${t.state === "MERGED" ? "merged" : "closed"} ${daysAgo(t.merged_at || t.closed_at)}`
           : `idle ${t.idle_days}d`;
-        return `<li class="pr-row tr-row${resolved ? " tr-row-resolved" : ""}${gone ? " hidden-row" : ""}" data-id="${escapeHTML(t.id)}">
+        return `<li class="pr-row tr-row${resolved ? " tr-row-resolved" : ""}${gone ? " hidden-row" : ""}"
+                    data-id="${escapeHTML(t.id)}">
           <span class="pr-id-group">
             <span class="pr-id">${escapeHTML(t.repo_short)}#${t.number}</span>
             ${trackedStateTag(t)}${gone ? '<span class="tr-state tr-dismissed">dismissed</span>' : ""}${badges}
@@ -1050,6 +1096,7 @@
             <span>open ${t.age_days}d · ${when}</span>
           </span></li>`;
       },
+
       detail(t) {
         const stateBadge = t.state === "MERGED"
           ? '<span class="pair-badge tr-badge-merged">merged</span>'
@@ -1067,7 +1114,8 @@
 
         <div class="detail-links">
           <a href="${escapeHTML(t.url)}" target="_blank" rel="noopener">GitHub: ${escapeHTML(t.repo_short)}#${t.number} ↗</a>
-          <button class="detail-hide" type="button" data-key="x">${isDismissed("tracked", t) ? "Restore" : "Dismiss"}</button>
+          <button class="detail-hide" type="button"
+                  data-key="x">${isDismissed("tracked", t) ? "Restore" : "Dismiss"}</button>
         </div>`, tabs: [{ label: "Overview", sections: () => `
         <section class="section">
           <h3>Status</h3>
@@ -1090,6 +1138,7 @@
         </section>` : ""}` }, discussionTab(t.discussion)] };
       },
     },
+
     mine: {
       rows: MINE,
       search: "Search title, #, branch, task…  ( / )",
@@ -1098,38 +1147,58 @@
         : "No Authored PRs yet. The next refresh lists every open PR you opened.",
       haystack: s => [s.key, s.task || "", ...s.members.flatMap(m => [m.title, m.ref, m.repo, m.target_branch,
                                                                       ...m.fw.map(f => f.ref)])].join(" "),
-      chips: { "mine-state": [{ id: "show-dismissed", label: "show dismissed" }] },
+      chips: { "mine-state": { title: "Show", chips: [{ id: "show-dismissed", label: "show dismissed" }] } },
       sorts: {
-        band: (a, b) => mineRank(a) - mineRank(b)
-          || (mineRank(a) ? 0 : new Date(a.actions[0].since) - new Date(b.actions[0].since)),
+        band: {
+          by: (a, b) => mineRank(a) - mineRank(b)
+            || (mineRank(a) ? 0 : new Date(a.actions[0].since) - new Date(b.actions[0].since)),
+        },
       },
       marks: {
-        x: { on: isMineDismissed, set: (s, on) => setDismissed("mine", s.members.map(m => m.id), on),
-             show: "show-dismissed" },
-        a: { on: isAcked, set(s, on) {
-          if (mineBand(s) === "done" || !s.actions.length) return;
-          localAcks[s.key] = { fingerprint: s.fingerprint, on };
-          localStorage.setItem(ACK_KEY, JSON.stringify(localAcks));
-          enqueueOp({ route: "mine-ack", op: on ? "ack" : "unack", key: s.key, fingerprint: s.fingerprint,
-                      at: new Date().toISOString() });
-          flushQueue();
-        } },
+        a: {
+          label: "acknowledge",
+          on: isAcked,
+          set(s, on) {
+            if (mineBand(s) === "done" || !s.actions.length) return;
+            localAcks[s.key] = { fingerprint: s.fingerprint, on };
+            localStorage.setItem(ACK_KEY, JSON.stringify(localAcks));
+            enqueueOp({ route: "mine-ack", op: on ? "ack" : "unack", key: s.key, fingerprint: s.fingerprint,
+                        at: new Date().toISOString() });
+            flushQueue();
+          },
+        },
+        x: {
+          label: "dismiss",
+          on: isMineDismissed,
+          set: (s, on) => setDismissed("mine", s.members.map(m => m.id), on),
+          show: "show-dismissed",
+        },
       },
       // Its buttons take the next row on dismiss like its keys, unlike Tracked's.
       clickAdvances: true,
+
       counts() {
         const n = band => MINE.filter(s => !isMineDismissed(s) && mineBand(s) === band).length;
-        return [`${n("needs")} need you · ${n("open")} open · ${n("done")} done`, "", "", "", n("needs") + n("open")];
+        return {
+          visible: `${n("needs")} need you · ${n("open")} open · ${n("done")} done`,
+          total: "",
+          look: "",
+          lookTitle: "",
+          tab: n("needs") + n("open"),
+        };
       },
+
       listHTML: (sets, rowHTML) => [["Needs you", " mine-band-needs"], ["Open", ""], ["Done", " mine-band-done"],
         ...(filters["mine-state"].has("show-dismissed") ? [["Dismissed", ""]] : [])].map(([label, cls], i) => {
         const band = sets.filter(s => mineRank(s) === i);
         return `<li class="mine-band${cls}">${label} <span class="mine-band-n">${band.length}</span></li>`
           + band.map(rowHTML).join("");
       }).join(""),
+
       rowHTML(s) {
         const gone = isMineDismissed(s);
-        return `<li class="pr-row mine-row${s.band === "done" ? " mine-row-done" : ""}${gone ? " hidden-row" : ""}" data-id="${s.id}">
+        return `<li class="pr-row mine-row${s.band === "done" ? " mine-row-done" : ""}${gone ? " hidden-row" : ""}"
+                    data-id="${escapeHTML(s.id)}">
       <span class="pr-title" title="${escapeHTML(s.title)}">${escapeHTML(s.title)}</span>
       <button class="pr-hide" type="button" title="${gone ? "Restore this Branch set" : "Dismiss this Branch set"}"
               data-key="x">${gone ? "↺" : "×"}</button>
@@ -1143,7 +1212,9 @@
       ${mineBand(s) === "needs" ? s.action_lines.map(a =>
         `<span class="pr-sub mine-reason">${escapeHTML(a.member)}: ${escapeHTML(a.text)}</span>`).join("") : ""}</li>`;
       },
+
       detail(s) {
+        const showMember = s.members.length > 1 || s.members.some(m => m.fw.length);
         const rows = s.members.map(m => `
       <tr>
         <td title="${escapeHTML(m.title)}">${escapeHTML(m.ref)}</td>
@@ -1192,7 +1263,7 @@
             <tr><th>PR</th><th>State</th><th>CI</th><th>Review</th><th>Requested</th><th>Links</th></tr>
             ${rows}
           </table>
-        </section>` }, discussionTab(s.discussion, s.members.length > 1 || s.members.some(m => m.fw.length), "No discussion yet.")] };
+        </section>` }, discussionTab(s.discussion, showMember, "No discussion yet.")] };
       },
     },
   };
@@ -1200,24 +1271,34 @@
   const viewRow = (d, id) => d.rows.find(r => r.id === id);
 
   // A value group passes on any selected value, a chip list on every active chip with a test.
-  const passesChips = (d, r) => Object.entries(d.chips).every(([g, c]) => c.of
-    ? !filters[g].size || c.of(r).some(v => filters[g].has(v))
-    : c.every(x => !x.test || !filters[g].has(x.id) || x.test(r)));
+  function passesChips(d, r) {
+    return Object.entries(d.chips).every(([g, c]) => {
+      if (c.of) return !filters[g].size || c.of(r).some(v => filters[g].has(v));
+      return c.chips.every(x => !x.test || !filters[g].has(x.id) || x.test(r));
+    });
+  }
 
   function renderView(d) {
     const shown = id => Object.keys(d.chips).some(g => filters[g].has(id));
-    d.visible = d.rows.filter(r => matchesSearch(r._haystack ??= d.haystack(r).toLowerCase())
-      && (!d.keep || d.keep(r)) && passesChips(d, r)
-      && Object.values(d.marks).every(m => !m.show || !m.on(r) || shown(m.show)))
-      .sort(d.sorts[d.sort] || Object.values(d.sorts)[0]);
-    let tab;
-    [visibleCountEl.textContent, totalCountEl.textContent, lookCountEl.textContent, lookCountEl.title, tab] =
-      d.counts(d.visible);
+    d.visible = d.rows
+      .filter(r => matchesSearch(r._haystack ??= d.haystack(r).toLowerCase())
+        && (!d.keep || d.keep(r))
+        && passesChips(d, r)
+        && Object.values(d.marks).every(m => !m.show || !m.on(r) || shown(m.show)))
+      .sort((d.sorts[d.sort] || Object.values(d.sorts)[0]).by);
+
+    const counts = d.counts(d.visible);
+    visibleCountEl.textContent = counts.visible;
+    totalCountEl.textContent = counts.total;
+    lookCountEl.textContent = counts.look;
+    lookCountEl.title = counts.lookTitle;
     const tabCountEl = document.getElementById(`${d.key}-tab-count`);
-    if (tabCountEl) tabCountEl.textContent = String(tab);
+    if (tabCountEl) tabCountEl.textContent = String(counts.tab);
+
+    const badges = r => (r.since_last_look || [])
+      .map(x => `<span class="look-badge look-${x}">${d.badges[x] || x}</span>`).join("");
     d.list.innerHTML = d.visible.length || !d.empty
-      ? d.listHTML(d.visible, r => d.rowHTML(r, (r.since_last_look || []).map(
-        x => `<span class="look-badge look-${x}">${d.badges[x] || x}</span>`).join("")))
+      ? d.listHTML(d.visible, r => d.rowHTML(r, badges(r)))
       : `<li class="tr-empty">${escapeHTML(d.empty())}</li>`;
     highlight(d);
   }
@@ -1235,24 +1316,36 @@
   function renderDetail(d, row) {
     const { head, tabs } = d.detail(row);
     const stored = `pr-dash:${d.key}-dtab:v1`;
-    detailEl.innerHTML = `<div class="detail">${head}${tabs.length > 1 ? `<div class="dtab-strip" role="tablist">${
-      tabs.map(t => `<button class="dtab" type="button">${t.label}${t.count ? `<span class="dtab-count">${t.count}</span>` : ""}</button>`).join("")
-    }</div>` : ""}${'<div class="dtab-pane" hidden></div>'.repeat(tabs.length)}</div>`;
+    const buttons = tabs.map(t => `<button class="dtab" type="button">${t.label}`
+      + `${t.count ? `<span class="dtab-count">${t.count}</span>` : ""}</button>`).join("");
+    const stripHTML = tabs.length > 1 ? `<div class="dtab-strip" role="tablist">${buttons}</div>` : "";
+    const panesHTML = '<div class="dtab-pane" hidden></div>'.repeat(tabs.length);
+    detailEl.innerHTML = `<div class="detail">${head}${stripHTML}${panesHTML}</div>`;
     const strip = detailEl.querySelector(".dtab-strip");
     const panes = [...detailEl.querySelectorAll(".dtab-pane")];
+
     // A pane is drawn the first time it opens, so stepping through rows never draws an unseen Diff.
     const show = (i, picked) => {
       if (!tabs[i]) return;
-      if (!panes[i].hasChildNodes()) { panes[i].innerHTML = tabs[i].sections(); tabs[i].wire?.(panes[i]); }
-      panes.forEach((p, j) => { p.hidden = j !== i; strip?.children[j].classList.toggle("is-active", j === i); });
+      if (!panes[i].hasChildNodes()) {
+        panes[i].innerHTML = tabs[i].sections();
+        tabs[i].wire?.(panes[i]);
+      }
+      panes.forEach((p, j) => {
+        p.hidden = j !== i;
+        strip?.children[j].classList.toggle("is-active", j === i);
+      });
       if (picked) localStorage.setItem(stored, tabs[i].label);
       // Once the header scrolled away, a picked pane starts right under the strip.
-      if (picked && strip?.getBoundingClientRect().top <= detailEl.getBoundingClientRect().top) panes[i].scrollIntoView({ block: "start" });
+      if (picked && strip?.getBoundingClientRect().top <= detailEl.getBoundingClientRect().top) {
+        panes[i].scrollIntoView({ block: "start" });
+      }
       return panes[i];
     };
     show(Math.max(0, tabs.findIndex(t => t.label === localStorage.getItem(stored))));
     openDtab = i => show(i, true);
     strip?.querySelectorAll(".dtab").forEach((b, i) => b.addEventListener("click", () => openDtab(i)));
+
     // The reply chip opens the Discussion and steps through the threads awaiting my reply.
     const reply = tabs.findIndex(t => t.awaits);
     const chip = detailEl.querySelector(".disc-awaits-jump");
@@ -1283,7 +1376,9 @@
     const ids = d.visible.map(r => r.id);
     if (!ids.length) return;
     const cur = ids.indexOf(d.selected);
-    const next = ids[cur === -1 ? (delta > 0 ? 0 : ids.length - 1) : Math.max(0, Math.min(ids.length - 1, cur + delta))];
+    const next = ids[cur === -1
+      ? (delta > 0 ? 0 : ids.length - 1)
+      : Math.max(0, Math.min(ids.length - 1, cur + delta))];
     select(d, next);
     scrollTo(d, next);
   }
@@ -1303,28 +1398,55 @@
     if (next && next !== id) scrollTo(d, next);
   }
 
+  function chipHTML(g, c, v) {
+    const [id, label] = c.of ? [v, c.label ? c.label(v) : v] : [v.id, v.label];
+    return `<button class="chip${filters[g].has(id) ? " active" : ""}" type="button" data-group="${g}"`
+      + ` data-value="${escapeHTML(id)}">${escapeHTML(label)}</button>`;
+  }
+
+  function filtersHTML(d) {
+    return Object.entries(d.chips).map(([g, c]) => `
+      <div class="filter-group" data-group="${g}">
+        <div class="filter-label">${c.title}</div>
+        <div class="chips">${(c.of ? c.values : c.chips).map(v => chipHTML(g, c, v)).join("")}</div>
+      </div>`).join("");
+  }
+
+  // The sort picker when a view has a choice of orders, then its key hints.
+  function sortBarHTML(d) {
+    const sorts = Object.entries(d.sorts);
+    const options = sorts.map(([v, s]) => `<option value="${v}">${s.label}</option>`).join("");
+    const marks = Object.entries(d.marks);
+    const title = marks.map(([k, m]) => ` · ${k} ${m.label}`).join("");
+    const keys = marks.map(([k, m]) => ` · <kbd>${k}</kbd> ${m.label}`).join("");
+    return `
+      ${sorts.length > 1 ? `<label>Sort:</label><select id="${d.key}-sort">${options}</select>` : ""}
+      <span class="kbd-hint" title="j/k move · o or enter open on GitHub${title} · / search">
+        <kbd>j</kbd><kbd>k</kbd> move · <kbd>o</kbd> open${keys}
+      </span>`;
+  }
+
   for (const [key, d] of Object.entries(VIEWS)) {
     Object.assign(d, { key, list: document.getElementById(`${key}-list`), selected: null, visible: [] });
     d.link ??= key;
     d.listHTML ??= (rows, rowHTML) => rows.map(rowHTML).join("");
-    for (const [g, c] of Object.entries(d.chips)) {
-      filters[g] ??= new Set();
-      document.querySelector(`.filter-group[data-group="${g}"] .chips`).innerHTML = (c.of ? c.values : c).map(v => {
-        const id = String(v.id ?? v), label = c.of ? (c.label ? c.label(v) : v) : v.label;
-        return `<button class="chip${filters[g].has(id) ? " active" : ""}" type="button" data-group="${g}" data-value="${escapeHTML(id)}">${escapeHTML(label)}</button>`;
-      }).join("");
-    }
+    for (const g of Object.keys(d.chips)) filters[g] ??= new Set();
+    document.getElementById(`${key}-filters`).innerHTML = filtersHTML(d);
+    document.getElementById(`${key}-sort-bar`).innerHTML = sortBarHTML(d);
+
     const sortEl = document.getElementById(`${key}-sort`);
     const stored = d.sortKey || `pr-dash:${key}-sort:v1`;
     d.sort = localStorage.getItem(stored) || Object.keys(d.sorts)[0];
     if (sortEl) sortEl.value = d.sort;
     sortEl?.addEventListener("change", () => { localStorage.setItem(stored, d.sort = sortEl.value); renderView(d); });
+
     d.list.addEventListener("click", (e) => {
       const li = e.target.closest(".pr-row");
       const btn = e.target.closest("[data-key]");
       if (li) btn ? mark(d, btn.dataset.key, li.dataset.id, d.clickAdvances) : select(d, li.dataset.id);
     });
   }
+
   const TABS = Object.keys(VIEWS);
   let activeTab = TABS.includes(localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : "queue";
 
@@ -1341,7 +1463,9 @@
     localStorage.setItem(TAB_KEY, activeTab);
     tabsEl.querySelectorAll(".tab").forEach(b => b.classList.toggle("is-active", b.dataset.tab === activeTab));
     for (const t of TABS) {
-      for (const part of ["filters", "sort-bar", "list"]) document.getElementById(`${t}-${part}`).hidden = t !== activeTab;
+      for (const part of ["filters", "sort-bar", "list"]) {
+        document.getElementById(`${t}-${part}`).hidden = t !== activeTab;
+      }
     }
     const d = VIEWS[activeTab];
     searchEl.placeholder = d.search;
