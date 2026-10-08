@@ -594,7 +594,7 @@
   function rbItems(t) {
     const byRule = {};
     for (const f of t.failures.filter(f => f.rule)) (byRule[f.rule] ??= []).push(f);
-    const rank = f => "count" in f ? 0 : f.test ? 1 : 2;
+    const rank = f => "count" in f ? 0 : f.test || f.error ? 1 : 2;
     return [...t.failures.filter(f => !f.rule).sort((a, b) => rank(a) - rank(b)),
       ...Object.values(byRule).map(fs => ({ ruff: fs }))];
   }
@@ -613,6 +613,7 @@
         ? `<span class="tr-ci-failure">killed</span> timeout on ${escapeHTML(f.step)} after ${rbDuration(f.build_time)}`
         : '<span class="tr-ci-failure">killed</span>, reason unknown';
     }
+    if (f.error) return `<span class="tr-ci-failure">error</span> ${escapeHTML(f.error)}`;
     if ("count" in f) return `${escapeHTML(f.check)} · ${escapeHTML(f.count ?? "?")} findings ${rbLink(f.url, "build ↗")}`;
     const status = f.status ? ` (HTTP ${f.status})` : "";
     return `<span class="mine-dim">${escapeHTML((RB_LOG[f.log] || f.log) + status)}</span> ${escapeHTML(f.build_name)}`

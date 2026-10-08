@@ -41,6 +41,9 @@ TRACEBACK_LINES = 15
 
 _CHECK_URL_RE = re.compile(r"https://runbot\.odoo\.com/runbot/batch/(\d+)/build/(\d+)")
 _LINE_START_RE = re.compile(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} \d+ ")
+_ERROR_LINE_RE = re.compile(
+    r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} \d+ (?:ERROR|CRITICAL) \S+ (\S+): (.+)")
+ERROR_LINES = 3
 # The test's own logger line, e.g. `odoo.addons.web_studio.tests.test_ui: FAIL: TestUi.test_x`
 _TEST_FAIL_RE = re.compile(
     r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} \d+ \w+ \S+ (\S+): (?:FAIL|ERROR): "
@@ -52,7 +55,10 @@ _RUFF_PATH_RE = re.compile(r"^/data/build/(?:merge_base_)?")
 _FAILED = ("ko", "killed")
 # Fields of a build tree row, build_time joins them when runbot can compute it.
 _TREE_FIELDS = ["trigger_id", "description", "host", "dest", "log_list", "local_state",
-                "local_result", "parent_id"]
+                "local_result", "global_result", "parent_id", "linked_children_build_ids",
+                "orphan_result"]
+# Rounds of linked builds followed, upgrade builds link migration builds one level deep.
+_LINK_ROUNDS = 3
 _TREE_LIMIT = 1000
 _FIREFOX_QUERY = (
     "SELECT value, lastAccessed FROM moz_cookies WHERE host LIKE '%runbot.odoo.com' "
@@ -305,37 +311,57 @@ class Runbot:
         return BundleBatch(rows[0]["name"], batches[0], key, triggers)
 
     def _trees(self, build_ids: list[int]) -> list[tuple[dict, list[dict]]]:
-        """Read `build_ids` and all their descendants in one search_read, as (root, tree) pairs."""
+        """Read `build_ids` with their descendants and linked builds, as (root, tree) pairs."""
+        by_id = {r["id"]: r for r in self._read_tree(build_ids)}
+        # A linked build (runbot.build.link) counts in its parent's result without being a child.
+        linker: dict[int, int] = {}
+        for _ in range(_LINK_ROUNDS):
+            links = {child: row["id"] for row in by_id.values()
+                     for child in row.get("linked_children_build_ids") or [] if child not in by_id}
+            if not links:
+                break
+            linker |= links
+            by_id |= {r["id"]: r for r in self._read_tree(list(links))}
+        trees: dict[int, list[dict]] = {i: [] for i in build_ids if i in by_id}
+        if missing := [i for i in build_ids if i not in by_id]:
+            log.warning("runbot builds not found: %s", missing)
+        for row in by_id.values():
+            node = row
+            while node["id"] not in trees:
+                up = linker.get(node["id"]) or node["parent_id"][0]
+                node = by_id[up]
+            if row is node or not row.get("orphan_result"):
+                trees[node["id"]].append(row)
+        return [(by_id[root_id], tree) for root_id, tree in trees.items()]
+
+    def _read_tree(self, build_ids: list[int]) -> list[dict]:
         domain = [("id", "child_of", build_ids)]
         try:
-            rows = self.search_read("runbot.build", domain, [*_TREE_FIELDS, "build_time"],
+            return self.search_read("runbot.build", domain, [*_TREE_FIELDS, "build_time"],
                                     limit=_TREE_LIMIT)
         except RpcError as e:
             # runbot crashes comparing a datetime to False in build_time on some builds.
             if "TypeError" not in e.name:
                 raise
             log.info("retrying without build_time: %s", e)
-            rows = self.search_read("runbot.build", domain, _TREE_FIELDS, limit=_TREE_LIMIT)
-        by_id = {r["id"]: r for r in rows}
-        trees: dict[int, list[dict]] = {i: [] for i in build_ids if i in by_id}
-        if missing := [i for i in build_ids if i not in by_id]:
-            log.warning("runbot builds not found: %s", missing)
-        for row in rows:
-            node = row
-            while node["id"] not in trees:
-                node = by_id[node["parent_id"][0]]
-            trees[node["id"]].append(row)
-        return [(by_id[root_id], tree) for root_id, tree in trees.items()]
+            return self.search_read("runbot.build", domain, _TREE_FIELDS, limit=_TREE_LIMIT)
 
     def _trigger(self, root: dict, tree: list[dict], known: dict[int, list[dict]]) -> Trigger:
         kids = [b for b in tree if b is not root]
         done = [b for b in kids if b["local_state"] == "done"]
         failures, settled = self._tree_failures(tree, known)
+        verdict = _verdict(tree)
+        # runbot's own aggregate wins when the tree read missed the failing build.
+        if root.get("global_result") in _FAILED and verdict != "red":
+            verdict = "red"
+            failures = failures or [{"log": "unparsed", "build_id": root["id"],
+                                     "build_name": root["trigger_id"][1],
+                                     "url": build_url(root["id"])}]
         return Trigger(
             name=root["trigger_id"][1],
             build_id=root["id"],
             url=build_url(root["id"]),
-            verdict=_verdict(tree),
+            verdict=verdict,
             children={
                 "done": len(done),
                 "ok": sum(b["local_result"] in ("ok", "warn") for b in done),
@@ -383,7 +409,8 @@ class Runbot:
         found: list[dict] = []
         try:
             if steps and not checks:
-                found = _test_failures(self._get(f"{static}/{steps[-1]}.txt"))
+                text = self._get(f"{static}/{steps[-1]}.txt")
+                found = _test_failures(text) or _error_lines(text)
             for step in checks:
                 if step == "check_style_ruff":
                     output = self._get(f"{static}/{step}-ruff-output.json")
@@ -401,9 +428,9 @@ class Runbot:
 
 
 def _where(build: dict) -> dict:
-    # A child's description ("Test at install") tells it apart, its trigger is the root's.
-    return {"build_id": build["id"], "build_name": build["description"] or build["trigger_id"][1],
-            "url": build_url(build["id"])}
+    # A child's description ("Test at install") tells it apart, shown without its markdown `**`.
+    name = (build["description"] or build["trigger_id"][1]).replace("**", "")
+    return {"build_id": build["id"], "build_name": name, "url": build_url(build["id"])}
 
 
 def _verdict(tree: list[dict]) -> str:
@@ -412,6 +439,13 @@ def _verdict(tree: list[dict]) -> str:
     if all(b["local_state"] == "done" and b["local_result"] in ("ok", "warn") for b in tree):
         return "green"
     return "running"
+
+
+def _error_lines(text: str) -> list[dict]:
+    """Return the first distinct ERROR or CRITICAL lines of a build that failed outside a test."""
+    errors = dict.fromkeys(f"{m.group(1)}: {m.group(2).strip()}"
+                           for m in map(_ERROR_LINE_RE.match, text.splitlines()) if m)
+    return [{"error": e} for e in list(errors)[:ERROR_LINES]]
 
 
 def _test_failures(text: str) -> list[dict]:

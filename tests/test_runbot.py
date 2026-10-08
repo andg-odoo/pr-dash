@@ -75,7 +75,7 @@ def test_failing_tests_are_read_from_the_whole_step_log(fake, client):
         "Path: /t/div[2]/h2",
         'Node: <h2 t-out="layout_document_title or o.name"/>']
     assert {k: failures[0][k] for k in ("build_id", "build_name", "url")} == {
-        "build_id": 128070971, "build_name": "Post install tests for **!web -> !website**",
+        "build_id": 128070971, "build_name": "Post install tests for !web -> !website",
         "url": "https://runbot.odoo.com/runbot/build/128070971"}
 
 
@@ -84,7 +84,7 @@ def test_verdict_and_tally_cover_the_whole_tree(fake, client):
     green, killed, old, running = (
         [b | {"trigger_id": [3, "Enterprise Tests"]} for b in _json(f"tree_{name}.json")]
         for name in ("red_runbot_light_killed", "killed_install", "red_enterprise_old", "running"))
-    green[0]["local_result"] = "ok"
+    green[0] |= {"local_result": "ok", "global_result": "ok"}
     killed[0]["build_time"] = 1812
     # Six more failing children than the old tree had, past the per-tree log budget.
     for child in old[3:9]:
@@ -126,6 +126,37 @@ def test_verdict_and_tally_cover_the_whole_tree(fake, client):
     # A parent whose own steps passed while a child still tests is running, not green.
     green[1] |= {"local_state": "testing", "local_result": False}
     assert client.triggers([127220311])[0].verdict == "running"
+
+    # Build 128071236 links reused migration builds, whose red is its red, an orphan child's is not.
+    build = {"trigger_id": [9, "ci/upgrade_enterprise"], "local_state": "done", "host": "h",
+             "dest": "d", "log_list": False, "description": False}
+    fake.rows["runbot.build"] += [
+        build | {"id": 128071236, "parent_id": False, "local_result": "ok",
+                 "linked_children_build_ids": [128070672, 128070673]},
+        build | {"id": 128070672, "parent_id": False, "local_result": "ok"},
+        build | {"id": 128070673, "parent_id": False, "local_result": "ko"},
+        build | {"id": 128071237, "parent_id": [128071236, ""], "local_result": "ko",
+                 "orphan_result": True},
+    ]
+    fake.calls, fake.crash_on_build_time = [], False
+    [upgrade] = client.triggers([128071236])
+    assert (upgrade.verdict, upgrade.children, fake.calls) == (
+        "red", {"done": 2, "ok": 1, "ko": 1, "killed": 0, "testing": 0}, ["rpc runbot.build"] * 2)
+    # A migration that fails outside a test reports its ERROR lines, the markdown name made plain.
+    fake.rows["runbot.build"][-2] |= {"log_list": "restore,test-migration",
+                                      "description": "Testing migration from **18.0**"}
+    fake.files[_static(fake.rows["runbot.build"][-2], "test-migration.txt")] = (
+        "2026-10-08 22:12:45,131 60 ERROR db odoo.modules.loading: Some modules have inconsistent"
+        " states: ['l10n_cl_edi_stock_reform']\n")
+    [upgrade] = client.triggers([128071236])
+    assert upgrade.failures[0] | {"url": None} == {
+        "error": "odoo.modules.loading: Some modules have inconsistent states:"
+                 " ['l10n_cl_edi_stock_reform']",
+        "build_id": 128070673, "build_name": "Testing migration from 18.0", "url": None}
+    # Without the link, runbot's own global_result still makes it red.
+    fake.rows["runbot.build"][-4] |= {"linked_children_build_ids": [], "global_result": "ko"}
+    [upgrade] = client.triggers([128071236])
+    assert (upgrade.verdict, upgrade.failures[0]["log"]) == ("red", "unparsed")
 
 
 def test_style_and_policy_checks(fake, client):
