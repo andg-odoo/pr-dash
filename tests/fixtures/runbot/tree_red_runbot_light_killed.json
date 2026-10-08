@@ -1,0 +1,59 @@
+[
+ {
+  "id": 127220311,
+  "description": false,
+  "global_state": "done",
+  "global_result": "killed",
+  "local_state": "done",
+  "local_result": "killed",
+  "create_date": "2026-10-01 21:59:42",
+  "host": "runbot119.odoo.com",
+  "dest": "127220311-master",
+  "log_list": "install_all",
+  "parent_id": false,
+  "params_id": [
+   154307658,
+   "runbot.build.params,154307658"
+  ]
+ },
+ {
+  "id": 127220365,
+  "description": "Test at install",
+  "global_state": "done",
+  "global_result": "ok",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2026-10-01 22:00:54",
+  "host": "runbot296.odoo.com",
+  "dest": "127220365-master",
+  "log_list": "start_at_install",
+  "parent_id": [
+   127220311,
+   "Parallel testing (light)"
+  ],
+  "params_id": [
+   154307768,
+   "runbot.build.params,154307768"
+  ]
+ },
+ {
+  "id": 127220366,
+  "description": "Test pylint",
+  "global_state": "done",
+  "global_result": "ok",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2026-10-01 22:00:54",
+  "host": "runbot296.odoo.com",
+  "dest": "127220366-master",
+  "log_list": "start_test_lint",
+  "parent_id": [
+   127220311,
+   "Parallel testing (light)"
+  ],
+  "params_id": [
+   154307769,
+   "runbot.build.params,154307769"
+  ]
+ }
+]

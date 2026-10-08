@@ -12,7 +12,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from pr_dash import ai, branch_set, checkout, config, db, derive, github, query, tab
+from pr_dash import ai, branch_set, checkout, config, db, derive, github, query, runbot_cache, tab
 
 # stderr only: stdout is the MCP protocol channel, so a single stray print or
 # rich.Console write there corrupts the stream. Everything human-facing goes to
@@ -406,6 +406,21 @@ def get_mine(ref: str) -> dict:
 
 
 @mcp.tool()
+def get_runbot(ref: str) -> dict:
+    """Runbot status and failures for one of your Authored PRs, or for a bundle by name.
+
+    ref accepts a PR ref as get_mine does, naming its whole Branch set, or a bundle name,
+    exact or partial (several matches return `candidates` and their `count`).
+    Returns {ref, requests, session_expired, error, batches: [{batch_id, prs, triggers}]},
+    a trigger being {name, build_id, url, verdict, children, previous, failures, error, prs}.
+    A trigger `error` of "deferred" (request cap) or "expired" (log in to runbot.odoo.com
+    in Firefox) clears on a later call. A failure {log: "gone"} or {log: "not fetched"}
+    still links its build.
+    """
+    return runbot_cache.get_runbot(_get_cfg(), ref)
+
+
+@mcp.tool()
 def hide_pr(ref: str) -> dict:
     """Hide a PR from the pending queue (same as the dashboard's × button). It
     stays hidden until a head commit changes - a push to any code half of its
@@ -415,7 +430,7 @@ def hide_pr(ref: str) -> dict:
     Returns {id, hidden: true, hidden_count}.
     """
     cfg = _get_cfg()
-    item = tab.queue_only(cfg, ref, "hide_pr")
+    item = tab.only(cfg, ref, "hide_pr")
     # An archived row's cached sha can be long stale; a hide recorded at it
     # would auto-unhide against the live sha immediately. Best-effort live
     # lookup per member, cached shas as the offline fallback.
@@ -446,7 +461,7 @@ def unhide_pr(ref: str) -> dict:
     Returns {id, hidden: false, hidden_count}.
     """
     cfg = _get_cfg()
-    item = tab.queue_only(cfg, ref, "unhide_pr")
+    item = tab.only(cfg, ref, "unhide_pr")
     _apply_mark_ops(cfg, [{"kind": "hide", "op": "clear", "key": item["id"]}])
     return {"id": item["id"], "hidden": False, "hidden_count": _hidden_count(cfg)}
 
@@ -481,7 +496,7 @@ def get_ai_review(ref: str) -> dict:
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
     """
-    item = tab.queue_only(_get_cfg(), ref, "get_ai_review")
+    item = tab.only(_get_cfg(), ref, "get_ai_review")
     ai_reviews = item.get("ai_reviews") or []
     out = {
         "id": item["id"],
@@ -531,7 +546,7 @@ def set_ai_review(ref: str, summary: str, verdict: str,
     up on the next browser reload without a `pr-dash refresh`.
     """
     cfg = _get_cfg()
-    item = tab.queue_only(cfg, ref, "set_ai_review")
+    item = tab.only(cfg, ref, "set_ai_review")
     if verdict not in ai._VERDICTS:
         raise ValueError(
             f"verdict must be one of {', '.join(ai._VERDICTS)}, got {verdict!r}",

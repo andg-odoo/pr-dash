@@ -82,6 +82,14 @@ _Avoid_: skip, ignore
 A PR the Mergebot landed, which GitHub reports as closed, never as merged.
 _Avoid_: closed (when merged is meant)
 
+**Red trigger**:
+A runbot check whose build tree has a ko or killed build and that the Mergebot still counts as failing.
+_Avoid_: red build, failing slot
+
+**Runbot snapshot**:
+What pr-dash last read of one runbot build tree or bundle batch, kept until that build changes or is gone.
+_Avoid_: runbot cache, runbot status
+
 ### Forward-ports
 
 **Forward-port**:

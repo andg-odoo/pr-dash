@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from pr_dash import ai, branch_set, db, derive, github, mergebot, render
+from pr_dash import ai, branch_set, db, derive, github, mergebot, render, runbot, runbot_cache
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -39,6 +39,7 @@ class RefreshReport:
     # None when the Mine refresh was not due or failed.
     mine_refreshed: int | None = None
     mergebot_read: int = 0
+    runbot_requests: int = 0
     warnings: list[str] = field(default_factory=list)
 
 
@@ -77,9 +78,12 @@ class Sync:
                  read_mergebot: Callable[[str, int], mergebot.MergebotState] = mergebot.fetch,
                  reviewer: Callable[..., list[ai.ReviewOutcome]] = ai.review_batch,
                  clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+                 runbot_http: runbot.Http | None = None,
+                 find_session: Callable[[], str] = runbot.find_session_id,
                  on_phase: Callable[[str], None] | None = None):
         self.conn, self.cfg, self.gh = conn, cfg, gh
         self.read_mergebot, self.reviewer, self.clock = read_mergebot, reviewer, clock
+        self.runbot_http, self.find_session = runbot_http, find_session
         self._phase = on_phase or (lambda text: None)
 
     def _stamp(self) -> str:
@@ -283,6 +287,18 @@ class Sync:
         report.mergebot_read = len(reads)
         sets, _ = render.build_mine_payload(conn, self.cfg.github_login, now=now)
         db.clear_marks(conn, "ack", [s["key"] for s in sets if not s["acknowledged"]])
+        if self.runbot_http is not None:
+            self._refresh_runbot(report)
+
+    def _refresh_runbot(self, report: RefreshReport) -> None:
+        """Snapshot each red runbot build of an open Authored PR, again while it is unfinished."""
+        try:
+            report.runbot_requests = runbot_cache.refresh(
+                self.conn, self.runbot_http, self.find_session, self.clock, report.warnings)
+        except Exception as e:
+            # Runbot never aborts the refresh, a cookie or cache failure included.
+            log.exception("runbot refresh failed")
+            report.warnings.append(f"Runbot refresh failed: {e}")
 
     def import_history(self) -> ImportReport | None:
         """Import every closed Authored PR once, dismissing the Branch sets already resolved.

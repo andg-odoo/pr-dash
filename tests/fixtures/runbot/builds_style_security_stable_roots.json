@@ -1,0 +1,87 @@
+[
+ {
+  "id": 98139880,
+  "description": false,
+  "global_state": "done",
+  "global_result": "ko",
+  "local_state": "done",
+  "local_result": "ko",
+  "create_date": "2026-01-15 23:41:00",
+  "host": "runbot109.odoo.com",
+  "dest": "98139880-master",
+  "log_list": "check_semgrep",
+  "parent_id": false,
+  "params_id": [
+   116236726,
+   "runbot.build.params,116236726"
+  ]
+ },
+ {
+  "id": 104334159,
+  "description": "Minimal check before starting other tests",
+  "global_state": "done",
+  "global_result": "ko",
+  "local_state": "done",
+  "local_result": "ko",
+  "create_date": "2026-03-17 00:06:36",
+  "host": "runbot133.odoo.com",
+  "dest": "104334159-18-0",
+  "log_list": false,
+  "parent_id": false,
+  "params_id": [
+   124258710,
+   "runbot.build.params,124258710"
+  ]
+ },
+ {
+  "id": 127730874,
+  "description": false,
+  "global_state": "done",
+  "global_result": "ko",
+  "local_state": "done",
+  "local_result": "ko",
+  "create_date": "2026-10-06 17:00:16",
+  "host": "runbot237.odoo.com",
+  "dest": "127730874-master",
+  "log_list": "check_style_ruff,check_semgrep_style",
+  "parent_id": false,
+  "params_id": [
+   154997153,
+   "runbot.build.params,154997153"
+  ]
+ },
+ {
+  "id": 127942843,
+  "description": false,
+  "global_state": "done",
+  "global_result": "ko",
+  "local_state": "done",
+  "local_result": "ko",
+  "create_date": "2026-10-07 23:43:23",
+  "host": "runbot171.odoo.com",
+  "dest": "127942843-20-0",
+  "log_list": "check_style_ruff,check_semgrep_style",
+  "parent_id": false,
+  "params_id": [
+   155283387,
+   "runbot.build.params,155283387"
+  ]
+ },
+ {
+  "id": 128071553,
+  "description": false,
+  "global_state": "done",
+  "global_result": "ko",
+  "local_state": "done",
+  "local_result": "ko",
+  "create_date": "2026-10-08 21:41:05",
+  "host": "runbot185.odoo.com",
+  "dest": "128071553-18-0",
+  "log_list": "stable_policy_check",
+  "parent_id": false,
+  "params_id": [
+   155475584,
+   "runbot.build.params,155475584"
+  ]
+ }
+]

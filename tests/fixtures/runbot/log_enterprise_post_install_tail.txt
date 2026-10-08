@@ -1,0 +1,300 @@
+2026-10-08 21:37:01,866 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:01] "GET /web_studio/static/src/img/ui/checkbox_active.svg HTTP/1.1" 200 - 0 0.000 0.002
+2026-10-08 21:37:01,946 26 INFO 128070971-18-0-all odoo.models.unlink: User #2 deleted ir.model.data records with IDs: [378562] 
+2026-10-08 21:37:01,946 26 INFO 128070971-18-0-all odoo.models.unlink: User #2 deleted ir.ui.view records with IDs: [8055] 
+2026-10-08 21:37:02,006 26 INFO 128070971-18-0-all odoo.tests.common: Simulating signal changes during tests 
+2026-10-08 21:37:02,007 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:02] "POST /web_studio/edit_view HTTP/1.1" 200 - 83 0.069 0.079
+2026-10-08 21:37:02,037 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:02] "POST /web/dataset/call_kw/res.partner/onchange HTTP/1.1" 200 - 7 0.002 0.007
+2026-10-08 21:37:02,084 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_undo_new_field.browser: tour succeeded 
+2026-10-08 21:37:02,085 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_undo_new_field.browser: 
+
+╔═══════════════════════════════════════════════╗
+║ TOUR web_studio_test_undo_new_field SUCCEEDED ║
+╚═══════════════════════════════════════════════╝
+ 
+2026-10-08 21:37:02,188 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_undo_new_field.browser: heap 31374108 (allocated 32292864) 
+2026-10-08 21:37:02,189 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_undo_new_field: Closing chrome headless with pid 24511 
+2026-10-08 21:37:02,190 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_undo_new_field: Closing websocket connection 
+2026-10-08 21:37:02,190 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_undo_new_field: Terminating chrome headless with pid 24511 
+2026-10-08 21:37:02,249 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_undo_new_field: Chrome Log in: /data/build/tests/128070971-18-0-all/chrome_logs/chrome_log_20261008_213702_248839_test_undo_new_field.txt 
+2026-10-08 21:37:02,249 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_undo_new_field: Removing chrome user profile "/tmp/tmpw_ocy43y_chrome_odoo" 
+2026-10-08 21:37:02,281 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui: Starting TestStudioUIUnit.test_use_action_domain ... 
+2026-10-08 21:37:02,412 26 INFO 128070971-18-0-all odoo.models.unlink: User #1 deleted ir.actions.act_window.view records with IDs: [803] 
+2026-10-08 21:37:02,667 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Chrome pid: 24717 
+2026-10-08 21:37:02,668 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Chrome headless temporary user profile dir: /tmp/tmptq7cx3rs_chrome_odoo 
+2026-10-08 21:37:02,668 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Issuing json command http://127.0.0.1:46407/json/version 
+2026-10-08 21:37:02,673 26 INFO 128070971-18-0-all odoo.tests.common.requests: request http://127.0.0.1:46407/json/version with timeout 3 increased to 10s during tests 
+2026-10-08 21:37:02,678 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Browser version: Chrome/150.0.7871.114 
+2026-10-08 21:37:02,678 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Issuing json command http://127.0.0.1:46407/json 
+2026-10-08 21:37:02,679 26 INFO 128070971-18-0-all odoo.tests.common.requests: request http://127.0.0.1:46407/json with timeout 3 increased to 10s during tests 
+2026-10-08 21:37:02,686 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Websocket url found: ws://127.0.0.1:46407/devtools/page/B27CE03804BA4199A9A505835D7FBC9B 
+2026-10-08 21:37:02,689 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Enable chrome headless console log notification 
+2026-10-08 21:37:02,692 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Chrome headless enable page notifications 
+2026-10-08 21:37:02,732 26 INFO 128070971-18-0-all odoo.addons.base.models.res_users: Login successful for db:128070971-18-0-all login:admin from n/a 
+2026-10-08 21:37:02,740 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Setting session cookie in browser 
+2026-10-08 21:37:02,741 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Open "http://127.0.0.1:8069/web?debug=tests" in browser 
+2026-10-08 21:37:02,741 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Navigating to: "http://127.0.0.1:8069/web?debug=tests" 
+2026-10-08 21:37:02,748 26 INFO 128070971-18-0-all odoo.addons.base.models.ir_http: Generating routing map for key 1 
+2026-10-08 21:37:03,926 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:03] "GET /web?debug=tests HTTP/1.1" 200 - 192 0.077 1.104
+2026-10-08 21:37:03,929 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Navigation result: {'frameId': 'B27CE03804BA4199A9A505835D7FBC9B', 'loaderId': 'C8EFF6FFBAF1FB2D94E0DC3FB1CB920D', 'isDownload': False} 
+2026-10-08 21:37:03,929 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Evaluate ready code "odoo.isTourReady('web_studio_test_use_action_domain')" 
+2026-10-08 21:37:03,958 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:03] "GET /web/assets/e5d62cd/web.assets_web.min.css HTTP/1.1" 200 - 2 0.001 0.008
+2026-10-08 21:37:03,963 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:03] "GET /web/webclient/translations/1ba74cca3656fb46c4c05ea637585bc4356f531e?lang=en_US HTTP/1.1" 200 - 0 0.000 0.012
+2026-10-08 21:37:04,508 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:04] "GET /web/webclient/load_menus/7235fafe00dcc33502b7af4992a4417c793ab39792eeb851079c0beb9b0fb837 HTTP/1.1" 200 - 814 0.194 0.363
+2026-10-08 21:37:04,518 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:04] "GET /web/manifest.webmanifest HTTP/1.1" 200 - 8 0.004 0.560
+2026-10-08 21:37:04,524 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:04] "GET /web/assets/73b2bdb/web.assets_web.min.js HTTP/1.1" 200 - 2 0.001 0.573
+2026-10-08 21:37:04,529 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:04] "GET /web/assets/fb42ddb/web.assets_tests.min.js HTTP/1.1" 200 - 2 0.001 0.005
+2026-10-08 21:37:04,570 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:04] "GET /web/assets/97eda4d/web.assets_web_print.min.css HTTP/1.1" 200 - 2 0.001 0.003
+2026-10-08 21:37:05,206 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "GET /web/static/img/favicon.ico HTTP/1.1" 200 - 0 0.000 0.001
+2026-10-08 21:37:05,209 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Evaluate test code "odoo.startTour('web_studio_test_use_action_domain', {"stepDelay": 0, "keepWatchBrowser": false, "debug": false, "startUrl": "/web?debug=tests", "delayToCheckUndeterminisms": 0})" 
+2026-10-08 21:37:05,214 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain.browser: [1/5] Tour web_studio_test_use_action_domain → Step a[data-menu-xmlid='web_studio.studio_test_partner_menu'] 
+2026-10-08 21:37:05,214 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "GET /web/static/img/odoo-icon-192x192.png HTTP/1.1" 200 - 0 0.000 0.002
+2026-10-08 21:37:05,219 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "GET /bus/websocket_worker_bundle?v=18.0-7 HTTP/1.1" 200 - 3 0.001 0.009
+2026-10-08 21:37:05,226 26 INFO 128070971-18-0-all odoo.tests.common: Simulating signal changes during tests 
+2026-10-08 21:37:05,226 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "POST /web/dataset/call_kw/iot.channel/get_iot_channel HTTP/1.1" 200 - 5 0.001 0.013
+2026-10-08 21:37:05,241 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "GET /websocket?version=18.0-7 HTTP/1.1" 503 - 6 0.002 0.005
+2026-10-08 21:37:05,260 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "GET /websocket?version=18.0-7 HTTP/1.1" 503 - 0 0.000 0.002
+2026-10-08 21:37:05,300 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "POST /web/dataset/call_kw/res.users/has_group HTTP/1.1" 200 - 17 0.015 0.021
+2026-10-08 21:37:05,494 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "POST /mail/data HTTP/1.1" 200 - 152 0.063 0.157
+2026-10-08 21:37:05,495 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "POST /web/dataset/call_kw/res.users/has_group HTTP/1.1" 200 - 0 0.000 0.230
+2026-10-08 21:37:05,496 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "GET /websocket?version=18.0-7 HTTP/1.1" 503 - 0 0.000 0.221
+2026-10-08 21:37:05,511 26 INFO 128070971-18-0-all odoo.addons.partner_autocomplete.models.res_company: Starting enrich of company My Company (San Francisco) (1) 
+2026-10-08 21:37:05,549 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "POST /web/dataset/call_kw/res.company/iap_enrich_auto HTTP/1.1" 200 - 15 0.015 0.261
+2026-10-08 21:37:05,551 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "POST /web/dataset/call_kw/res.users/has_group HTTP/1.1" 200 - 0 0.000 0.283
+2026-10-08 21:37:05,553 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "GET /websocket?version=18.0-7 HTTP/1.1" 503 - 0 0.000 0.023
+2026-10-08 21:37:05,556 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain.browser: Owl is running in 'dev' mode. 
+2026-10-08 21:37:05,565 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "GET /web/service-worker.js HTTP/1.1" 200 - 0 0.000 0.002
+2026-10-08 21:37:05,588 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "GET /odoo/offline HTTP/1.1" 200 - 8 0.002 0.013
+2026-10-08 21:37:05,607 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "POST /hr_attendance/attendance_user_data HTTP/1.1" 200 - 6 0.003 0.012
+2026-10-08 21:37:05,685 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "GET /web/image?model=res.users&field=avatar_128&id=2 HTTP/1.1" 200 - 6 0.002 0.010
+2026-10-08 21:37:05,698 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "GET /web/image/res.partner/3/avatar_128?unique=1791494171000 HTTP/1.1" 200 - 6 0.003 0.023
+2026-10-08 21:37:05,724 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "GET /web/static/lib/odoo_ui_icons/fonts/odoo_ui_icons.woff2 HTTP/1.1" 200 - 0 0.000 0.001
+2026-10-08 21:37:05,725 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "GET /web/static/src/libs/fontawesome/fonts/fontawesome-webfont.woff2?v=4.7.0 HTTP/1.1" 200 - 0 0.000 0.003
+2026-10-08 21:37:05,733 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "GET /web/static/img/default_icon_app.png HTTP/1.1" 200 - 0 0.000 0.001
+2026-10-08 21:37:05,738 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "GET /web_enterprise/static/img/background-light.svg HTTP/1.1" 200 - 0 0.000 0.001
+2026-10-08 21:37:05,757 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain.browser: [2/5] Tour web_studio_test_use_action_domain → Step .o_list_view 
+2026-10-08 21:37:05,771 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "POST /web/action/load HTTP/1.1" 200 - 9 0.003 0.010
+2026-10-08 21:37:05,988 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:05] "POST /web/dataset/call_kw/res.partner/get_views HTTP/1.1" 200 - 111 0.042 0.150
+2026-10-08 21:37:06,009 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:06] "POST /web/dataset/call_kw/res.users/has_group HTTP/1.1" 200 - 0 0.000 0.003
+2026-10-08 21:37:06,024 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:06] "POST /web/dataset/call_kw/res.partner/web_search_read HTTP/1.1" 200 - 3 0.003 0.015
+2026-10-08 21:37:06,087 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain.browser: [3/5] Tour web_studio_test_use_action_domain → Step .o_web_studio_navbar_item button 
+2026-10-08 21:37:06,160 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain.browser: [4/5] Tour web_studio_test_use_action_domain → Step .o_web_studio_sidebar 
+2026-10-08 21:37:06,233 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:06] "GET /web/bundle/web_studio.studio_assets?lang=en_US&debug=tests HTTP/1.1" 200 - 11 0.002 0.069
+2026-10-08 21:37:06,242 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:06] "GET /web/assets/25d80b1/web_studio.studio_assets.min.js HTTP/1.1" 200 - 2 0.001 0.004
+2026-10-08 21:37:06,244 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:06] "GET /web/assets/ff8d0fd/web_studio.studio_assets.min.css HTTP/1.1" 200 - 2 0.000 0.007
+2026-10-08 21:37:06,459 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:06] "POST /web/dataset/call_kw/res.partner/get_views HTTP/1.1" 200 - 179 0.031 0.113
+2026-10-08 21:37:06,474 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:06] "POST /web_studio/get_studio_view_arch HTTP/1.1" 200 - 2 0.001 0.003
+2026-10-08 21:37:06,518 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:06] "POST /web/dataset/call_kw/res.partner/web_search_read HTTP/1.1" 200 - 3 0.003 0.010
+2026-10-08 21:37:06,546 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:06] "GET /web_studio/static/src/img/ui/studio_icons.png HTTP/1.1" 200 - 0 0.000 0.001
+2026-10-08 21:37:06,590 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain.browser: [5/5] Tour web_studio_test_use_action_domain → Step .o_list_table 
+2026-10-08 21:37:06,653 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain.browser: tour succeeded 
+2026-10-08 21:37:06,654 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain.browser: 
+
+╔══════════════════════════════════════════════════╗
+║ TOUR web_studio_test_use_action_domain SUCCEEDED ║
+╚══════════════════════════════════════════════════╝
+ 
+2026-10-08 21:37:06,714 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain.browser: heap 28056072 (allocated 30375936) 
+2026-10-08 21:37:06,716 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Closing chrome headless with pid 24717 
+2026-10-08 21:37:06,716 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Closing websocket connection 
+2026-10-08 21:37:06,716 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Terminating chrome headless with pid 24717 
+2026-10-08 21:37:06,770 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Chrome Log in: /data/build/tests/128070971-18-0-all/chrome_logs/chrome_log_20261008_213706_770377_test_use_action_domain.txt 
+2026-10-08 21:37:06,770 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_use_action_domain: Removing chrome user profile "/tmp/tmptq7cx3rs_chrome_odoo" 
+2026-10-08 21:37:06,801 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui: Starting TestStudioUIUnit.test_web_studio_check_method_in_model ... 
+2026-10-08 21:37:07,037 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Chrome pid: 24917 
+2026-10-08 21:37:07,037 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Chrome headless temporary user profile dir: /tmp/tmpm14wt7h9_chrome_odoo 
+2026-10-08 21:37:07,037 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Issuing json command http://127.0.0.1:43479/json/version 
+2026-10-08 21:37:07,038 26 INFO 128070971-18-0-all odoo.tests.common.requests: request http://127.0.0.1:43479/json/version with timeout 3 increased to 10s during tests 
+2026-10-08 21:37:07,039 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Browser version: Chrome/150.0.7871.114 
+2026-10-08 21:37:07,040 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Issuing json command http://127.0.0.1:43479/json 
+2026-10-08 21:37:07,040 26 INFO 128070971-18-0-all odoo.tests.common.requests: request http://127.0.0.1:43479/json with timeout 3 increased to 10s during tests 
+2026-10-08 21:37:07,041 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Websocket url found: ws://127.0.0.1:43479/devtools/page/6A88499BB5A09CC4006F7F1407B2A0EB 
+2026-10-08 21:37:07,042 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Enable chrome headless console log notification 
+2026-10-08 21:37:07,043 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Chrome headless enable page notifications 
+2026-10-08 21:37:07,077 26 INFO 128070971-18-0-all odoo.addons.base.models.res_users: Login successful for db:128070971-18-0-all login:admin from n/a 
+2026-10-08 21:37:07,085 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Setting session cookie in browser 
+2026-10-08 21:37:07,087 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Open "http://127.0.0.1:8069/odoo?debug=tests" in browser 
+2026-10-08 21:37:07,087 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Navigating to: "http://127.0.0.1:8069/odoo?debug=tests" 
+2026-10-08 21:37:07,097 26 INFO 128070971-18-0-all odoo.addons.base.models.ir_http: Generating routing map for key 1 
+2026-10-08 21:37:08,655 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:08] "GET /odoo?debug=tests HTTP/1.1" 200 - 197 0.073 1.487
+2026-10-08 21:37:08,657 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Navigation result: {'frameId': '6A88499BB5A09CC4006F7F1407B2A0EB', 'loaderId': '64ACB72D1B7A8F0D90016A841E58DD92', 'isDownload': False} 
+2026-10-08 21:37:08,657 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Evaluate ready code "odoo.isTourReady('web_studio_check_method_in_model')" 
+2026-10-08 21:37:08,682 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:08] "GET /web/assets/e5d62cd/web.assets_web.min.css HTTP/1.1" 200 - 2 0.002 0.007
+2026-10-08 21:37:08,685 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:08] "GET /web/assets/73b2bdb/web.assets_web.min.js HTTP/1.1" 200 - 2 0.001 0.010
+2026-10-08 21:37:09,185 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /web/webclient/load_menus/7235fafe00dcc33502b7af4992a4417c793ab39792eeb851079c0beb9b0fb837 HTTP/1.1" 200 - 814 0.175 0.333
+2026-10-08 21:37:09,189 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /web/webclient/translations/1ba74cca3656fb46c4c05ea637585bc4356f531e?lang=en_US HTTP/1.1" 200 - 0 0.000 0.511
+2026-10-08 21:37:09,199 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /web/manifest.webmanifest HTTP/1.1" 200 - 8 0.004 0.515
+2026-10-08 21:37:09,203 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /web/assets/fb42ddb/web.assets_tests.min.js HTTP/1.1" 200 - 2 0.001 0.336
+2026-10-08 21:37:09,321 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /web/assets/97eda4d/web.assets_web_print.min.css HTTP/1.1" 200 - 2 0.001 0.003
+2026-10-08 21:37:09,410 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /web/static/img/favicon.ico HTTP/1.1" 200 - 0 0.000 0.001
+2026-10-08 21:37:09,414 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Evaluate test code "odoo.startTour('web_studio_check_method_in_model', {"stepDelay": 0, "keepWatchBrowser": false, "debug": false, "startUrl": "/odoo?debug=tests", "delayToCheckUndeterminisms": 0})" 
+2026-10-08 21:37:09,418 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /web/static/img/odoo-icon-192x192.png HTTP/1.1" 200 - 0 0.000 0.002
+2026-10-08 21:37:09,419 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model.browser: [1/8] Tour web_studio_check_method_in_model → Step a[data-menu-xmlid='web_studio.studio_test_partner_menu'] 
+2026-10-08 21:37:09,420 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /bus/websocket_worker_bundle?v=18.0-7 HTTP/1.1" 200 - 3 0.001 0.007
+2026-10-08 21:37:09,427 26 INFO 128070971-18-0-all odoo.tests.common: Simulating signal changes during tests 
+2026-10-08 21:37:09,428 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "POST /web/dataset/call_kw/iot.channel/get_iot_channel HTTP/1.1" 200 - 5 0.001 0.011
+2026-10-08 21:37:09,496 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "POST /web/dataset/call_kw/res.users/has_group HTTP/1.1" 200 - 23 0.014 0.026
+2026-10-08 21:37:09,498 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "POST /web/dataset/call_kw/res.users/has_group HTTP/1.1" 200 - 0 0.000 0.041
+2026-10-08 21:37:09,501 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "POST /web/dataset/call_kw/res.users/has_group HTTP/1.1" 200 - 0 0.000 0.040
+2026-10-08 21:37:09,505 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /websocket?version=18.0-7 HTTP/1.1" 503 - 0 0.000 0.046
+2026-10-08 21:37:09,511 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model.browser: Owl is running in 'dev' mode. 
+2026-10-08 21:37:09,520 26 INFO 128070971-18-0-all odoo.addons.partner_autocomplete.models.res_company: Starting enrich of company My Company (San Francisco) (1) 
+2026-10-08 21:37:09,546 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "POST /web/dataset/call_kw/res.company/iap_enrich_auto HTTP/1.1" 200 - 16 0.015 0.071
+2026-10-08 21:37:09,654 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /web/static/src/libs/fontawesome/fonts/fontawesome-webfont.woff2?v=4.7.0 HTTP/1.1" 200 - 0 0.000 0.004
+2026-10-08 21:37:09,673 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /web/static/lib/odoo_ui_icons/fonts/odoo_ui_icons.woff2 HTTP/1.1" 200 - 0 0.000 0.010
+2026-10-08 21:37:09,679 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model.browser: [2/8] Tour web_studio_check_method_in_model → Step .o_form_view .o_form_editable 
+2026-10-08 21:37:09,681 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /web/static/img/default_icon_app.png HTTP/1.1" 200 - 0 0.000 0.005
+2026-10-08 21:37:09,688 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /web_enterprise/static/img/background-light.svg HTTP/1.1" 200 - 0 0.000 0.003
+2026-10-08 21:37:09,722 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "POST /mail/data HTTP/1.1" 200 - 151 0.067 0.192
+2026-10-08 21:37:09,723 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /web/service-worker.js HTTP/1.1" 200 - 0 0.000 0.211
+2026-10-08 21:37:09,736 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "POST /web/action/load HTTP/1.1" 200 - 9 0.003 0.042
+2026-10-08 21:37:09,748 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /web/image?model=res.users&field=avatar_128&id=2 HTTP/1.1" 200 - 6 0.003 0.139
+2026-10-08 21:37:09,759 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /web/image/res.partner/3/avatar_128?unique=1791494171000 HTTP/1.1" 200 - 6 0.002 0.149
+2026-10-08 21:37:09,801 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /odoo/offline HTTP/1.1" 200 - 8 0.004 0.066
+2026-10-08 21:37:09,820 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "POST /hr_attendance/attendance_user_data HTTP/1.1" 200 - 6 0.003 0.273
+2026-10-08 21:37:09,821 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /websocket?version=18.0-7 HTTP/1.1" 503 - 0 0.000 0.081
+2026-10-08 21:37:09,954 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "POST /web/dataset/call_kw/res.partner/get_views HTTP/1.1" 200 - 95 0.034 0.120
+2026-10-08 21:37:09,979 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "POST /web/dataset/call_kw/res.partner/onchange HTTP/1.1" 200 - 1 0.000 0.007
+2026-10-08 21:37:09,999 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:09] "GET /partner_autocomplete/static/lib/jsvat.js HTTP/1.1" 200 - 0 0.000 0.001
+2026-10-08 21:37:10,021 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model.browser: [3/8] Tour web_studio_check_method_in_model → Step button[title="Toggle Studio"] 
+2026-10-08 21:37:10,091 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model.browser: [4/8] Tour web_studio_check_method_in_model → Step .o-web-studio-editor--add-button-action 
+2026-10-08 21:37:10,160 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:10] "GET /web/bundle/web_studio.studio_assets?lang=en_US&debug=tests HTTP/1.1" 200 - 11 0.002 0.065
+2026-10-08 21:37:10,169 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:10] "GET /web/assets/ff8d0fd/web_studio.studio_assets.min.css HTTP/1.1" 200 - 2 0.001 0.005
+2026-10-08 21:37:10,172 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:10] "GET /web/assets/25d80b1/web_studio.studio_assets.min.js HTTP/1.1" 200 - 2 0.001 0.005
+2026-10-08 21:37:10,320 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:10] "POST /web/dataset/call_kw/res.partner/get_views HTTP/1.1" 200 - 28 0.009 0.046
+2026-10-08 21:37:10,321 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:10] "POST /web_studio/chatter_allowed HTTP/1.1" 200 - 0 0.000 0.050
+2026-10-08 21:37:10,332 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:10] "POST /web_studio/get_studio_view_arch HTTP/1.1" 200 - 2 0.000 0.002
+2026-10-08 21:37:10,363 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:10] "POST /web/dataset/call_kw/res.partner/onchange HTTP/1.1" 200 - 0 0.000 0.005
+2026-10-08 21:37:10,393 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:10] "GET /web_studio/static/src/img/ui/studio_icons.png HTTP/1.1" 200 - 0 0.000 0.001
+2026-10-08 21:37:10,417 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model.browser: [5/8] Tour web_studio_check_method_in_model → Step .o-web-studio-editor--modal-add-action input#set_label 
+2026-10-08 21:37:10,482 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model.browser: [6/8] Tour web_studio_check_method_in_model → Step .o-web-studio-editor--modal-add-action input#set_button_type_to_object 
+2026-10-08 21:37:10,538 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model.browser: [7/8] Tour web_studio_check_method_in_model → Step .o-web-studio-editor--modal-add-action  input#set_method 
+2026-10-08 21:37:10,609 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model.browser: [8/8] Tour web_studio_check_method_in_model → Step div.text-danger 
+2026-10-08 21:37:10,612 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:10] "POST /web_studio/check_method HTTP/1.1" 200 - 0 0.000 0.002
+2026-10-08 21:37:10,670 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model.browser: tour succeeded 
+2026-10-08 21:37:10,671 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model.browser: 
+
+╔═════════════════════════════════════════════════╗
+║ TOUR web_studio_check_method_in_model SUCCEEDED ║
+╚═════════════════════════════════════════════════╝
+ 
+2026-10-08 21:37:10,719 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model.browser: heap 27547136 (allocated 28278784) 
+2026-10-08 21:37:10,721 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Closing chrome headless with pid 24917 
+2026-10-08 21:37:10,721 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Closing websocket connection 
+2026-10-08 21:37:10,722 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Terminating chrome headless with pid 24917 
+2026-10-08 21:37:10,779 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Chrome Log in: /data/build/tests/128070971-18-0-all/chrome_logs/chrome_log_20261008_213710_779450_test_web_studio_check_method_in_model.txt 
+2026-10-08 21:37:10,779 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_web_studio_check_method_in_model: Removing chrome user profile "/tmp/tmpm14wt7h9_chrome_odoo" 
+2026-10-08 21:37:10,806 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui: Starting TestStudioUIUnit.test_x2many_two_levels_edition ... 
+2026-10-08 21:37:11,053 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Chrome pid: 25118 
+2026-10-08 21:37:11,053 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Chrome headless temporary user profile dir: /tmp/tmpgptzvr75_chrome_odoo 
+2026-10-08 21:37:11,053 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Issuing json command http://127.0.0.1:43871/json/version 
+2026-10-08 21:37:11,054 26 INFO 128070971-18-0-all odoo.tests.common.requests: request http://127.0.0.1:43871/json/version with timeout 3 increased to 10s during tests 
+2026-10-08 21:37:11,056 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Browser version: Chrome/150.0.7871.114 
+2026-10-08 21:37:11,056 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Issuing json command http://127.0.0.1:43871/json 
+2026-10-08 21:37:11,056 26 INFO 128070971-18-0-all odoo.tests.common.requests: request http://127.0.0.1:43871/json with timeout 3 increased to 10s during tests 
+2026-10-08 21:37:11,058 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Websocket url found: ws://127.0.0.1:43871/devtools/page/9B3D164CCDC4989E256920530DCCF445 
+2026-10-08 21:37:11,059 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Enable chrome headless console log notification 
+2026-10-08 21:37:11,060 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Chrome headless enable page notifications 
+2026-10-08 21:37:11,101 26 INFO 128070971-18-0-all odoo.addons.base.models.res_users: Login successful for db:128070971-18-0-all login:admin from n/a 
+2026-10-08 21:37:11,106 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Setting session cookie in browser 
+2026-10-08 21:37:11,107 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Open "http://127.0.0.1:8069/odoo?debug=tests" in browser 
+2026-10-08 21:37:11,107 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Navigating to: "http://127.0.0.1:8069/odoo?debug=tests" 
+2026-10-08 21:37:11,114 26 INFO 128070971-18-0-all odoo.addons.base.models.ir_http: Generating routing map for key 1 
+2026-10-08 21:37:12,212 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:12] "GET /odoo?debug=tests HTTP/1.1" 200 - 192 0.072 1.028
+2026-10-08 21:37:12,214 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Navigation result: {'frameId': '9B3D164CCDC4989E256920530DCCF445', 'loaderId': '5DD25863107383C525F95089F18A14A6', 'isDownload': False} 
+2026-10-08 21:37:12,214 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Evaluate ready code "odoo.isTourReady('web_studio_x2many_two_levels_edition')" 
+2026-10-08 21:37:12,242 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:12] "GET /web/assets/73b2bdb/web.assets_web.min.js HTTP/1.1" 200 - 2 0.002 0.007
+2026-10-08 21:37:12,248 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:12] "GET /web/assets/e5d62cd/web.assets_web.min.css HTTP/1.1" 200 - 2 0.001 0.014
+2026-10-08 21:37:12,742 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:12] "GET /web/webclient/load_menus/7235fafe00dcc33502b7af4992a4417c793ab39792eeb851079c0beb9b0fb837 HTTP/1.1" 200 - 814 0.178 0.327
+2026-10-08 21:37:12,745 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:12] "GET /web/webclient/translations/1ba74cca3656fb46c4c05ea637585bc4356f531e?lang=en_US HTTP/1.1" 200 - 0 0.000 0.507
+2026-10-08 21:37:12,754 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:12] "GET /web/manifest.webmanifest HTTP/1.1" 200 - 8 0.003 0.510
+2026-10-08 21:37:12,758 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:12] "GET /web/assets/fb42ddb/web.assets_tests.min.js HTTP/1.1" 200 - 2 0.001 0.269
+2026-10-08 21:37:12,878 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:12] "GET /web/assets/97eda4d/web.assets_web_print.min.css HTTP/1.1" 200 - 2 0.001 0.003
+2026-10-08 21:37:12,977 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Evaluate test code "odoo.startTour('web_studio_x2many_two_levels_edition', {"stepDelay": 0, "keepWatchBrowser": false, "debug": false, "startUrl": "/odoo?debug=tests", "delayToCheckUndeterminisms": 0})" 
+2026-10-08 21:37:12,982 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: [1/14] Tour web_studio_x2many_two_levels_edition → Step a[data-menu-xmlid='web_studio.studio_test_partner_menu'] 
+2026-10-08 21:37:12,983 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:12] "GET /web/static/img/favicon.ico HTTP/1.1" 200 - 0 0.000 0.004
+2026-10-08 21:37:12,985 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:12] "GET /bus/websocket_worker_bundle?v=18.0-7 HTTP/1.1" 200 - 3 0.001 0.009
+2026-10-08 21:37:12,990 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:12] "GET /web/static/img/odoo-icon-192x192.png HTTP/1.1" 200 - 0 0.000 0.009
+2026-10-08 21:37:12,992 26 INFO 128070971-18-0-all odoo.tests.common: Simulating signal changes during tests 
+2026-10-08 21:37:12,992 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:12] "POST /web/dataset/call_kw/iot.channel/get_iot_channel HTTP/1.1" 200 - 5 0.002 0.012
+2026-10-08 21:37:13,001 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "GET /websocket?version=18.0-7 HTTP/1.1" 503 - 6 0.001 0.003
+2026-10-08 21:37:13,019 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "GET /websocket?version=18.0-7 HTTP/1.1" 503 - 0 0.000 0.001
+2026-10-08 21:37:13,054 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "POST /web/dataset/call_kw/res.users/has_group HTTP/1.1" 200 - 17 0.015 0.015
+2026-10-08 21:37:13,060 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "GET /websocket?version=18.0-7 HTTP/1.1" 503 - 0 0.000 0.027
+2026-10-08 21:37:13,071 26 INFO 128070971-18-0-all odoo.addons.partner_autocomplete.models.res_company: Starting enrich of company My Company (San Francisco) (1) 
+2026-10-08 21:37:13,093 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "POST /web/dataset/call_kw/res.company/iap_enrich_auto HTTP/1.1" 200 - 16 0.013 0.053
+2026-10-08 21:37:13,095 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "POST /web/dataset/call_kw/res.users/has_group HTTP/1.1" 200 - 0 0.000 0.065
+2026-10-08 21:37:13,257 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "POST /mail/data HTTP/1.1" 200 - 151 0.053 0.171
+2026-10-08 21:37:13,259 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "POST /web/dataset/call_kw/res.users/has_group HTTP/1.1" 200 - 0 0.000 0.236
+2026-10-08 21:37:13,283 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: Owl is running in 'dev' mode. 
+2026-10-08 21:37:13,285 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "GET /websocket?version=18.0-7 HTTP/1.1" 503 - 0 0.000 0.001
+2026-10-08 21:37:13,295 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "GET /web/service-worker.js HTTP/1.1" 200 - 0 0.000 0.002
+2026-10-08 21:37:13,323 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "GET /odoo/offline HTTP/1.1" 200 - 8 0.002 0.019
+2026-10-08 21:37:13,347 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "POST /hr_attendance/attendance_user_data HTTP/1.1" 200 - 6 0.004 0.017
+2026-10-08 21:37:13,423 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "GET /web/image?model=res.users&field=avatar_128&id=2 HTTP/1.1" 200 - 6 0.002 0.011
+2026-10-08 21:37:13,434 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "GET /web/image/res.partner/3/avatar_128?unique=1791494171000 HTTP/1.1" 200 - 6 0.002 0.020
+2026-10-08 21:37:13,461 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "GET /web/static/lib/odoo_ui_icons/fonts/odoo_ui_icons.woff2 HTTP/1.1" 200 - 0 0.000 0.001
+2026-10-08 21:37:13,461 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "GET /web/static/src/libs/fontawesome/fonts/fontawesome-webfont.woff2?v=4.7.0 HTTP/1.1" 200 - 0 0.000 0.002
+2026-10-08 21:37:13,475 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "GET /web/static/img/default_icon_app.png HTTP/1.1" 200 - 0 0.000 0.001
+2026-10-08 21:37:13,480 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "GET /web_enterprise/static/img/background-light.svg HTTP/1.1" 200 - 0 0.000 0.001
+2026-10-08 21:37:13,507 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: [2/14] Tour web_studio_x2many_two_levels_edition → Step .o_form_view .o_form_editable 
+2026-10-08 21:37:13,523 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "POST /web/action/load HTTP/1.1" 200 - 9 0.005 0.010
+2026-10-08 21:37:13,753 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "POST /web/dataset/call_kw/res.partner/get_views HTTP/1.1" 200 - 191 0.065 0.146
+2026-10-08 21:37:13,775 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "POST /web/dataset/call_kw/res.partner/onchange HTTP/1.1" 200 - 1 0.001 0.005
+2026-10-08 21:37:13,829 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: [3/14] Tour web_studio_x2many_two_levels_edition → Step .o_web_studio_navbar_item button:enabled 
+2026-10-08 21:37:13,892 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: [4/14] Tour web_studio_x2many_two_levels_edition → Step .o_web_studio_form_view_editor .o_field_widget[name='user_ids'] 
+2026-10-08 21:37:13,950 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "GET /web/bundle/web_studio.studio_assets?lang=en_US&debug=tests HTTP/1.1" 200 - 11 0.002 0.054
+2026-10-08 21:37:13,960 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "GET /web/assets/ff8d0fd/web_studio.studio_assets.min.css HTTP/1.1" 200 - 2 0.001 0.005
+2026-10-08 21:37:13,962 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:13] "GET /web/assets/25d80b1/web_studio.studio_assets.min.js HTTP/1.1" 200 - 2 0.001 0.006
+2026-10-08 21:37:14,039 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:14] "POST /web_studio/chatter_allowed HTTP/1.1" 200 - 0 0.000 0.001
+2026-10-08 21:37:14,171 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:14] "POST /web/dataset/call_kw/res.partner/get_views HTTP/1.1" 200 - 105 0.033 0.100
+2026-10-08 21:37:14,183 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:14] "POST /web_studio/get_studio_view_arch HTTP/1.1" 200 - 2 0.001 0.003
+2026-10-08 21:37:14,214 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:14] "POST /web/dataset/call_kw/res.partner/onchange HTTP/1.1" 200 - 0 0.000 0.005
+2026-10-08 21:37:14,233 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:14] "GET /web_studio/static/src/img/ui/studio_icons.png HTTP/1.1" 200 - 0 0.000 0.001
+2026-10-08 21:37:14,298 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: [5/14] Tour web_studio_x2many_two_levels_edition → Step .o-web-studio-edit-x2manys-buttons 
+2026-10-08 21:37:14,364 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: [6/14] Tour web_studio_x2many_two_levels_edition → Step .o_web_studio_editX2Many[data-type='form'] 
+2026-10-08 21:37:14,425 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: [7/14] Tour web_studio_x2many_two_levels_edition → Step .o_view_controller.o_form_view.test-subview-form-1 
+2026-10-08 21:37:14,438 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:14] "GET /web/static/img/spin.svg HTTP/1.1" 200 - 0 0.000 0.011
+2026-10-08 21:37:14,612 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:14] "POST /web/dataset/call_kw/res.users/fields_get HTTP/1.1" 200 - 103 0.030 0.157
+2026-10-08 21:37:14,658 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:14] "POST /web/dataset/call_kw/res.users.log/get_views HTTP/1.1" 200 - 2 0.000 0.006
+2026-10-08 21:37:14,666 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:14] "POST /web/dataset/call_kw/res.users/onchange HTTP/1.1" 200 - 2 0.000 0.003
+2026-10-08 21:37:14,703 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: [8/14] Tour web_studio_x2many_two_levels_edition → Step .o_web_studio_form_view_editor .o_field_widget[name='log_ids'] 
+2026-10-08 21:37:14,776 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: [9/14] Tour web_studio_x2many_two_levels_edition → Step .o_web_studio_editX2Many[data-type='form'] 
+2026-10-08 21:37:14,843 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: [10/14] Tour web_studio_x2many_two_levels_edition → Step .o_view_controller.o_form_view.test-subview-form-2 
+2026-10-08 21:37:14,846 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:14] "POST /web/dataset/call_kw/res.users.log/fields_get HTTP/1.1" 200 - 0 0.000 0.002
+2026-10-08 21:37:14,862 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:14] "POST /web/dataset/call_kw/res.users.log/onchange HTTP/1.1" 200 - 1 0.000 0.002
+2026-10-08 21:37:14,911 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: [11/14] Tour web_studio_x2many_two_levels_edition → Step .o_web_studio_sidebar .o_web_studio_existing_fields_header 
+2026-10-08 21:37:14,972 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: [12/14] Tour web_studio_x2many_two_levels_edition → Step .o_web_studio_existing_fields 
+2026-10-08 21:37:15,037 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: [13/14] Tour web_studio_x2many_two_levels_edition → Step .o_web_studio_sidebar .o_web_studio_existing_fields_section .o_web_studio_component:contains(Created on) 
+2026-10-08 21:37:15,244 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: [14/14] Tour web_studio_x2many_two_levels_edition → Step .o_web_studio_form_view_editor [data-field-name='create_date'] 
+2026-10-08 21:37:15,587 26 INFO 128070971-18-0-all odoo.tests.common: Simulating signal changes during tests 
+2026-10-08 21:37:15,587 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:15] "POST /web_studio/edit_view HTTP/1.1" 200 - 194 0.119 0.257
+2026-10-08 21:37:15,607 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:15] "POST /web/dataset/call_kw/res.users.log/onchange HTTP/1.1" 200 - 7 0.001 0.004
+2026-10-08 21:37:15,628 26 INFO 128070971-18-0-all werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:15] "POST /web_studio/get_default_value HTTP/1.1" 200 - 3 0.001 0.004
+2026-10-08 21:37:15,641 26 INFO ? werkzeug: 127.0.0.1 - - [08/Oct/2026 21:37:15] "GET /web_studio/static/src/img/ui/checkbox_active.svg HTTP/1.1" 200 - 0 0.000 0.001
+2026-10-08 21:37:15,646 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: tour succeeded 
+2026-10-08 21:37:15,647 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: 
+
+╔═════════════════════════════════════════════════════╗
+║ TOUR web_studio_x2many_two_levels_edition SUCCEEDED ║
+╚═════════════════════════════════════════════════════╝
+ 
+2026-10-08 21:37:15,725 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition.browser: heap 32568608 (allocated 34803712) 
+2026-10-08 21:37:15,726 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Closing chrome headless with pid 25118 
+2026-10-08 21:37:15,727 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Closing websocket connection 
+2026-10-08 21:37:15,727 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Terminating chrome headless with pid 25118 
+2026-10-08 21:37:15,781 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Chrome Log in: /data/build/tests/128070971-18-0-all/chrome_logs/chrome_log_20261008_213715_781449_test_x2many_two_levels_edition.txt 
+2026-10-08 21:37:15,781 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestStudioUIUnit.test_x2many_two_levels_edition: Removing chrome user profile "/tmp/tmpgptzvr75_chrome_odoo" 
+2026-10-08 21:37:16,978 26 INFO 128070971-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 1 checked, 1 removed 
+2026-10-08 21:37:17,612 26 INFO 128070971-18-0-all odoo.addons.web_tour.tests.test_tours: Starting TestTour.test_get_current_tour ... 
+2026-10-08 21:37:17,657 26 INFO 128070971-18-0-all odoo.addons.web_tour.tests.test_tours: Starting TestTour.test_get_tour_json_by_name ... 
+2026-10-08 21:37:17,680 26 INFO 128070971-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 0 checked, 0 removed 
+2026-10-08 21:37:17,680 26 INFO 128070971-18-0-all odoo.service.server: 188 post-tests in 981.64s, 216081 queries 
+2026-10-08 21:37:17,681 26 INFO 128070971-18-0-all odoo.tests.stats: web_editor: 40 tests 100.39s 655 queries 
+2026-10-08 21:37:17,681 26 INFO 128070971-18-0-all odoo.tests.stats: web_enterprise: 3 tests 4.60s 1290 queries 
+2026-10-08 21:37:17,681 26 INFO 128070971-18-0-all odoo.tests.stats: web_mobile: 18 tests 8.05s 1829 queries 
+2026-10-08 21:37:17,681 26 INFO 128070971-18-0-all odoo.tests.stats: web_studio: 154 tests 823.31s 206078 queries 
+2026-10-08 21:37:17,681 26 INFO 128070971-18-0-all odoo.tests.stats: web_tour: 4 tests 0.70s 65 queries 
+2026-10-08 21:37:17,681 26 ERROR 128070971-18-0-all odoo.tests.result: 1 failed, 0 error(s) of 188 tests when loading database '128070971-18-0-all' 
+2026-10-08 21:37:17,683 26 INFO 128070971-18-0-all odoo.service.server: Initiating shutdown 
+2026-10-08 21:37:17,683 26 INFO 128070971-18-0-all odoo.service.server: Hit CTRL-C again or send a second signal to force the shutdown. 
+2026-10-08 21:37:17,856 26 INFO 128070971-18-0-all odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 2 connections  

@@ -560,7 +560,13 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
     def seed(conn):
         _seed_pr(conn, "odoo/odoo#1", "sha1")
         _seed_mine(conn, "odoo/odoo#290109", ec, comments=[("jov-odoo", "Why here?")])
-        db.update_tab_state(conn, "mine", "odoo/odoo#290109", {"target_branch": "master"})
+        db.update_tab_state(conn, "mine", "odoo/odoo#290109", {
+            "target_branch": "master", "checks": [{
+                "name": "ci/runbot", "state": "failure",
+                "url": "https://runbot.odoo.com/runbot/batch/7/build/100"}]})
+        db.upsert_runbot_snapshot(conn, "build:100", "failure", derive.now_utc(), [
+            {"name": "Enterprise Tests", "build_id": 100, "verdict": "red", "failures": []}],
+            None, retry=False)
         _seed_mine(conn, "odoo/enterprise#132695", ec)
         _seed_mine(conn, "odoo/upgrade#11389", ec)
         _seed_mine(conn, "odoo/enterprise#1", "master-other-andg", state="CLOSED")
@@ -593,6 +599,13 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
     [fw] = next(m for m in by_fw["members"] if m["num"] == 290109)["fw"]
     assert (by_fw["key"], fw["ref"], [g["entry"]["body"] for g in fw["discussion"]]) == (
         ec, "odoo#291981", ["Rebased."])
+
+    # A snapshot that is final is served from the cache, runbot is never reached.
+    from pr_dash import runbot
+    monkeypatch.setattr(runbot.UrllibHttp, "post_json", lambda *a: pytest.fail("runbot RPC"))
+    by_pr = mcp_server.get_runbot("odoo#291981")
+    assert [(b["batch_id"], [(t["name"], t["prs"]) for t in b["triggers"]])
+            for b in by_pr["batches"]] == [(7, [("ci/runbot", ["odoo/odoo#290109"])])]
 
     pr = mcp_server.get_pr("odoo/odoo#291981")
     assert (pr["key"], ["discussion" in m for m in pr["members"]]) == (ec, [False] * 3)

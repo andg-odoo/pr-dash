@@ -1,0 +1,97 @@
+Docker command:
+semgrep scan  -c /data/build/rules --json --timeout=0 --verbose $(cat logs/check_semgrep_style-files_list.txt) > /data/build/results.json
+=================================================
+Adding readonly volume '/data/build/odoo' pointing to /home/odoo/runbot/runbot/runbot/static/sources/odoo/bc545a9752cdd263a200755cd0e70279aa07bfda 
+Adding readonly volume '/data/build/enterprise' pointing to /home/odoo/runbot/runbot/runbot/static/sources/enterprise/cbc05165fb91a54745bc73c49a97a33f0abafde0 
+Adding readonly volume '/home/odoo/.odoorc' pointing to /home/odoo/runbot/runbot/runbot/static/build/127730874-master/.odoorc 
+METRICS: Using configs from the Registry (like --config=p/ci) reports pseudonymous rule metrics to semgrep.dev.
+To disable Registry rule metrics, use "--metrics=off".
+Using configs only from local files (like --config=xyz.yml) does not enable metrics.
+
+More information: https://semgrep.dev/docs/metrics
+
+running 18 rules from 18 configs
+using path ignore rules from user provided .semgrepignore
+Rules:
+- rules.commit-in-models
+- rules.freezegun-on-class
+- rules.gettext-concat
+- rules.gettext-fmt
+- rules.gettext-reorder
+- rules.parameterless-cache
+- rules.pypdf-portability
+- rules.pytz-removed-in-master
+- rules.re-anchoring-match
+- rules.re-anchoring-search
+- rules.re-double-compilation
+- rules.requests-in-models
+- rules.self-in-iter
+- rules.unlink-override
+- rules.upgrade-in-standard
+- rules.urlparse-used
+- rules.web-base-url
+- rules.zipfile-compression
+               
+               
+┌─────────────┐
+│ Scan Status │
+└─────────────┘
+  Scanning 20 files tracked by git with 18 Code rules:
+  Scanning 20 files with 18 python rules.
+
+========================================
+Files skipped:
+========================================
+
+  Always skipped by Semgrep:
+
+   • <none>
+
+  Skipped by .gitignore:
+  (Disable by passing --no-git-ignore)
+
+   • <all files not listed by `git ls-files` were skipped>
+
+  Skipped by .semgrepignore:
+  - https://semgrep.dev/docs/ignoring-files-folders-code/#understand-semgrep-defaults
+
+   • <none>
+
+  Skipped by --include patterns:
+
+   • <none>
+
+  Skipped by --exclude patterns:
+
+   • <none>
+
+  Files that couldn't be accessed:
+
+   • <none>
+
+  Skipped by limiting to files smaller than 1000000 bytes:
+  (Adjust with the --max-target-bytes flag)
+
+   • <none>
+
+  Partially analyzed due to parsing or internal Semgrep errors
+
+   • <none>
+
+                
+                
+┌──────────────┐
+│ Scan Summary │
+└──────────────┘
+Semgrep's file targeting is getting a revamp! This scan wouldn't see any changes. To learn about what will be different after version 1.116.0, visit https://semgrep.dev/docs/kb/semgrep-code/semgrepignore-ignored for the new specification.
+
+✅ Scan completed successfully.
+ • Findings: 5 (5 blocking)
+ • Rules run: 18
+ • Targets scanned: 20
+ • Parsed lines: ~100.0%
+ • No ignore information available
+Ran 18 rules on 20 files: 5 findings.
+
+A new version of Semgrep is available. See https://semgrep.dev/docs/upgrading
+Not sending pseudonymous metrics since metrics are configured to AUTO and registry usage is False

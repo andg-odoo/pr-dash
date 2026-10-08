@@ -1,0 +1,802 @@
+[
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 1
+  },
+  "message": "`.account_chart_template` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 2
+  },
+  "message": "`.account_journal` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 3
+  },
+  "message": "`.account_move` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 4
+  },
+  "message": "`.account_move_send` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 5
+  },
+  "message": "`.l10n_ec_reimbursement` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 6
+  },
+  "message": "`.account_tax` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 7
+  },
+  "message": "`.certificate` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 8
+  },
+  "message": "`.l10n_ec_taxpayer_type` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 9
+  },
+  "message": "`.product` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 10
+  },
+  "message": "`.res_company` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 11
+  },
+  "message": "`.res_config_settings` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 12
+  },
+  "message": "`.res_partner` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 13
+  },
+  "message": "`.xml_utils` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 14
+  },
+  "message": "`.res_country` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_edi_format.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_journal.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "SIM201",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_journal.py",
+  "location": {
+   "row": 58
+  },
+  "message": "Use `journal.country_code != 'EC'` instead of `not journal.country_code == 'EC'`"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "UP035",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 6
+  },
+  "message": "Import from `collections.abc` instead: `Callable`"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 6
+  },
+  "message": "`typing.Callable` imported but unused"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 16
+  },
+  "message": "`odoo.tools.misc.formatLang` imported but unused"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 100
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "E303",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 116
+  },
+  "message": "Too many blank lines (3)"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 297
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 298
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "E251",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 387
+  },
+  "message": "Unexpected spaces around keyword / parameter equals"
+ },
+ {
+  "code": "E251",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 387
+  },
+  "message": "Unexpected spaces around keyword / parameter equals"
+ },
+ {
+  "code": "E251",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 388
+  },
+  "message": "Unexpected spaces around keyword / parameter equals"
+ },
+ {
+  "code": "E251",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 388
+  },
+  "message": "Unexpected spaces around keyword / parameter equals"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 647
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 694
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 1468
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "C419",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 1496
+  },
+  "message": "Unnecessary list comprehension"
+ },
+ {
+  "code": "RUF069",
+  "filename": "/data/build/enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 1821
+  },
+  "message": "Unreliable floating point equality comparison `self.discount != 100.0`"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/enterprise/l10n_ec_edi/tests/common.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/enterprise/l10n_ec_edi/tests/common.py",
+  "location": {
+   "row": 49
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/enterprise/l10n_ec_edi/tests/test_edi_xml.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "C419",
+  "filename": "/data/build/enterprise/l10n_ec_edi/tests/test_edi_xml.py",
+  "location": {
+   "row": 1059
+  },
+  "message": "Unnecessary list comprehension"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi_pos/models/__init__.py",
+  "location": {
+   "row": 1
+  },
+  "message": "`.pos_order` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi_pos/models/__init__.py",
+  "location": {
+   "row": 2
+  },
+  "message": "`.pos_payment_method` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi_pos/models/__init__.py",
+  "location": {
+   "row": 3
+  },
+  "message": "`.account_move` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi_pos/models/__init__.py",
+  "location": {
+   "row": 4
+  },
+  "message": "`.pos_session` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi_pos/models/__init__.py",
+  "location": {
+   "row": 5
+  },
+  "message": "`.res_config_settings` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/enterprise/l10n_ec_edi_pos/models/__init__.py",
+  "location": {
+   "row": 6
+  },
+  "message": "`.pos_config` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/enterprise/l10n_ec_edi_pos/models/account_edi_format.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/enterprise/l10n_ec_edi_stock/models/stock_picking.py",
+  "location": {
+   "row": 373
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 86
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 431
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "UP030",
+  "filename": "/data/build/enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 481
+  },
+  "message": "Use implicit references for positional format fields"
+ },
+ {
+  "code": "UP032",
+  "filename": "/data/build/enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 481
+  },
+  "message": "Use f-string instead of `format` call"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 586
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 640
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "UP025",
+  "filename": "/data/build/enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 720
+  },
+  "message": "Remove unicode literals from strings"
+ },
+ {
+  "code": "RUF056",
+  "filename": "/data/build/enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 729
+  },
+  "message": "Avoid providing a falsy fallback to `dict.get()` in boolean test positions. The default fallback `None` is already falsy."
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/enterprise/l10n_ec_reports_ats/tests/test_ats_report.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "E302",
+  "filename": "/data/build/enterprise/l10n_ec_reports_ats/tests/test_ats_report.py",
+  "location": {
+   "row": 12
+  },
+  "message": "Expected 2 blank lines, found 1"
+ },
+ {
+  "code": "E303",
+  "filename": "/data/build/enterprise/l10n_ec_reports_ats/tests/test_ats_report.py",
+  "location": {
+   "row": 97
+  },
+  "message": "Too many blank lines (2)"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/enterprise/l10n_ec_reports_ats/tests/test_ats_report.py",
+  "location": {
+   "row": 448
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "E231",
+  "filename": "/data/build/enterprise/l10n_ec_reports_ats/tests/test_ats_report.py",
+  "location": {
+   "row": 453
+  },
+  "message": "Missing whitespace after `,`"
+ },
+ {
+  "code": "RUF059",
+  "filename": "/data/build/enterprise/web_studio/tests/test_ir_model.py",
+  "location": {
+   "row": 282
+  },
+  "message": "Unpacked variable `model` is never used"
+ },
+ {
+  "code": "RUF059",
+  "filename": "/data/build/enterprise/web_studio/tests/test_ir_model.py",
+  "location": {
+   "row": 282
+  },
+  "message": "Unpacked variable `extra_model` is never used"
+ },
+ {
+  "code": "RUF059",
+  "filename": "/data/build/enterprise/web_studio/tests/test_ir_model.py",
+  "location": {
+   "row": 412
+  },
+  "message": "Unpacked variable `name` is never used"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/odoo/addons/account_edi/__init__.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/odoo/addons/account_edi/__manifest__.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/odoo/addons/account_edi/models/__init__.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/odoo/addons/account_edi/models/account_edi_document.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/odoo/addons/account_edi/models/account_edi_format.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/odoo/addons/account_edi/models/account_journal.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/odoo/addons/account_edi/models/account_move.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/odoo/addons/account_edi/models/account_move_send.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/odoo/addons/account_edi/models/ir_actions_report.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/odoo/addons/account_edi/models/ir_attachment.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/odoo/addons/account_edi/tests/__init__.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/odoo/addons/account_edi/tests/common.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/odoo/addons/account_edi/tests/test_edi.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/odoo/addons/account_edi/tests/test_import_vendor_bill.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/odoo/addons/account_edi/wizard/__init__.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "E902",
+  "filename": "/data/build/odoo/addons/account_edi/wizard/account_resequence.py",
+  "location": {
+   "row": 1
+  },
+  "message": "No such file or directory (os error 2)"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/odoo/addons/l10n_es_edi_tbai/models/account_move.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "RUF069",
+  "filename": "/data/build/odoo/addons/l10n_es_edi_tbai/models/account_move.py",
+  "location": {
+   "row": 351
+  },
+  "message": "Unreliable floating point equality comparison `line.tax_repartition_line_id.factor_percent != -100.0`"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 36
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 218
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 227
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "SIM905",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 257
+  },
+  "message": "Consider using a list literal instead of `str.split`"
+ },
+ {
+  "code": "SIM905",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 269
+  },
+  "message": "Consider using a list literal instead of `str.split`"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 635
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 815
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 838
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "COM819",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 1069
+  },
+  "message": "Trailing comma prohibited"
+ },
+ {
+  "code": "UP025",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 1078
+  },
+  "message": "Remove unicode literals from strings"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 1093
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "F841",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 1831
+  },
+  "message": "Local variable `view2` is assigned to but never used"
+ },
+ {
+  "code": "E303",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 3251
+  },
+  "message": "Too many blank lines (2)"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 4240
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "F841",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 4385
+  },
+  "message": "Local variable `c` is assigned to but never used"
+ },
+ {
+  "code": "F841",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 4390
+  },
+  "message": "Local variable `d` is assigned to but never used"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 4673
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "E302",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 4890
+  },
+  "message": "Expected 2 blank lines, found 1"
+ },
+ {
+  "code": "E302",
+  "filename": "/data/build/odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 4900
+  },
+  "message": "Expected 2 blank lines, found 1"
+ }
+]

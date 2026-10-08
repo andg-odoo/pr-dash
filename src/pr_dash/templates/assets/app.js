@@ -574,6 +574,123 @@
     return (people || "-") + (teams ? ` <span class="mine-dim">+ teams ${teams}</span>` : "");
   }
 
+  // ---- runbot: the Mine Runbot Detail tab, one section per runbot batch, each build once --
+
+  const rbLink = (url, text) => `<a href="${escapeHTML(url)}" target="_blank" rel="noopener">${escapeHTML(text)}</a>`;
+  const rbDuration = secs => escapeHTML(`${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, "0")}s`);
+  const RB_LOG = {
+    gone: "log gone (404)",
+    "not fetched": "log not fetched, over the per-build budget",
+    unparsed: "no failure found in the log",
+    "fetch failed": "log fetch failed",
+  };
+  const RB_ERROR = {
+    "not fetched yet": "not fetched yet, the next refresh reads it",
+    deferred: "fetch deferred, the request cap is reached",
+    expired: "runbot session expired",
+  };
+
+  // Check counts first, then tests, killed and log notes, then ruff findings grouped by rule.
+  function rbItems(t) {
+    const byRule = {};
+    for (const f of t.failures.filter(f => f.rule)) (byRule[f.rule] ??= []).push(f);
+    const rank = f => "count" in f ? 0 : f.test ? 1 : 2;
+    return [...t.failures.filter(f => !f.rule).sort((a, b) => rank(a) - rank(b)),
+      ...Object.values(byRule).map(fs => ({ ruff: fs }))];
+  }
+
+  function rbHeadline(f) {
+    if (f.test) {
+      const [module, test] = f.test.split(": ");
+      return `<span class="rb-mod">${escapeHTML(module)}</span> ${escapeHTML(test)}`;
+    }
+    if (f.ruff) {
+      return `<span class="rb-rule">${escapeHTML(f.ruff[0].rule)}</span> × ${f.ruff.length} `
+        + `<span class="mine-dim">${escapeHTML(f.ruff[0].message)}</span>`;
+    }
+    if ("killed" in f) {
+      return f.killed === "timeout" && f.step && f.build_time
+        ? `<span class="tr-ci-failure">killed</span> timeout on ${escapeHTML(f.step)} after ${rbDuration(f.build_time)}`
+        : '<span class="tr-ci-failure">killed</span>, reason unknown';
+    }
+    if ("count" in f) return `${escapeHTML(f.check)} · ${escapeHTML(f.count ?? "?")} findings ${rbLink(f.url, "build ↗")}`;
+    const status = f.status ? ` (HTTP ${f.status})` : "";
+    return `<span class="mine-dim">${escapeHTML((RB_LOG[f.log] || f.log) + status)}</span> ${escapeHTML(f.build_name)}`
+      + ` ${rbLink(f.url, `${f.build_id} ↗`)}`;
+  }
+
+  const rbChild = f => `<span class="mine-dim">${escapeHTML(f.build_name)}</span> ${rbLink(f.url, `${f.build_id} ↗`)}`;
+  const rbTraceback = f => `<pre class="rb-tb">${escapeHTML(f.traceback)}</pre>`;
+  const rbPaths = fs => `<ul class="rb-paths">${fs.map(f =>
+    `<li>${escapeHTML(f.path)}:${escapeHTML(f.line)} <span class="mine-dim">${escapeHTML(f.message)}</span></li>`).join("")}</ul>`;
+
+  // A lone failure opens straight onto its traceback or paths, only several fold one by one.
+  function rbFailures(items) {
+    if (items.length === 1 && (items[0].test || items[0].ruff)) {
+      const f = items[0];
+      return f.test ? `<div class="rb-fail">${rbChild(f)}${rbTraceback(f)}</div>` : rbPaths(f.ruff);
+    }
+    return items.map(f => f.test || f.ruff ? `
+      <details class="rb-fail"><summary>${rbHeadline(f)}${f.test ? ` ${rbChild(f)}` : ""}${
+        f.summary ? `<div class="rb-summary">${escapeHTML(f.summary)}</div>` : ""}</summary>
+        ${f.test ? rbTraceback(f) : rbPaths(f.ruff)}</details>`
+      : `<div class="rb-fail rb-flat">${rbHeadline(f)}</div>`).join("");
+  }
+
+  function rbTally(c) {
+    const total = c ? c.done + c.testing : 0;
+    if (!total) return "";
+    const bits = [c.ko && `<span class="tr-ci-failure">${escapeHTML(c.ko)} ko</span>`,
+      c.killed && `<span class="tr-ci-failure">${escapeHTML(c.killed)} killed</span>`,
+      c.testing && `<span class="tr-ci-pending">${escapeHTML(c.testing)} testing</span>`].filter(Boolean);
+    return `${bits.join(" · ")} <span class="mine-dim">of ${escapeHTML(total)}</span>`;
+  }
+
+  const RB_PREVIOUS = {
+    red: '<span class="rb-prev">also red in the previous push</span>',
+    green: '<span class="rb-new">new</span>',
+  };
+
+  function rbTrigger(t, only) {
+    const items = rbItems(t);
+    const first = items[0];
+    const more = items.length > 1 ? ` <span class="mine-dim">+${items.length - 1} more</span>` : "";
+    const line = !first ? `<span class="mine-dim">${escapeHTML(RB_ERROR[t.error] || t.error || "no failure yet")}</span>`
+      : rbHeadline(first) + (first.summary ? ` <span class="mine-dim">${escapeHTML(first.summary)}</span>` : "") + more;
+    return `<details class="rb-trig${t.stale ? " rb-stale" : ""}${items.length ? "" : " rb-bare"}"><summary>
+      <span class="rb-verdict rb-verdict-${escapeHTML(t.verdict)}">${escapeHTML(t.verdict)}</span>
+      <b>${escapeHTML(t.name)}</b> ${rbTally(t.children)} ${RB_PREVIOUS[t.previous] || ""}
+      ${only ? `<span class="rb-ref">${escapeHTML(only)} only</span>` : ""}
+      <span class="rb-right">${rbLink(t.url, `${t.build_id} ↗`)}</span>
+      <div class="rb-first">${line}</div></summary>
+      ${items.length ? `<div class="rb-body">${rbFailures(items)}</div>` : ""}</details>`;
+  }
+
+  // One section per runbot batch: members sharing it share it, each Forward-port level has its own.
+  function rbSection(s, b) {
+    const units = Object.fromEntries(s.members.flatMap(m =>
+      [[m.id, { ref: m.ref }], ...m.fw.map(f => [f.id, { ref: f.ref, fw: f.base }])]));
+    const refs = ids => ids.map(id => units[id].ref).join(", ");
+    const fw = b.prs.every(id => units[id].fw) ? units[b.prs[0]].fw : null;
+    const fetched = b.triggers.map(t => t.fetched_at).filter(Boolean).sort()[0];
+    const notices = [...new Set(b.triggers.map(t => t.error).filter(e => e === "deferred" || e === "expired"))];
+    return `<section class="section"><h3>${fw ? "↳ " : ""}${escapeHTML(refs(b.prs))}${
+      fw ? ` <span class="mine-dim">fw to ${escapeHTML(fw)}</span>` : ""}
+      <span class="rb-h3meta">batch ${escapeHTML(b.batch_id)}${
+        fetched ? ` · fetched ${ageLabel(Date.now() - new Date(fetched))}` : ""}</span></h3>
+      ${notices.map(e => `<div class="rb-notice${e === "expired" ? " rb-notice-bad" : ""}">${RB_ERROR[e]}${
+        b.triggers.some(t => t.stale) ? ", the greyed rows are the last snapshot" : ", the next refresh retries"}</div>`).join("")}
+      ${b.triggers.map(t => rbTrigger(t, t.prs.length < b.prs.length ? refs(t.prs) : "")).join("")}</section>`;
+  }
+
+  // Shown once a member or Forward-port has a snapshot or a red runbot check, counting red builds.
+  function runbotTab(s) {
+    if (!s.runbot.length) return [];
+    const red = new Set(s.runbot.flatMap(b => b.triggers.filter(t => t.verdict === "red").map(t => t.build_id)));
+    return [{ label: "Runbot", count: red.size ? `${red.size} red` : "",
+              sections: () => s.runbot.map(b => rbSection(s, b)).join("") }];
+  }
+
   // ---- Tab engine: each view declares what differs, the engine runs the rest --
 
   const hasMoved = t => ((t.since_last_look || []).length ? 1 : 0);
@@ -1189,7 +1306,7 @@
             <tr><th>PR</th><th>State</th><th>CI</th><th>Review</th><th>Requested</th><th>Links</th></tr>
             ${rows}
           </table>
-        </section>` }, discussionTab(s.discussion, showMember, "No discussion yet.")] };
+        </section>` }, discussionTab(s.discussion, showMember, "No discussion yet."), ...runbotTab(s)] };
       },
     },
   };

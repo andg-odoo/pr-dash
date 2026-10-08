@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterator
 
 
-SCHEMA_VERSION = 31
+SCHEMA_VERSION = 32
 # A fetched_at no fetch ever wrote, so the row is fetched in full, its Discussion with it.
 UNFETCHED = "1970-01-01T00:00:00+00:00"
 
@@ -120,6 +121,7 @@ CREATE TABLE mine (
   body          TEXT,
   ci_state      TEXT,
   checks        TEXT NOT NULL DEFAULT '[]',
+  previous_checks TEXT NOT NULL DEFAULT '[]',
   review_decision  TEXT,
   mergeable        TEXT,
   head_committed_at TEXT,
@@ -187,6 +189,23 @@ CREATE TABLE mark (
   guard TEXT,
   at    TEXT,
   PRIMARY KEY (kind, key)
+);
+"""
+
+# Requests feed the caps across processes, a snapshot is per build (`build:<id>`) PRs share.
+RUNBOT_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS runbot_request (
+  at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS runbot_snapshot (
+  subject    TEXT PRIMARY KEY,
+  key        TEXT NOT NULL,  -- a bundle's batch and slot builds, empty on a build
+  fetched_at TEXT NOT NULL,
+  triggers   TEXT NOT NULL DEFAULT '[]',
+  error      TEXT,
+  retry      INTEGER NOT NULL DEFAULT 0,
+  attempts   INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -595,7 +614,12 @@ def _migrate(conn: sqlite3.Connection, db_path: Path) -> None:
             cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
             if "unresolved_threads" in cols:
                 conn.execute(f"ALTER TABLE {table} DROP COLUMN unresolved_threads")
-        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+    if current < 32:
+        conn.executescript(RUNBOT_SCHEMA_SQL)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(mine)").fetchall()}
+        if "previous_checks" not in cols:
+            conn.execute("ALTER TABLE mine ADD COLUMN previous_checks TEXT NOT NULL DEFAULT '[]'")
+    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
 @contextmanager
@@ -856,6 +880,61 @@ def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
     return row["value"] if row else None
 
 
+def claim_runbot_request(conn: sqlite3.Connection, now: datetime, per_hour: int,
+                         per_day: int) -> bool:
+    """Record one runbot request at `now`, or return False when the hour or the day is spent."""
+    day_ago = (now - timedelta(days=1)).isoformat(timespec="seconds")
+    conn.execute("DELETE FROM runbot_request WHERE at <= ?", (day_ago,))
+    # One statement takes the write lock before counting, so two processes cannot both pass.
+    cur = conn.execute(
+        "INSERT INTO runbot_request (at) SELECT ? "
+        "WHERE (SELECT count(*) FROM runbot_request WHERE at > ?) < ? "
+        "AND (SELECT count(*) FROM runbot_request WHERE at > ?) < ?",
+        (now.isoformat(timespec="seconds"),
+         (now - timedelta(hours=1)).isoformat(timespec="seconds"), per_hour, day_ago, per_day),
+    )
+    return cur.rowcount == 1
+
+
+def runbot_requests_left(conn: sqlite3.Connection, now: datetime, per_hour: int,
+                         per_day: int) -> int:
+    """How many runbot requests the hourly and daily caps still allow at `now`."""
+    counts = conn.execute(
+        "SELECT (SELECT count(*) FROM runbot_request WHERE at > ?),"
+        " (SELECT count(*) FROM runbot_request WHERE at > ?)",
+        ((now - timedelta(hours=1)).isoformat(timespec="seconds"),
+         (now - timedelta(days=1)).isoformat(timespec="seconds")),
+    ).fetchone()
+    return min(per_hour - counts[0], per_day - counts[1])
+
+
+def get_runbot_snapshots(conn: sqlite3.Connection) -> dict[str, dict]:
+    return {r["subject"]: {**dict(r), "triggers": json.loads(r["triggers"])}
+            for r in conn.execute("SELECT * FROM runbot_snapshot")}
+
+
+def upsert_runbot_snapshot(conn: sqlite3.Connection, subject: str, key: str, fetched_at: str,
+                           triggers: list[dict], error: str | None, *, retry: bool,
+                           attempts: int = 0) -> None:
+    """Store one runbot fetch outcome, `retry` when a later tick should fetch it again.
+
+    :param attempts: failed fetches in a row, which space the retries out
+    """
+    _upsert(conn, "runbot_snapshot", {"subject": subject, "key": key, "fetched_at": fetched_at,
+                                      "triggers": json.dumps(triggers), "error": error,
+                                      "retry": retry, "attempts": attempts}, ["subject"])
+
+
+def prune_runbot_snapshots(conn: sqlite3.Connection, keep: set[str], before: str) -> None:
+    """Delete the snapshots fetched before `before` whose subject is not in `keep`."""
+    conn.execute("DELETE FROM runbot_snapshot WHERE fetched_at < ? AND subject NOT IN"
+                 " (SELECT value FROM json_each(?))", (before, json.dumps(sorted(keep))))
+
+
+def delete_meta(conn: sqlite3.Connection, key: str) -> None:
+    conn.execute("DELETE FROM meta WHERE key = ?", (key,))
+
+
 def record_ai_attempt(conn: sqlite3.Connection, head_sha: str, context_heads: str,
                       companion_head_sha: str, error: str, when: str) -> None:
     """Count one failed pass at this review context, so the queue can give up."""
@@ -1036,6 +1115,10 @@ def update_tab_state(conn: sqlite3.Connection, tab: str, pr_id: str, row: dict) 
         return
     values = {c: json.dumps(row[c]) if isinstance(row[c], list) else row[c] for c in cols}
     sets = ", ".join(f"{c} = :{c}" for c in cols)
+    if tab == "mine" and "head_sha" in cols:
+        # A push keeps the checks of the head it replaces, the runbot baseline for red checks.
+        sets += (", previous_checks = CASE WHEN head_sha NOT IN ('', :head_sha) THEN checks"
+                 " ELSE previous_checks END")
     conn.execute(f"UPDATE {tab} SET {sets} WHERE id = :id", {**values, "id": pr_id})
 
 
@@ -1118,7 +1201,7 @@ def list_mine(conn: sqlite3.Connection, *, include_dismissed: bool = False,
         " LEFT JOIN mark AS src ON src.kind = 'dismiss_mine' AND src.key = mine_fw.source_id"
         f"{where}")]
     for row in rows:
-        for col in _MINE_JSON_COLS:
+        for col in (*_MINE_JSON_COLS, "previous_checks"):
             row[col] = json.loads(row[col])
     return rows
 

@@ -1,0 +1,18 @@
+2026-10-08 21:28:53,461 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui.TestUi.test_new_app_and_report.test_new_app_and_report: Removing chrome user profile "/tmp/tmpbrr7aaiu_chrome_odoo" 
+2026-10-08 21:28:53,478 26 INFO 128070971-18-0-all odoo.addons.web_studio.tests.test_ui: ====================================================================== 
+2026-10-08 21:28:53,478 26 ERROR 128070971-18-0-all odoo.addons.web_studio.tests.test_ui: FAIL: TestUi.test_new_app_and_report
+Traceback (most recent call last):
+  File "/data/build/enterprise/web_studio/tests/test_ui.py", line 32, in test_new_app_and_report
+    self.start_tour("/odoo?debug=tests", 'web_studio_new_report_tour', login="admin")
+  File "/data/build/odoo/odoo/tests/common.py", line 2514, in start_tour
+    return self.browser_js(url_path=url_path, code=code, ready=ready, timeout=timeout, success_signal="tour succeeded", **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/build/odoo/odoo/tests/common.py", line 2488, in browser_js
+    self.fail('%s\n\n%s' % (message, error))
+AssertionError: The test code "odoo.startTour('web_studio_new_report_tour', {"stepDelay": 0, "keepWatchBrowser": false, "debug": false, "startUrl": "/odoo?debug=tests", "delayToCheckUndeterminisms": 0})" failed
+
+FAILED: [16/26] Tour web_studio_new_report_tour → Step .o_web_studio_menu .o-web-studio-save-report:not(.btn-primary).
+Element (.o_web_studio_menu .o-web-studio-save-report:not(.btn-primary)) has not been found.
+TIMEOUT step failed to complete within 10000 ms.
+ 
+2026-10-08 21:28:53,503 26 INFO 128070971-18-0-all odoo.tests.common: Disabling auto-retry after a failed test 

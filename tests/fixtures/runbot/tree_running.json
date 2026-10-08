@@ -1,0 +1,21 @@
+[
+ {
+  "id": 128069548,
+  "description": false,
+  "global_state": "running",
+  "global_result": "ok",
+  "local_state": "running",
+  "local_result": "ok",
+  "create_date": "2026-10-08 20:33:31",
+  "host": "runbot289.odoo.com",
+  "dest": "128069548-20-0",
+  "log_list": "install_run,install_base,pre_run_config,run",
+  "build_time": 620,
+  "wait_time": 680,
+  "parent_id": false,
+  "params_id": [
+   155472483,
+   "runbot.build.params,155472483"
+  ]
+ }
+]

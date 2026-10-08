@@ -1,0 +1,3 @@
+GET http://<host>/runbot/static/build/87459864-master/logs/all_at_install.txt (build 87459864, a 2026 build of master)
+status: 404
+body: not saved

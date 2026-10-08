@@ -1,0 +1,90 @@
+[
+ {
+  "id": 128070971,
+  "description": "Post install tests for **!web -> !website**",
+  "parent_id": [
+   128070152,
+   "Parallel testing"
+  ],
+  "trigger_id": [
+   3,
+   "Enterprise Tests"
+  ],
+  "host": "runbot185.odoo.com",
+  "dest": "128070971-18-0",
+  "log_list": "restore,start_post_install_tests",
+  "create_date": "2026-10-08 21:18:47",
+  "local_result": "ko",
+  "global_result": "ko",
+  "params_id": [
+   155475089,
+   "runbot.build.params,155475089"
+  ]
+ },
+ {
+  "id": 128070202,
+  "description": "Test at install",
+  "parent_id": [
+   128070152,
+   "Parallel testing"
+  ],
+  "trigger_id": [
+   3,
+   "Enterprise Tests"
+  ],
+  "host": "runbot171.odoo.com",
+  "dest": "128070202-18-0",
+  "log_list": "start_at_install",
+  "create_date": "2026-10-08 20:55:54",
+  "local_result": "ko",
+  "global_result": "ko",
+  "params_id": [
+   155473754,
+   "runbot.build.params,155473754"
+  ]
+ },
+ {
+  "id": 128064843,
+  "description": "Testing l10n edi 1 modules",
+  "parent_id": [
+   128063570,
+   "L10n standalone test"
+  ],
+  "trigger_id": [
+   35,
+   "L10n  standalone test"
+  ],
+  "host": "runbot236.odoo.com",
+  "dest": "128064843-saas-19-2",
+  "log_list": "restore_all,test_only",
+  "create_date": "2026-10-08 18:48:25",
+  "local_result": "ko",
+  "global_result": "ko",
+  "params_id": [
+   155464392,
+   "runbot.build.params,155464392"
+  ]
+ },
+ {
+  "id": 128059598,
+  "description": "Post install tests for **!website -> **",
+  "parent_id": [
+   128013785,
+   "Parallel testing"
+  ],
+  "trigger_id": [
+   123,
+   "With demo"
+  ],
+  "host": "runbot227.odoo.com",
+  "dest": "128059598-20-0",
+  "log_list": "restore,start_post_install_tests",
+  "create_date": "2026-10-08 17:59:59",
+  "local_result": "ko",
+  "global_result": "ko",
+  "params_id": [
+   155456468,
+   "runbot.build.params,155456468"
+  ]
+ }
+]

@@ -1,4 +1,4 @@
-"""In-memory GitHub, AI reviewer and clock for tests, with the GraphQL node builders they share."""
+"""In-memory GitHub, runbot, AI reviewer and clock, with the GraphQL node builders they share."""
 from __future__ import annotations
 
 import re
@@ -6,7 +6,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from pr_dash import ai, github, mergebot
+from pr_dash import ai, github, mergebot, runbot
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -102,6 +102,7 @@ class FakePR:
     :param comments: conversation comments, as {author, at, body}
     :param threads: {path, comments} plus optional id and resolved, a comment's review its id
     :param checks: CI context name -> state, the rollup state derived from them
+    :param check_urls: CI context name -> target URL, for the checks that have one
     :param cross_refs: (repo, number, author) of the PRs cross-referencing this one
     """
     repo: str
@@ -121,6 +122,7 @@ class FakePR:
     merged_at: str | None = None
     mergeable: str = "MERGEABLE"
     checks: dict[str, str] = field(default_factory=dict)
+    check_urls: dict[str, str] = field(default_factory=dict)
     files: list[str] = field(default_factory=list)
     patch: str | None = None
     requested: list[str] = field(default_factory=list)
@@ -148,14 +150,14 @@ def _page(nodes: list[dict]) -> dict:
     return {"totalCount": len(nodes), "nodes": nodes}
 
 
-def _rollup(checks: dict[str, str]) -> dict | None:
+def _rollup(checks: dict[str, str], urls: dict[str, str]) -> dict | None:
     if not checks:
         return None
     states = set(checks.values())
     state = ("FAILURE" if states & {"FAILURE", "ERROR"}
              else "PENDING" if "PENDING" in states else "SUCCESS")
     return {"state": state, "contexts": {"nodes": [
-        {"__typename": "StatusContext", "context": name, "state": s, "targetUrl": None}
+        {"__typename": "StatusContext", "context": name, "state": s, "targetUrl": urls.get(name)}
         for name, s in checks.items()
     ]}}
 
@@ -203,8 +205,9 @@ def pr_node(pr: FakePR, view: str = "queue", **over) -> dict:
         "reviews": _page(reviews),
         "comments": _page(comments),
         "reviewThreads": _page(threads),
-        "commits": {"nodes": [{"commit": {"oid": pr.head_sha, "committedDate": pr.pushed_at,
-                                          "statusCheckRollup": _rollup(pr.checks)}}]},
+        "commits": {"nodes": [{"commit": {
+            "oid": pr.head_sha, "committedDate": pr.pushed_at,
+            "statusCheckRollup": _rollup(pr.checks, pr.check_urls)}}]},
         "timelineItems": {"nodes": timeline},
         "files": _page([{"path": path} for path in pr.files]),
         "crossReferences": {"nodes": [
@@ -371,8 +374,62 @@ class FakeGitHub:
         return next((pr.patch for pr in self._found([(repo, number)])), None)
 
 
+def _matches(have, op: str, value) -> bool:
+    """Evaluate one search_read domain leaf the way runbot does, a many2one by its id."""
+    have = have[0] if isinstance(have, list) else have
+    if op == "ilike":
+        return value.lower() in have.lower()
+    if op == "in":
+        return have in value
+    assert op in ("<", "="), op
+    return have < value if op == "<" else have == value
+
+
+class FakeRunbotHttp:
+    """`runbot.Http` answering search_read from seeded rows per model and GETs from seeded files."""
+
+    def __init__(self):
+        self.rows: dict[str, list[dict]] = {}
+        self.files: dict[str, str] = {}
+        self.calls: list[str] = []
+        self.error: str | None = None  # the JSON-RPC error name every read answers with
+        self.crash_on_build_time = False
+        self.down = False
+        self.failing: dict[str, int] = {}  # URL -> the HTTP status its GET answers
+
+    def post_json(self, url, body, headers):
+        model, kwargs = body["params"]["model"], body["params"]["kwargs"]
+        self.calls.append(f"rpc {model}")
+        if self.down:
+            raise runbot.HttpError("fetch failed: Connection refused")
+        if self.error or (self.crash_on_build_time and "build_time" in kwargs["fields"]):
+            name = self.error or "builtins.TypeError"
+            return {"error": {"message": "Odoo Server Error", "data": {"name": name}}}
+        by, _, direction = kwargs["order"].partition(" ")
+        rows = sorted(self.rows.get(model, []), key=lambda r: r[by], reverse=direction == "desc")
+        for fname, op, value in kwargs["domain"]:
+            if op == "child_of":
+                tree = set(value)
+                for r in sorted(self.rows[model], key=lambda r: r["id"]):
+                    if r["parent_id"] and r["parent_id"][0] in tree:
+                        tree.add(r["id"])
+                rows = [r for r in rows if r["id"] in tree]
+            else:
+                rows = [r for r in rows if _matches(r.get(fname, False), op, value)]
+        return {"result": [{"id": r["id"], **{f: r.get(f, False) for f in kwargs["fields"]}}
+                           for r in rows][:kwargs["limit"]]}
+
+    def get_text(self, url):
+        self.calls.append(url)
+        if url in self.failing:
+            raise runbot.HttpError(f"HTTP {self.failing[url]} from {url}", status=self.failing[url])
+        if url not in self.files:
+            raise runbot.LogGone(f"{url} is gone", status=404)
+        return self.files[url]
+
+
 class FakeMergebot:
-    """`mergebot.fetch` stand-in answering each seeded page state, "unknown" for the rest."""
+    """`mergebot.fetch` stand-in answering each seeded state or page, "unknown" for the rest."""
 
     def __init__(self):
         self.pages: dict[str, str] = {}
@@ -380,7 +437,8 @@ class FakeMergebot:
 
     def __call__(self, repo: str, number: int) -> mergebot.MergebotState:
         self.reads.append(f"{repo}#{number}")
-        return mergebot.MergebotState(self.pages.get(f"{repo}#{number}", "unknown"))
+        page = self.pages.get(f"{repo}#{number}", "unknown")
+        return mergebot.MergebotState(page) if isinstance(page, str) else page
 
 
 class FakeReviewer:

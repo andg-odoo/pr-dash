@@ -11,6 +11,9 @@
   {% if offline %}
   <div class="banner">Offline mode{% if last_refresh %} - last refresh {{ last_refresh }}{% endif %}</div>
   {% endif %}
+  {% if runbot_expired %}
+  <div class="banner banner-bad">Runbot session expired: log in to runbot.odoo.com in Firefox, the next refresh picks the new cookie up</div>
+  {% endif %}
 
   <div class="layout">
     <aside class="left">

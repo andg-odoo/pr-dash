@@ -1,0 +1,300 @@
+2026-10-08 21:49:22,248 26 INFO 128070202-18-0-all odoo.modules.loading: loading point_of_sale/views/account_move_views.xml 
+2026-10-08 21:49:22,333 26 INFO 128070202-18-0-all odoo.modules.loading: loading point_of_sale/views/pos_session_sales_details.xml 
+2026-10-08 21:49:22,354 26 INFO 128070202-18-0-all odoo.modules.loading: Module point_of_sale: loading demo 
+2026-10-08 21:49:22,354 26 INFO 128070202-18-0-all odoo.modules.loading: loading point_of_sale/data/demo_data.xml 
+2026-10-08 21:49:30,865 26 INFO 128070202-18-0-all odoo.addons.point_of_sale.tests.test_point_of_sale: Starting TestPointOfSale.test_no_default_pricelist ... 
+2026-10-08 21:49:31,018 26 INFO 128070202-18-0-all odoo.addons.point_of_sale.tests.test_point_of_sale: Starting TestPointOfSale.test_product_combo_variants ... 
+2026-10-08 21:49:31,152 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.message records with IDs: [22948] 
+2026-10-08 21:49:31,203 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted product.combo.item records with IDs: [28] 
+2026-10-08 21:49:31,243 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.message records with IDs: [22948] 
+2026-10-08 21:49:31,273 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted product.product records with IDs: [2011] 
+2026-10-08 21:49:31,877 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 109 checked, 0 removed 
+2026-10-08 21:49:31,968 26 INFO 128070202-18-0-all odoo.modules.loading: Module point_of_sale loaded in 14.70s (incl. 2.50s test), 6762 queries (+2355 test, +6766 other) 
+2026-10-08 21:49:31,968 26 INFO 128070202-18-0-all odoo.modules.loading: Loading module project_enterprise_hr (374/849) 
+2026-10-08 21:49:32,907 26 INFO 128070202-18-0-all odoo.modules.registry: module project_enterprise_hr: creating or updating database tables 
+2026-10-08 21:49:36,000 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.mail records with IDs: [2599] 
+2026-10-08 21:49:36,000 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.message records with IDs: [22967] 
+2026-10-08 21:49:36,000 26 INFO 128070202-18-0-all odoo.addons.auth_signup.models.res_users: Signup email sent for user <raouf2> to <r.r@example.com> 
+2026-10-08 21:49:36,000 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.mail records with IDs: [2600] 
+2026-10-08 21:49:36,000 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.message records with IDs: [22968] 
+2026-10-08 21:49:36,000 26 INFO 128070202-18-0-all odoo.addons.auth_signup.models.res_users: Signup email sent for user <raouf3> to <r.r@example.com> 
+2026-10-08 21:49:37,000 26 INFO 128070202-18-0-all odoo.addons.project_enterprise_hr.tests.test_gantt_reschedule_dates: Starting TestGanttRescheduleOnTasks.test_auto_shift_employee_integration ... 
+2026-10-08 21:49:37,000 26 INFO 128070202-18-0-all odoo.addons.project_enterprise_hr.tests.test_gantt_reschedule_dates: Starting TestGanttRescheduleOnTasks.test_auto_shift_multiple_assignees ... 
+2026-10-08 21:49:37,000 26 INFO 128070202-18-0-all odoo.addons.project_enterprise_hr.tests.test_gantt_reschedule_dates: Starting TestGanttRescheduleOnTasks.test_move_backward_with_multi_users ... 
+2026-10-08 21:49:39,734 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 4 checked, 4 removed 
+2026-10-08 21:49:39,823 26 INFO 128070202-18-0-all odoo.modules.loading: Module project_enterprise_hr loaded in 7.85s (incl. 6.73s test), 86 queries (+3860 test, +86 other) 
+2026-10-08 21:49:39,823 26 INFO 128070202-18-0-all odoo.modules.loading: Loading module project_helpdesk (375/849) 
+2026-10-08 21:49:40,378 26 INFO 128070202-18-0-all odoo.modules.registry: module project_helpdesk: creating or updating database tables 
+2026-10-08 21:49:40,879 26 INFO 128070202-18-0-all odoo.modules.loading: loading project_helpdesk/security/ir.model.access.csv 
+2026-10-08 21:49:40,894 26 INFO 128070202-18-0-all odoo.modules.loading: loading project_helpdesk/views/helpdesk_views.xml 
+2026-10-08 21:49:40,907 26 INFO 128070202-18-0-all odoo.modules.loading: loading project_helpdesk/views/project_views.xml 
+2026-10-08 21:49:40,915 26 INFO 128070202-18-0-all odoo.modules.loading: loading project_helpdesk/wizard/helpdesk_ticket_convert_to_task_wizard_views.xml 
+2026-10-08 21:49:40,940 26 INFO 128070202-18-0-all odoo.modules.loading: loading project_helpdesk/wizard/project_task_convert_to_ticket_wizard_views.xml 
+2026-10-08 21:49:40,949 26 INFO 128070202-18-0-all odoo.modules.loading: Module project_helpdesk: loading demo 
+2026-10-08 21:49:40,949 26 INFO 128070202-18-0-all odoo.modules.loading: loading project_helpdesk/data/project_helpdesk_demo.xml 
+2026-10-08 21:49:41,861 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.mail records with IDs: [2627] 
+2026-10-08 21:49:41,869 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.message records with IDs: [23024] 
+2026-10-08 21:49:41,872 26 INFO 128070202-18-0-all odoo.addons.auth_signup.models.res_users: Signup email sent for user <hm> to <hm@example.com> 
+2026-10-08 21:49:42,094 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.mail records with IDs: [2628] 
+2026-10-08 21:49:42,100 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.message records with IDs: [23025] 
+2026-10-08 21:49:42,103 26 INFO 128070202-18-0-all odoo.addons.auth_signup.models.res_users: Signup email sent for user <hu> to <hu@example.com> 
+2026-10-08 21:49:42,278 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.mail records with IDs: [2629] 
+2026-10-08 21:49:42,285 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.message records with IDs: [23027] 
+2026-10-08 21:49:42,289 26 INFO 128070202-18-0-all odoo.addons.auth_signup.models.res_users: Signup email sent for user <hp> to <hp@example.com> 
+2026-10-08 21:49:43,080 26 INFO 128070202-18-0-all odoo.addons.project_helpdesk.tests.test_tasks_tickets_conversion: Starting TestTasksTicketsConversion.test_convert_task_to_ticket ... 
+2026-10-08 21:49:43,210 26 INFO 128070202-18-0-all odoo.addons.project_helpdesk.tests.test_tasks_tickets_conversion: Starting TestTasksTicketsConversion.test_convert_task_to_ticket_no_rights ... 
+2026-10-08 21:49:43,423 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.mail records with IDs: [2632] 
+2026-10-08 21:49:43,431 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.message records with IDs: [23046] 
+2026-10-08 21:49:43,435 26 INFO 128070202-18-0-all odoo.addons.auth_signup.models.res_users: Signup email sent for user <project> to <p.p@example.com> 
+2026-10-08 21:49:43,482 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 2624, model: project.task.convert.wizard 
+2026-10-08 21:49:43,495 26 INFO 128070202-18-0-all odoo.addons.project_helpdesk.tests.test_tasks_tickets_conversion: Starting TestTasksTicketsConversion.test_convert_tasks_to_tickets ... 
+2026-10-08 21:49:43,601 26 INFO 128070202-18-0-all odoo.addons.project_helpdesk.tests.test_tasks_tickets_conversion: Starting TestTasksTicketsConversion.test_convert_ticket_to_task ... 
+2026-10-08 21:49:43,696 26 INFO 128070202-18-0-all odoo.addons.project_helpdesk.tests.test_tasks_tickets_conversion: Starting TestTasksTicketsConversion.test_convert_ticket_to_task_no_rights ... 
+2026-10-08 21:49:43,885 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.mail records with IDs: [2633] 
+2026-10-08 21:49:43,893 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.message records with IDs: [23055] 
+2026-10-08 21:49:43,897 26 INFO 128070202-18-0-all odoo.addons.auth_signup.models.res_users: Signup email sent for user <helpdesk> to <h.h@example.com> 
+2026-10-08 21:49:43,939 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 2625, model: helpdesk.ticket.convert.wizard 
+2026-10-08 21:49:43,952 26 INFO 128070202-18-0-all odoo.addons.project_helpdesk.tests.test_tasks_tickets_conversion: Starting TestTasksTicketsConversion.test_convert_tickets_to_tasks ... 
+2026-10-08 21:49:44,684 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 6 checked, 6 removed 
+2026-10-08 21:49:44,769 26 INFO 128070202-18-0-all odoo.modules.loading: Module project_helpdesk loaded in 4.95s (incl. 3.16s test), 561 queries (+2563 test, +561 other) 
+2026-10-08 21:49:44,769 26 INFO 128070202-18-0-all odoo.modules.loading: Loading module project_hr_expense (376/849) 
+2026-10-08 21:49:45,646 26 INFO 128070202-18-0-all odoo.modules.registry: module project_hr_expense: creating or updating database tables 
+2026-10-08 21:49:45,726 26 INFO 128070202-18-0-all odoo.modules.loading: loading project_hr_expense/views/project_project_views.xml 
+2026-10-08 21:49:45,802 26 INFO 128070202-18-0-all odoo.modules.loading: Module project_hr_expense: loading demo 
+2026-10-08 21:49:45,802 26 INFO 128070202-18-0-all odoo.modules.loading: loading project_hr_expense/data/project_hr_expense_demo.xml 
+2026-10-08 21:49:46,734 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.activity records with IDs: [2094, 2095] 
+2026-10-08 21:49:46,764 26 INFO 128070202-18-0-all odoo.modules.loading: Module project_hr_expense loaded in 1.99s, 386 queries (+387 other) 
+2026-10-08 21:49:46,764 26 INFO 128070202-18-0-all odoo.modules.loading: Loading module project_hr_skills (377/849) 
+2026-10-08 21:49:47,296 26 INFO 128070202-18-0-all odoo.modules.registry: module project_hr_skills: creating or updating database tables 
+2026-10-08 21:49:47,508 26 INFO 128070202-18-0-all odoo.modules.loading: loading project_hr_skills/views/project_task_views.xml 
+2026-10-08 21:49:47,555 26 INFO 128070202-18-0-all odoo.modules.loading: Module project_hr_skills loaded in 0.79s, 99 queries (+99 other) 
+2026-10-08 21:49:47,556 26 INFO 128070202-18-0-all odoo.modules.loading: Loading module project_mrp (378/849) 
+2026-10-08 21:49:48,452 26 INFO 128070202-18-0-all odoo.modules.registry: module project_mrp: creating or updating database tables 
+2026-10-08 21:49:48,461 26 INFO 128070202-18-0-all odoo.models: Prepare computation of mrp.production.project_id 
+2026-10-08 21:49:48,670 26 INFO 128070202-18-0-all odoo.modules.loading: loading project_mrp/views/mrp_bom_views.xml 
+2026-10-08 21:49:48,700 26 INFO 128070202-18-0-all odoo.modules.loading: loading project_mrp/views/mrp_production_views.xml 
+2026-10-08 21:49:48,727 26 INFO 128070202-18-0-all odoo.modules.loading: loading project_mrp/views/project_project_views.xml 
+2026-10-08 21:49:48,747 26 INFO 128070202-18-0-all odoo.modules.loading: Module project_mrp loaded in 1.19s, 187 queries (+187 other) 
+2026-10-08 21:49:48,747 26 INFO 128070202-18-0-all odoo.modules.loading: Loading module project_purchase (379/849) 
+2026-10-08 21:49:49,250 26 INFO 128070202-18-0-all odoo.modules.registry: module project_purchase: creating or updating database tables 
+2026-10-08 21:49:49,447 26 INFO 128070202-18-0-all odoo.modules.loading: loading project_purchase/views/project_project.xml 
+2026-10-08 21:49:49,455 26 INFO 128070202-18-0-all odoo.modules.loading: loading project_purchase/views/purchase_order.xml 
+2026-10-08 21:49:49,477 26 INFO 128070202-18-0-all odoo.modules.loading: Module project_purchase: loading demo 
+2026-10-08 21:49:49,478 26 INFO 128070202-18-0-all odoo.modules.loading: loading project_purchase/data/project_purchase_demo.xml 
+2026-10-08 21:49:49,697 26 INFO 128070202-18-0-all odoo.modules.loading: Module project_purchase loaded in 0.95s, 284 queries (+284 other) 
+2026-10-08 21:49:49,698 26 INFO 128070202-18-0-all odoo.modules.loading: Loading module project_stock_account (380/849) 
+2026-10-08 21:49:50,463 26 INFO 128070202-18-0-all odoo.modules.registry: module project_stock_account: creating or updating database tables 
+2026-10-08 21:49:50,648 26 INFO 128070202-18-0-all odoo.modules.loading: loading project_stock_account/views/stock_picking_type_views.xml 
+2026-10-08 21:49:51,940 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted ir.model.data records with IDs: [83466, 83467] 
+2026-10-08 21:49:51,940 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted project.task.recurrence records with IDs: [2, 1] 
+2026-10-08 21:50:00,053 26 INFO 128070202-18-0-all odoo.addons.project_stock_account.tests.test_analytics: Starting TestAnalytics.test_analytic_lines_generation_delivery ... 
+2026-10-08 21:50:00,207 26 INFO 128070202-18-0-all odoo.addons.project_stock_account.tests.test_analytics: Starting TestAnalytics.test_analytic_lines_generation_receipt ... 
+2026-10-08 21:50:00,348 26 INFO 128070202-18-0-all odoo.addons.project_stock_account.tests.test_analytics: Starting TestAnalytics.test_mandatory_analytic_plan_picking ... 
+2026-10-08 21:50:01,177 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 2 checked, 2 removed 
+2026-10-08 21:50:01,617 26 INFO 128070202-18-0-all odoo.modules.loading: Module project_stock_account loaded in 11.92s (incl. 10.49s test), 125 queries (+3682 test, +125 other) 
+2026-10-08 21:50:01,617 26 INFO 128070202-18-0-all odoo.modules.loading: Loading module purchase_edi_ubl_bis3 (381/849) 
+2026-10-08 21:50:02,192 26 INFO 128070202-18-0-all odoo.modules.registry: module purchase_edi_ubl_bis3: creating or updating database tables 
+2026-10-08 21:50:02,461 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_edi_ubl_bis3/data/bis3_templates.xml 
+2026-10-08 21:50:02,517 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_edi_ubl_bis3/views/portal_templates_edi_ubl_connect_software.xml 
+2026-10-08 21:50:02,549 26 INFO 128070202-18-0-all odoo.modules.loading: Module purchase_edi_ubl_bis3 loaded in 0.93s, 163 queries (+163 other) 
+2026-10-08 21:50:02,549 26 INFO 128070202-18-0-all odoo.modules.loading: Loading module purchase_product_matrix (382/849) 
+2026-10-08 21:50:03,308 26 INFO 128070202-18-0-all odoo.modules.registry: module purchase_product_matrix: creating or updating database tables 
+2026-10-08 21:50:03,501 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_product_matrix/views/purchase_views.xml 
+2026-10-08 21:50:03,961 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_product_matrix/report/purchase_quotation_templates.xml 
+2026-10-08 21:50:03,976 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_product_matrix/report/purchase_order_templates.xml 
+2026-10-08 21:50:04,006 26 INFO 128070202-18-0-all odoo.modules.loading: Module purchase_product_matrix loaded in 1.46s, 109 queries (+109 other) 
+2026-10-08 21:50:04,006 26 INFO 128070202-18-0-all odoo.modules.loading: Loading module purchase_requisition (383/849) 
+2026-10-08 21:50:04,778 26 INFO 128070202-18-0-all odoo.modules.registry: module purchase_requisition: creating or updating database tables 
+2026-10-08 21:50:04,801 26 INFO 128070202-18-0-all odoo.models: Prepare computation of purchase.order.line.price_total_cc 
+2026-10-08 21:50:05,593 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_requisition/security/purchase_requisition_security.xml 
+2026-10-08 21:50:05,669 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_requisition/security/ir.model.access.csv 
+2026-10-08 21:50:05,693 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_requisition/data/purchase_requisition_data.xml 
+2026-10-08 21:50:05,703 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_requisition/views/product_views.xml 
+2026-10-08 21:50:05,739 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_requisition/views/purchase_views.xml 
+2026-10-08 21:50:05,823 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_requisition/views/purchase_requisition_views.xml 
+2026-10-08 21:50:05,877 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_requisition/views/res_config_settings_views.xml 
+2026-10-08 21:50:05,987 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_requisition/report/purchase_requisition_report.xml 
+2026-10-08 21:50:05,996 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_requisition/report/report_purchaserequisition.xml 
+2026-10-08 21:50:06,010 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_requisition/wizard/purchase_requisition_alternative_warning.xml 
+2026-10-08 21:50:06,020 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_requisition/wizard/purchase_requisition_create_alternative.xml 
+2026-10-08 21:50:06,029 26 INFO 128070202-18-0-all odoo.modules.loading: Module purchase_requisition: loading demo 
+2026-10-08 21:50:06,030 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_requisition/data/purchase_requisition_demo.xml 
+2026-10-08 21:50:06,440 26 INFO 128070202-18-0-all odoo.modules.loading: Module purchase_requisition loaded in 2.43s, 690 queries (+690 other) 
+2026-10-08 21:50:06,440 26 INFO 128070202-18-0-all odoo.modules.loading: Loading module purchase_stock (384/849) 
+2026-10-08 21:50:07,282 26 INFO 128070202-18-0-all odoo.modules.registry: module purchase_stock: creating or updating database tables 
+2026-10-08 21:50:07,345 26 INFO 128070202-18-0-all odoo.models: Prepare computation of purchase.order.picking_ids 
+2026-10-08 21:50:07,345 26 INFO 128070202-18-0-all odoo.models: Prepare computation of purchase.order.receipt_status 
+2026-10-08 21:50:07,345 26 INFO 128070202-18-0-all odoo.models: Prepare computation of purchase.order.effective_date 
+2026-10-08 21:50:07,418 26 INFO 128070202-18-0-all odoo.models: Prepare computation of stock.warehouse.orderpoint.product_supplier_id 
+2026-10-08 21:50:08,683 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/security/ir.model.access.csv 
+2026-10-08 21:50:08,712 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/data/purchase_stock_data.xml 
+2026-10-08 21:50:08,875 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/data/mail_templates.xml 
+2026-10-08 21:50:08,884 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/report/vendor_delay_report.xml 
+2026-10-08 21:50:08,900 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/views/purchase_views.xml 
+2026-10-08 21:50:08,951 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/views/stock_views.xml 
+2026-10-08 21:50:09,022 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/views/stock_picking_views.xml 
+2026-10-08 21:50:09,035 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/views/stock_rule_views.xml 
+2026-10-08 21:50:09,051 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/views/res_config_settings_views.xml 
+2026-10-08 21:50:09,339 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/views/res_partner_views.xml 
+2026-10-08 21:50:09,377 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/views/stock_lot_views.xml 
+2026-10-08 21:50:09,392 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/views/stock_orderpoint_views.xml 
+2026-10-08 21:50:09,399 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/views/product_views.xml 
+2026-10-08 21:50:09,447 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/report/purchase_report_views.xml 
+2026-10-08 21:50:09,459 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/report/purchase_report_templates.xml 
+2026-10-08 21:50:09,480 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/report/report_stock_rule.xml 
+2026-10-08 21:50:09,492 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/wizard/stock_replenishment_info.xml 
+2026-10-08 21:50:09,517 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/wizard/product_replenish_views.xml 
+2026-10-08 21:50:09,527 26 INFO 128070202-18-0-all odoo.modules.loading: Module purchase_stock: loading demo 
+2026-10-08 21:50:09,528 26 INFO 128070202-18-0-all odoo.modules.loading: loading purchase_stock/data/purchase_stock_demo.xml 
+2026-10-08 21:50:10,830 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_create_picking: Starting TestCreatePicking.test_00_create_picking ... 
+2026-10-08 21:50:11,126 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move records with IDs: [4179] 
+2026-10-08 21:50:11,295 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_create_picking: Starting TestCreatePicking.test_01_check_double_validation ... 
+2026-10-08 21:50:11,631 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_create_picking: Starting TestCreatePicking.test_02_check_mto_chain ... 
+2026-10-08 21:50:11,933 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_create_picking: Starting TestCreatePicking.test_03_uom ... 
+2026-10-08 21:50:12,209 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move records with IDs: [4185] 
+2026-10-08 21:50:12,409 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_create_picking: Starting TestCreatePicking.test_04_mto_multiple_po ... 
+2026-10-08 21:50:12,777 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_create_picking: Starting TestCreatePicking.test_04_rounding ... 
+2026-10-08 21:50:12,996 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move records with IDs: [4192] 
+2026-10-08 21:50:13,089 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_create_picking: Starting TestCreatePicking.test_05_propagate_deadline ... 
+2026-10-08 21:50:13,207 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_create_picking: Starting TestCreatePicking.test_05_uom_rounding ... 
+2026-10-08 21:50:13,416 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_create_picking: Starting TestCreatePicking.test_07_differed_schedule_date ... 
+2026-10-08 21:50:14,578 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_create_picking: Starting TestCreatePicking.test_08_check_update_qty_mto_chain ... 
+2026-10-08 21:50:14,817 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move records with IDs: [4201] 
+2026-10-08 21:50:14,932 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move records with IDs: [4202] 
+2026-10-08 21:50:15,108 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move records with IDs: [4204] 
+2026-10-08 21:50:15,200 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_create_picking: Starting TestCreatePicking.test_create_return_exchange_with_no_picking_origin ... 
+2026-10-08 21:50:15,414 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_create_picking: Starting TestCreatePicking.test_mtso_multi_pg_order ... 
+2026-10-08 21:50:15,762 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_create_picking: Starting TestCreatePicking.test_po_with_return_for_exchange_shows_3_transfers ... 
+2026-10-08 21:50:16,052 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_create_picking: Starting TestCreatePicking.test_return_to_vendor_multi_step ... 
+2026-10-08 21:50:17,040 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move.line records with IDs: [4168] 
+2026-10-08 21:50:17,255 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_create_picking: Starting TestCreatePicking.test_update_qty_purchased ... 
+2026-10-08 21:50:17,918 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move.line records with IDs: [4171] 
+2026-10-08 21:50:17,964 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move records with IDs: [4221] 
+2026-10-08 21:50:18,062 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_create_picking: Starting TestCreatePicking.test_update_quantity_and_return ... 
+2026-10-08 21:50:18,694 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move records with IDs: [4225] 
+2026-10-08 21:50:19,407 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 1 checked, 1 removed 
+2026-10-08 21:50:19,640 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_lot_valuation: Starting TestLotValuationPurchase.test_poline_price_unit ... 
+2026-10-08 21:50:19,757 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move.line records with IDs: [4176] 
+2026-10-08 21:50:19,918 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move.line records with IDs: [4179] 
+2026-10-08 21:50:21,247 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 0 checked, 0 removed 
+2026-10-08 21:50:22,823 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted ir.model.data records with IDs: [83466, 83467] 
+2026-10-08 21:50:22,823 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted project.task.recurrence records with IDs: [2, 1] 
+2026-10-08 21:50:23,886 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_move_cancel_propagation: Starting TestMoveCancelPropagation.test_01_cancel_draft_purchase_order_one_steps ... 
+2026-10-08 21:50:24,050 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_move_cancel_propagation: Starting TestMoveCancelPropagation.test_02_cancel_confirm_purchase_order_one_steps ... 
+2026-10-08 21:50:24,339 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move.line records with IDs: [4181] 
+2026-10-08 21:50:24,384 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_move_cancel_propagation: Starting TestMoveCancelPropagation.test_03_cancel_draft_purchase_order_two_steps_push ... 
+2026-10-08 21:50:24,590 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_move_cancel_propagation: Starting TestMoveCancelPropagation.test_04_cancel_confirm_purchase_order_two_steps_push ... 
+2026-10-08 21:50:24,891 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move.line records with IDs: [4182] 
+2026-10-08 21:50:24,938 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_move_cancel_propagation: Starting TestMoveCancelPropagation.test_05_cancel_draft_purchase_order_three_steps_push ... 
+2026-10-08 21:50:25,143 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_move_cancel_propagation: Starting TestMoveCancelPropagation.test_06_cancel_confirm_purchase_order_three_steps_push ... 
+2026-10-08 21:50:25,411 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move.line records with IDs: [4183] 
+2026-10-08 21:50:25,449 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_move_cancel_propagation: Starting TestMoveCancelPropagation.test_cancel_move_lines_operation ... 
+2026-10-08 21:50:26,190 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 3 checked, 3 removed 
+2026-10-08 21:50:28,175 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted ir.model.data records with IDs: [83466, 83467] 
+2026-10-08 21:50:28,175 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted project.task.recurrence records with IDs: [2, 1] 
+2026-10-08 21:50:30,030 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_old_rules: Starting TestPurchaseOldRules.test_02_product_route_level_delays ... 
+2026-10-08 21:50:30,783 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_old_rules: Starting TestPurchaseOldRules.test_03_cancel_draft_purchase_order_two_steps_pull ... 
+2026-10-08 21:50:30,984 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_old_rules: Starting TestPurchaseOldRules.test_04_cancel_confirm_purchase_order_two_steps_pull ... 
+2026-10-08 21:50:31,229 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move.line records with IDs: [4185] 
+2026-10-08 21:50:31,278 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_old_rules: Starting TestPurchaseOldRules.test_05_cancel_draft_purchase_order_three_steps_pull ... 
+2026-10-08 21:50:31,523 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_old_rules: Starting TestPurchaseOldRules.test_06_cancel_confirm_purchase_order_three_steps_pull ... 
+2026-10-08 21:50:31,878 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move.line records with IDs: [4186] 
+2026-10-08 21:50:32,728 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 3 checked, 3 removed 
+2026-10-08 21:50:32,866 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_onchange_product: Starting TestOnchangeProductId.test_onchange_product_id ... 
+2026-10-08 21:50:35,457 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 0 checked, 0 removed 
+2026-10-08 21:50:35,466 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_product_template: Starting TestProductTemplate.test_name_search ... 
+2026-10-08 21:50:36,408 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 0 checked, 0 removed 
+2026-10-08 21:50:38,149 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted ir.model.data records with IDs: [83466, 83467] 
+2026-10-08 21:50:38,149 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted project.task.recurrence records with IDs: [2, 1] 
+2026-10-08 21:50:39,272 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_delete_order: Starting TestDeleteOrder.test_00_delete_order ... 
+2026-10-08 21:50:39,362 26 INFO 128070202-18-0-all odoo.models.unlink: User #2637 deleted purchase.order records with IDs: [65] 
+2026-10-08 21:50:39,385 26 INFO 128070202-18-0-all odoo.models.unlink: User #2637 deleted purchase.order records with IDs: [66] 
+2026-10-08 21:50:39,399 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_delete_order: Starting TestDeleteOrder.test_01_delete_propagation ... 
+2026-10-08 21:50:39,668 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move.line records with IDs: [4187] 
+2026-10-08 21:50:40,977 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 3 checked, 3 removed 
+2026-10-08 21:50:42,729 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted ir.model.data records with IDs: [83466, 83467] 
+2026-10-08 21:50:42,729 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted project.task.recurrence records with IDs: [2, 1] 
+2026-10-08 21:50:43,757 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_lead_time: Starting TestPurchaseLeadTime.test_00_product_company_level_delays ... 
+2026-10-08 21:50:43,946 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_lead_time: Starting TestPurchaseLeadTime.test_01_product_level_delay ... 
+2026-10-08 21:50:44,543 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_lead_time: Starting TestPurchaseLeadTime.test_lead_time_with_no_supplier ... 
+2026-10-08 21:50:44,587 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_lead_time: Starting TestPurchaseLeadTime.test_merge_po_line ... 
+2026-10-08 21:50:44,694 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_lead_time: Starting TestPurchaseLeadTime.test_merge_po_line_3 ... 
+2026-10-08 21:50:45,060 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_lead_time: Starting TestPurchaseLeadTime.test_reordering_days_to_purchase ... 
+2026-10-08 21:50:46,625 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_lead_time: Starting TestPurchaseLeadTime.test_supplier_lead_time ... 
+2026-10-08 21:50:46,635 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted ir.model.data records with IDs: [115147, 86541, 86542, 86543] 
+2026-10-08 21:50:46,635 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.warehouse.orderpoint records with IDs: [1, 2, 3, 37] 
+2026-10-08 21:50:46,737 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted product.supplierinfo records with IDs: [75] 
+2026-10-08 21:50:47,628 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 3 checked, 3 removed 
+2026-10-08 21:50:48,941 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted ir.model.data records with IDs: [83466, 83467] 
+2026-10-08 21:50:48,941 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted project.task.recurrence records with IDs: [2, 1] 
+2026-10-08 21:50:49,646 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_stock_report: Starting TestPurchaseStockReports.test_approval_and_forecasted_qty ... 
+2026-10-08 21:50:50,590 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_stock_report: Starting TestPurchaseStockReports.test_purchase_report_effective_days_to_arrival ... 
+2026-10-08 21:50:50,848 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_stock_report: Starting TestPurchaseStockReports.test_report_forecast_1_purchase_order_multi_receipt ... 
+2026-10-08 21:50:51,838 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_stock_report: Starting TestPurchaseStockReports.test_report_forecast_2_purchase_order_three_step_receipt ... 
+2026-10-08 21:50:52,999 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_stock_report: Starting TestPurchaseStockReports.test_report_forecast_3_report_line_corresponding_to_po_line_highlighted ... 
+2026-10-08 21:50:53,523 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_stock_report: Starting TestPurchaseStockReports.test_vendor_delay_report_with_backorder ... 
+2026-10-08 21:50:54,288 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_stock_report: Starting TestPurchaseStockReports.test_vendor_delay_report_with_duplicate_receipt_without_backorder ... 
+2026-10-08 21:50:54,914 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_stock_report: Starting TestPurchaseStockReports.test_vendor_delay_report_with_multi_location ... 
+2026-10-08 21:50:55,339 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move.line records with IDs: [4205] 
+2026-10-08 21:50:55,427 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_stock_report: Starting TestPurchaseStockReports.test_vendor_delay_report_with_uom ... 
+2026-10-08 21:50:55,809 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.move.line records with IDs: [4208] 
+2026-10-08 21:50:55,915 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_purchase_stock_report: Starting TestPurchaseStockReports.test_vendor_delay_report_without_backorder ... 
+2026-10-08 21:50:57,048 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 1 checked, 1 removed 
+2026-10-08 21:50:58,823 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted ir.model.data records with IDs: [83466, 83467] 
+2026-10-08 21:50:58,823 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted project.task.recurrence records with IDs: [2, 1] 
+2026-10-08 21:50:59,611 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_replenish_wizard: Starting TestReplenishWizard.test_chose_supplier_1 ... 
+2026-10-08 21:50:59,720 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_replenish_wizard: Starting TestReplenishWizard.test_chose_supplier_2 ... 
+2026-10-08 21:50:59,809 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_replenish_wizard: Starting TestReplenishWizard.test_chose_supplier_3 ... 
+2026-10-08 21:50:59,917 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_replenish_wizard: Starting TestReplenishWizard.test_chose_supplier_4 ... 
+2026-10-08 21:51:00,027 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_replenish_wizard: Starting TestReplenishWizard.test_chose_supplier_5 ... 
+2026-10-08 21:51:00,139 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_replenish_wizard: Starting TestReplenishWizard.test_correct_supplier ... 
+2026-10-08 21:51:00,327 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_replenish_wizard: Starting TestReplenishWizard.test_delete_buy_route_and_replenish ... 
+2026-10-08 21:51:00,340 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted ir.model.data records with IDs: [221049] 
+2026-10-08 21:51:00,340 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.route records with IDs: [1057] 
+2026-10-08 21:51:00,354 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted product.supplierinfo records with IDs: [93] 
+2026-10-08 21:51:00,379 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_replenish_wizard: Starting TestReplenishWizard.test_inter_wh_replenish ... 
+2026-10-08 21:51:00,941 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_replenish_wizard: Starting TestReplenishWizard.test_purchase_delay ... 
+2026-10-08 21:51:01,078 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_replenish_wizard: Starting TestReplenishWizard.test_purchase_supplier_route_delay ... 
+2026-10-08 21:51:01,172 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_replenish_wizard: Starting TestReplenishWizard.test_replenish_buy_1 ... 
+2026-10-08 21:51:01,251 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_replenish_wizard: Starting TestReplenishWizard.test_supplier_delay ... 
+2026-10-08 21:51:01,354 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_replenish_wizard: Starting TestReplenishWizard.test_unit_price_expired_price_list ... 
+2026-10-08 21:51:02,079 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 2 checked, 2 removed 
+2026-10-08 21:51:02,085 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_routes: Starting TestRoutes.test_allow_rule_creation_for_route_without_company ... 
+2026-10-08 21:51:02,313 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_routes: Starting TestRoutes.test_delete_buy_route ... 
+2026-10-08 21:51:02,324 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted ir.model.data records with IDs: [221049] 
+2026-10-08 21:51:02,325 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.route records with IDs: [1057] 
+2026-10-08 21:51:02,458 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_routes: Starting TestRoutes.test_po_final_location ... 
+2026-10-08 21:51:02,693 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_routes: Starting TestRoutes.test_product_create_with_inaccessible_buy_route ... 
+2026-10-08 21:51:03,649 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted stock.rule records with IDs: [1859, 1861, 1863, 2021] 
+2026-10-08 21:51:04,721 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 1 checked, 1 removed 
+2026-10-08 21:51:05,420 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_stockvaluation: Starting TestStockValuation.test_backorder_fifo_1 ... 
+2026-10-08 21:51:06,392 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_stockvaluation: Starting TestStockValuation.test_change_unit_cost_average_1 ... 
+2026-10-08 21:51:06,772 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_stockvaluation: Starting TestStockValuation.test_different_uom ... 
+2026-10-08 21:51:07,215 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_stockvaluation: Starting TestStockValuation.test_extra_move_fifo_1 ... 
+2026-10-08 21:51:07,532 26 INFO 128070202-18-0-all odoo.addons.purchase_stock.tests.test_stockvaluation: Starting TestStockValuation.test_standard_price_change_1 ... 
+2026-10-08 21:51:08,422 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 0 checked, 0 removed 
+2026-10-08 21:51:08,526 26 INFO 128070202-18-0-all odoo.modules.loading: Module purchase_stock loaded in 62.09s (incl. 58.17s test), 1903 queries (+45991 test, +1903 other) 
+2026-10-08 21:51:08,526 26 INFO 128070202-18-0-all odoo.modules.loading: Loading module quality_control (385/849) 
+2026-10-08 21:51:09,352 26 INFO 128070202-18-0-all odoo.modules.registry: module quality_control: creating or updating database tables 
+2026-10-08 21:51:09,853 26 INFO 128070202-18-0-all odoo.modules.loading: loading quality_control/data/quality_control_data.xml 
+2026-10-08 21:51:09,865 26 INFO 128070202-18-0-all odoo.modules.loading: loading quality_control/report/worksheet_custom_reports.xml 
+2026-10-08 21:51:09,873 26 INFO 128070202-18-0-all odoo.modules.loading: loading quality_control/report/worksheet_custom_report_templates.xml 
+2026-10-08 21:51:09,890 26 INFO 128070202-18-0-all odoo.modules.loading: loading quality_control/views/quality_views.xml 
+2026-10-08 21:51:10,180 26 INFO 128070202-18-0-all odoo.modules.loading: loading quality_control/views/product_views.xml 
+2026-10-08 21:51:10,209 26 INFO 128070202-18-0-all odoo.modules.loading: loading quality_control/views/stock_move_views.xml 
+2026-10-08 21:51:10,226 26 INFO 128070202-18-0-all odoo.modules.loading: loading quality_control/views/stock_picking_views.xml 
+2026-10-08 21:51:10,270 26 INFO 128070202-18-0-all odoo.modules.loading: loading quality_control/views/stock_lot_views.xml 
+2026-10-08 21:51:10,294 26 INFO 128070202-18-0-all odoo.modules.loading: loading quality_control/wizard/quality_check_wizard_views.xml 
+2026-10-08 21:51:10,310 26 INFO 128070202-18-0-all odoo.modules.loading: loading quality_control/wizard/on_demand_quality_check_wizard_views.xml 
+2026-10-08 21:51:10,317 26 INFO 128070202-18-0-all odoo.modules.loading: loading quality_control/security/ir.model.access.csv 
+2026-10-08 21:51:10,337 26 INFO 128070202-18-0-all odoo.modules.loading: loading quality_control/security/security.xml 
+2026-10-08 21:51:10,347 26 INFO 128070202-18-0-all odoo.modules.loading: Module quality_control: loading demo 
+2026-10-08 21:51:10,348 26 INFO 128070202-18-0-all odoo.modules.loading: loading quality_control/data/quality_control_demo.xml 
+2026-10-08 21:51:10,673 26 INFO 128070202-18-0-all odoo.addons.quality_control.tests.test_quality_spreadsheet: Starting TestQualitySpreadsheet.test_create_spreadsheet_template ... 
+2026-10-08 21:51:10,808 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted ir.attachment records with IDs: [23389] 
+2026-10-08 21:51:10,808 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted quality.check.spreadsheet records with IDs: [1] 
+2026-10-08 21:51:10,818 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted mail.message records with IDs: [23285] 
+2026-10-08 21:51:10,822 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted quality.check records with IDs: [37] 
+2026-10-08 21:51:10,834 26 INFO 128070202-18-0-all odoo.addons.quality_control.tests.test_quality_spreadsheet: Starting TestQualitySpreadsheet.test_delete_history_after_inactivity ... 
+2026-10-08 21:51:10,000 26 INFO 128070202-18-0-all odoo.models.unlink: User #1 deleted spreadsheet.revision records with IDs: [129, 130] 
+2026-10-08 21:51:11,489 26 INFO 128070202-18-0-all odoo.addons.base.models.ir_attachment: filestore gc 4 checked, 2 removed 

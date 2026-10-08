@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Check in progress</title>
+<script>
+function cfVerified(token) {
+    fetch("/_turnstile/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "cf-turnstile-response=" + encodeURIComponent(token),
+    }).then(function (response) {
+        if (response.status === 204) {
+            location.reload();
+        } else {
+            document.getElementById("msg").textContent =
+                "Verification failed. Please reload the page.";
+        }
+    });
+}
+</script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+</head>
+<body>
+<p id="msg">Checking your browser before continuing...</p>
+<div class="cf-turnstile"
+     data-sitekey="0x4AAAAAAFLxBLPb1M5Ms-S9"
+     data-callback="cfVerified"></div>
+</body>
+</html>

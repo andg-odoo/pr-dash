@@ -1,0 +1,266 @@
+{
+ "bundle": {
+  "id": 518671,
+  "name": "saas-19.4-l10n_pe-withholding-6508826-andg"
+ },
+ "batches": [
+  {
+   "id": 2803207,
+   "category": {
+    "id": 1,
+    "name": "Default"
+   },
+   "slots": [
+    {
+     "trigger": "Minimal check",
+     "build": {
+      "id": 127789875,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Odoo LS Check",
+     "build": {
+      "id": 127789944,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Community Run",
+     "build": {
+      "id": 127204684,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Enterprise Run",
+     "build": {
+      "id": 127221668,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Enterprise Tests",
+     "build": {
+      "id": 127789945,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "L10n  standalone test",
+     "build": {
+      "id": 127221650,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Templates enterprise",
+     "build": {
+      "id": 127221670,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Upgrade current",
+     "build": {
+      "id": 127789950,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Distro check",
+     "build": {
+      "id": 127221671,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Check Style",
+     "build": {
+      "id": 127789946,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Stable policy check",
+     "build": {
+      "id": 127789951,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Check Security odoo",
+     "build": {
+      "id": 127789947,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Check Security enterprise",
+     "build": {
+      "id": 127789948,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Code Owner",
+     "build": {
+      "id": 127789949,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "CLA",
+     "build": {
+      "id": 127789876,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    }
+   ]
+  },
+  {
+   "id": 2795086,
+   "category": {
+    "id": 1,
+    "name": "Default"
+   },
+   "slots": [
+    {
+     "trigger": "Minimal check",
+     "build": {
+      "id": 127221625,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Odoo LS Check",
+     "build": {
+      "id": 127221667,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Community Run",
+     "build": {
+      "id": 127204684,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Enterprise Run",
+     "build": {
+      "id": 127221668,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Enterprise Tests",
+     "build": {
+      "id": 127221669,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "L10n  standalone test",
+     "build": {
+      "id": 127221650,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Templates enterprise",
+     "build": {
+      "id": 127221670,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Upgrade current",
+     "build": {
+      "id": 127221680,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Distro check",
+     "build": {
+      "id": 127221671,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Check Style",
+     "build": {
+      "id": 127221672,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Stable policy check",
+     "build": {
+      "id": 127222173,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Check Security odoo",
+     "build": {
+      "id": 127221673,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Check Security enterprise",
+     "build": {
+      "id": 127221674,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "Code Owner",
+     "build": {
+      "id": 127221675,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    },
+    {
+     "trigger": "CLA",
+     "build": {
+      "id": 127221626,
+      "local_state": "done",
+      "local_result": "ok"
+     }
+    }
+   ]
+  }
+ ]
+}

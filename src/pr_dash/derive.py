@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from pr_dash import branch_set
+from pr_dash import branch_set, runbot
 
 # Tolerate the separators/noise that appear between the keyword and the id in PR
 # bodies: a hyphen, spaces, a tilde, or a markdown link opening (`[`, sometimes
@@ -1141,8 +1141,48 @@ def forward_port_candidates(node: dict) -> list[str]:
     return out
 
 
-def _mine_member(row: dict, mergebot: dict | None) -> dict:
-    """One Branch set member, its readiness read from the Mergebot page where there is one."""
+def runbot_triggers(row: dict, snapshots: dict[str, dict], mergebot: dict | None) -> list[dict]:
+    """A Mine row's failing runbot checks with their snapshot, named by the check."""
+    before = {c["name"]: c["state"] for c in row["previous_checks"]}
+    states = check_states(row, mergebot)
+    out = []
+    for c in row["checks"]:
+        ids = runbot.parse_check_url(c["url"] or "")
+        if not ids or states.get(c["name"]) != "failure":
+            continue
+        snap = snapshots.get(f"build:{ids[1]}")
+        # A red check the refresh has not read yet still shows, as GitHub reports it.
+        trigger = (snap["triggers"][0] if snap and snap["triggers"]
+                   else {"verdict": "red", "children": None, "failures": []})
+        red = trigger["verdict"] == "red"
+        out.append({**trigger, "name": c["name"], "batch_id": ids[0], "build_id": ids[1],
+                    "url": runbot.build_url(ids[1]),
+                    "error": snap["error"] if snap else "not fetched yet",
+                    "fetched_at": snap and snap["fetched_at"],
+                    "stale": bool(snap and snap["error"] and snap["triggers"]),
+                    "previous": {"failure": "red", "success": "green"}.get(before.get(c["name"]))
+                    if red else None})
+    return out
+
+
+def runbot_batches(rows: list[dict], pages: dict[str, dict],
+                   snapshots: dict[str, dict]) -> list[dict]:
+    """The runbot batches of open `rows`, each build once with the PRs reporting it."""
+    batches: dict[int, dict] = {}
+    for row in rows:
+        if row["state"] != "OPEN":
+            continue
+        for entry in runbot_triggers(row, snapshots, pages.get(row["id"])):
+            batch_id = entry.pop("batch_id")
+            batch = batches.setdefault(batch_id, {"batch_id": batch_id, "prs": [], "triggers": {}})
+            batch["prs"] += [row["id"]] if row["id"] not in batch["prs"] else []
+            batch["triggers"].setdefault(entry["build_id"], {**entry, "prs": []})["prs"].append(
+                row["id"])
+    return [{**b, "triggers": list(b["triggers"].values())} for b in batches.values()]
+
+
+def check_states(row: dict, mergebot: dict | None) -> dict[str, str]:
+    """Each check's state as the Mergebot page reads it, where the PR has one."""
     managed = mergebot is not None and mergebot["state"] not in ("unmanaged", "unknown")
     page_checks = mergebot["checks"] if managed else []
     listed = {c["name"] for c in page_checks}
@@ -1158,6 +1198,14 @@ def _mine_member(row: dict, mergebot: dict | None) -> dict:
             checks[c["name"]] = "failure"
         elif c["status"] is not None:
             checks[c["name"]] = "pending"
+    return checks
+
+
+def _mine_member(row: dict, mergebot: dict | None) -> dict:
+    """One Branch set member, its readiness read from the Mergebot page where there is one."""
+    managed = mergebot is not None and mergebot["state"] not in ("unmanaged", "unknown")
+    page_checks = mergebot["checks"] if managed else []
+    checks = check_states(row, mergebot)
     state = row["state"]
     if state == "CLOSED" and managed and mergebot["state"] == "merged":
         state = "MERGED"

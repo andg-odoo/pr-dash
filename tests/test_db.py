@@ -329,6 +329,26 @@ def test_migration_moves_every_mark_of_a_v29_cache_into_one_table(tmp_path):
             backup.execute("SELECT dismissed_at FROM tracked").fetchall()) == (29, [("d1",)])
 
 
+def test_migration_adds_runbot_tables_to_a_v31_db_and_survives_a_rerun(tmp_path):
+    path = tmp_path / "pr_dash.db"
+    conn = sqlite3.connect(path, isolation_level=None)
+    conn.executescript(db.SCHEMA_SQL.replace("  previous_checks TEXT NOT NULL DEFAULT '[]',\n", ""))
+    conn.execute("INSERT INTO mine (id, repo, number, url, checks, added_at) "
+                 "VALUES ('odoo/odoo#1', 'odoo/odoo', 1, 'u', '[]', 't')")
+    conn.execute("PRAGMA user_version = 31")
+    conn.close()
+
+    conn = db.connect(path)
+    assert [r["previous_checks"] for r in db.list_mine(conn)] == [[]]
+    db.upsert_runbot_snapshot(conn, "build:1", "", "t", [], None, retry=False)
+    # Old code reopening the cache stamps v31 back, and the step runs again over its own tables.
+    conn.execute("PRAGMA user_version = 31")
+    conn.close()
+    conn = db.connect(path)
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    assert (version, list(db.get_runbot_snapshots(conn))) == (db.SCHEMA_VERSION, ["build:1"])
+
+
 def test_a_mark_whose_guard_moved_or_whose_row_is_gone_counts_as_none(tmp_path):
     conn = _conn(tmp_path)
     for pr_id, guard in (("odoo/odoo#1", "old"), ("odoo/odoo#2", "same"), ("odoo/odoo#3", "x")):

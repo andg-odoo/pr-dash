@@ -137,7 +137,7 @@ MINE = Tab(
     detail=query.mine_detail,
 )
 
-# The order get_comments and queue_only walk the views in.
+# The order get_comments and only walk the views in.
 TABS = (QUEUE, MINE, TRACKED)
 
 
@@ -152,18 +152,18 @@ def first(cfg: Config, ref: str | int, *tabs: Tab) -> tuple[Tab, dict]:
     raise misses[0]
 
 
-def queue_only(cfg: Config, ref: str | int, tool: str) -> dict:
-    """The Review queue row `ref` names, else an Elsewhere naming the first other view holding it."""
+def only(cfg: Config, ref: str | int, tool: str, home: Tab = QUEUE) -> dict:
+    """The `home` row `ref` names, else an Elsewhere naming the first other view holding it."""
     try:
-        return QUEUE.find(cfg, ref)
+        return home.find(cfg, ref)
     except NoMatch as miss:
-        for tab in TABS[1:]:
+        for tab in (t for t in TABS if t is not home):
             try:
                 row = tab.find(cfg, ref)
             except NoMatch:
                 continue
             raise Elsewhere(tab, row, (
-                f"{ref!r} is in the {tab.label}, {tool} covers the {QUEUE.label} only. "
+                f"{ref!r} is in the {tab.label}, {tool} covers the {home.label} only. "
                 f"{tab.reader} reads it."
             )) from miss
         raise

@@ -561,8 +561,9 @@ def build_mine_payload(
     rows = db.list_mine(conn, include_dismissed=include_dismissed, dismissed_only=dismissed_only)
     by_id = {r["id"]: r for r in rows}
     comments_by_pr = db.list_discussions(conn, "mine")
+    pages, snapshots = db.list_mine_mergebot(conn), db.get_runbot_snapshots(conn)
     sets = derive.branch_sets(
-        rows, db.list_mine_mergebot(conn), streams=comments_by_pr, login=login,
+        rows, pages, streams=comments_by_pr, login=login,
         acks={key: m["guard"] for key, m in db.marks(conn, "ack").items()},
         seen=db.list_tab_seen(conn, "mine"),
         now=now or derive.now_utc())
@@ -580,6 +581,8 @@ def build_mine_payload(
             runbot = {c["name"]: c["url"] for c in row["checks"]
                       if "runbot.odoo.com" in (c.get("url") or "")}
             m["runbot_url"] = runbot.get("ci/runbot") or next(iter(runbot.values()), None)
+        s["runbot"] = derive.runbot_batches(
+            [by_id[pr["id"]] for m in s["members"] for pr in [m, *m["fw"]]], pages, snapshots)
         s["discussion"] = derive.group_discussion([
             {**c, "member": pr["ref"]}
             for m in s["members"] for pr in [m, *m["fw"]] for c in comments_by_pr.get(pr["id"], [])
@@ -609,7 +612,8 @@ def commit_seen_baseline(
 
 def render(payload: list[dict], html_path: Path, *, offline: bool = False,
            last_refresh: str | None = None, rendered_at: str, marks_port: int = 7391,
-           tracked: list[dict] | None = None, mine: list[dict] | None = None) -> None:
+           tracked: list[dict] | None = None, mine: list[dict] | None = None,
+           runbot_expired: bool = False) -> None:
     env = _env()
     template = env.get_template("index.html.j2")
     assets_dir = TEMPLATES_DIR / "assets"
@@ -632,6 +636,7 @@ def render(payload: list[dict], html_path: Path, *, offline: bool = False,
                         for s in mine or []),
         },
         offline=offline,
+        runbot_expired=runbot_expired,
         last_refresh=last_refresh or "",
         rendered_at=rendered_at,
         marks_port=marks_port,

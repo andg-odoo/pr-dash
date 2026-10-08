@@ -1,0 +1,21 @@
+ValueError: Invalid field res.partner.bank.acc_number in condition ('acc_number', 'in', ['BE15001559627230'])
+2026-10-08 18:57:04,843 26 INFO 128064843-saas-19-2-all odoo.addons.l10n_account_edi_ubl_cii_tests.tests.test_xml_ubl_be: ====================================================================== 
+2026-10-08 18:57:04,843 26 ERROR 128064843-saas-19-2-all odoo.addons.l10n_account_edi_ubl_cii_tests.tests.test_xml_ubl_be: FAIL: TestUBLBE.test_import_and_create_partner_ubl
+Traceback (most recent call last):
+  File "/data/build/odoo/addons/l10n_account_edi_ubl_cii_tests/tests/test_xml_ubl_be.py", line 298, in test_import_and_create_partner_ubl
+    self.assertRecordValues(invoice.partner_id, [partner_vals])
+  File "/data/build/odoo/odoo/tests/common.py", line 726, in assertRecordValues
+    self.assertSequenceEqual(expected_reformatted, record_reformatted, seq_type=list)
+AssertionError: Lists differ: [{'name': 'Buyer', 'email': 'buyer@yahoo.c[39 chars]05'}] != []
+
+First list contains 1 additional elements.
+First extra element 0:
+{'name': 'Buyer', 'email': 'buyer@yahoo.com', 'phone': '1111', 'vat': 'BE980737405'}
+
++ []
+- [{'email': 'buyer@yahoo.com',
+-   'name': 'Buyer',
+-   'phone': '1111',
+-   'vat': 'BE980737405'}]
+ 
+2026-10-08 18:57:04,847 26 INFO 128064843-saas-19-2-all odoo.tests.suite: Disabling auto-retry after a failed test 

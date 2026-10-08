@@ -1,0 +1,986 @@
+[
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 1
+  },
+  "message": "`.account_chart_template` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 2
+  },
+  "message": "`.account_edi_format` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 3
+  },
+  "message": "`.account_journal` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 4
+  },
+  "message": "`.account_move` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 5
+  },
+  "message": "`.account_move_send` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 6
+  },
+  "message": "`.l10n_ec_reimbursement` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 7
+  },
+  "message": "`.account_tax` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 8
+  },
+  "message": "`.certificate` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 9
+  },
+  "message": "`.l10n_ec_taxpayer_type` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 10
+  },
+  "message": "`.product` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 11
+  },
+  "message": "`.res_company` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 12
+  },
+  "message": "`.res_config_settings` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 13
+  },
+  "message": "`.res_partner` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 14
+  },
+  "message": "`.xml_utils` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/__init__.py",
+  "location": {
+   "row": 15
+  },
+  "message": "`.res_country` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_edi_format.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_edi_format.py",
+  "location": {
+   "row": 16
+  },
+  "message": "`odoo.tools.float_compare` imported but unused"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_edi_format.py",
+  "location": {
+   "row": 16
+  },
+  "message": "`odoo.tools.float_is_zero` imported but unused"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_edi_format.py",
+  "location": {
+   "row": 55
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_edi_format.py",
+  "location": {
+   "row": 107
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_edi_format.py",
+  "location": {
+   "row": 185
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_edi_format.py",
+  "location": {
+   "row": 224
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "RUF069",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_edi_format.py",
+  "location": {
+   "row": 301
+  },
+  "message": "Unreliable floating point equality comparison `discount == 100.0`"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_journal.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "SIM201",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_journal.py",
+  "location": {
+   "row": 55
+  },
+  "message": "Use `journal.country_code != 'EC'` instead of `not journal.country_code == 'EC'`"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "UP035",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 6
+  },
+  "message": "Import from `collections.abc` instead: `Callable`"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 6
+  },
+  "message": "`typing.Callable` imported but unused"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 9
+  },
+  "message": "`odoo.tools.frozendict` imported but unused"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 10
+  },
+  "message": "`odoo.tools.misc.formatLang` imported but unused"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 62
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "E303",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 78
+  },
+  "message": "Too many blank lines (3)"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 199
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 200
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "E251",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 289
+  },
+  "message": "Unexpected spaces around keyword / parameter equals"
+ },
+ {
+  "code": "E251",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 289
+  },
+  "message": "Unexpected spaces around keyword / parameter equals"
+ },
+ {
+  "code": "E251",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 290
+  },
+  "message": "Unexpected spaces around keyword / parameter equals"
+ },
+ {
+  "code": "E251",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 290
+  },
+  "message": "Unexpected spaces around keyword / parameter equals"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 535
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 582
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 906
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "C419",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 934
+  },
+  "message": "Unnecessary list comprehension"
+ },
+ {
+  "code": "RUF069",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/models/account_move.py",
+  "location": {
+   "row": 1260
+  },
+  "message": "Unreliable floating point equality comparison `self.discount != 100.0`"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/tests/common.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/tests/common.py",
+  "location": {
+   "row": 48
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/tests/test_edi_xml.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "C419",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi/tests/test_edi_xml.py",
+  "location": {
+   "row": 1038
+  },
+  "message": "Unnecessary list comprehension"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi_pos/models/__init__.py",
+  "location": {
+   "row": 1
+  },
+  "message": "`.pos_order` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi_pos/models/__init__.py",
+  "location": {
+   "row": 2
+  },
+  "message": "`.pos_payment_method` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi_pos/models/__init__.py",
+  "location": {
+   "row": 3
+  },
+  "message": "`.account_move` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi_pos/models/__init__.py",
+  "location": {
+   "row": 4
+  },
+  "message": "`.pos_session` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi_pos/models/__init__.py",
+  "location": {
+   "row": 5
+  },
+  "message": "`.account_edi_format` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi_pos/models/__init__.py",
+  "location": {
+   "row": 6
+  },
+  "message": "`.res_config_settings` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi_pos/models/__init__.py",
+  "location": {
+   "row": 7
+  },
+  "message": "`.pos_config` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_edi_stock/models/stock_picking.py",
+  "location": {
+   "row": 382
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 86
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 431
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "UP030",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 481
+  },
+  "message": "Use implicit references for positional format fields"
+ },
+ {
+  "code": "UP032",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 481
+  },
+  "message": "Use f-string instead of `format` call"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 586
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 640
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "UP025",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 720
+  },
+  "message": "Remove unicode literals from strings"
+ },
+ {
+  "code": "RUF056",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_reports_ats/models/tax_report.py",
+  "location": {
+   "row": 729
+  },
+  "message": "Avoid providing a falsy fallback to `dict.get()` in boolean test positions. The default fallback `None` is already falsy."
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_reports_ats/tests/test_ats_report.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "E302",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_reports_ats/tests/test_ats_report.py",
+  "location": {
+   "row": 12
+  },
+  "message": "Expected 2 blank lines, found 1"
+ },
+ {
+  "code": "E303",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_reports_ats/tests/test_ats_report.py",
+  "location": {
+   "row": 97
+  },
+  "message": "Too many blank lines (2)"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_reports_ats/tests/test_ats_report.py",
+  "location": {
+   "row": 429
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "E231",
+  "filename": "/data/build/merge_base_enterprise/l10n_ec_reports_ats/tests/test_ats_report.py",
+  "location": {
+   "row": 434
+  },
+  "message": "Missing whitespace after `,`"
+ },
+ {
+  "code": "RUF059",
+  "filename": "/data/build/merge_base_enterprise/web_studio/tests/test_ir_model.py",
+  "location": {
+   "row": 282
+  },
+  "message": "Unpacked variable `model` is never used"
+ },
+ {
+  "code": "RUF059",
+  "filename": "/data/build/merge_base_enterprise/web_studio/tests/test_ir_model.py",
+  "location": {
+   "row": 282
+  },
+  "message": "Unpacked variable `extra_model` is never used"
+ },
+ {
+  "code": "RUF059",
+  "filename": "/data/build/merge_base_enterprise/web_studio/tests/test_ir_model.py",
+  "location": {
+   "row": 412
+  },
+  "message": "Unpacked variable `name` is never used"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/__init__.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/__init__.py",
+  "location": {
+   "row": 3
+  },
+  "message": "`.models` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/__init__.py",
+  "location": {
+   "row": 4
+  },
+  "message": "`.wizard` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "E203",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/__manifest__.py",
+  "location": {
+   "row": 2
+  },
+  "message": "Whitespace before ':'"
+ },
+ {
+  "code": "E231",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/__manifest__.py",
+  "location": {
+   "row": 3
+  },
+  "message": "Missing whitespace after `:`"
+ },
+ {
+  "code": "E203",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/__manifest__.py",
+  "location": {
+   "row": 13
+  },
+  "message": "Whitespace before ':'"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/models/__init__.py",
+  "location": {
+   "row": 1
+  },
+  "message": "`.account_move` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/models/__init__.py",
+  "location": {
+   "row": 2
+  },
+  "message": "`.account_move_send` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/models/__init__.py",
+  "location": {
+   "row": 3
+  },
+  "message": "`.account_journal` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/models/__init__.py",
+  "location": {
+   "row": 4
+  },
+  "message": "`.account_edi_format` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/models/__init__.py",
+  "location": {
+   "row": 5
+  },
+  "message": "`.account_edi_document` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/models/__init__.py",
+  "location": {
+   "row": 6
+  },
+  "message": "`.ir_actions_report` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/models/__init__.py",
+  "location": {
+   "row": 7
+  },
+  "message": "`.ir_attachment` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "E731",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/models/account_edi_document.py",
+  "location": {
+   "row": 184
+  },
+  "message": "Do not assign a `lambda` expression, use a `def`"
+ },
+ {
+  "code": "C401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/models/account_edi_document.py",
+  "location": {
+   "row": 187
+  },
+  "message": "Unnecessary generator (rewrite as a set comprehension)"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/models/account_journal.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/models/account_move.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/models/account_move.py",
+  "location": {
+   "row": 4
+  },
+  "message": "`io` imported but unused"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/models/account_move.py",
+  "location": {
+   "row": 5
+  },
+  "message": "`zipfile` imported but unused"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/models/account_move.py",
+  "location": {
+   "row": 6
+  },
+  "message": "`werkzeug.urls.url_encode` imported but unused"
+ },
+ {
+  "code": "C403",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/models/account_move.py",
+  "location": {
+   "row": 78
+  },
+  "message": "Unnecessary list comprehension (rewrite as a set comprehension)"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/models/ir_actions_report.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/tests/__init__.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/tests/__init__.py",
+  "location": {
+   "row": 4
+  },
+  "message": "`.common` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/tests/__init__.py",
+  "location": {
+   "row": 5
+  },
+  "message": "`.test_edi` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/tests/__init__.py",
+  "location": {
+   "row": 6
+  },
+  "message": "`.test_import_vendor_bill` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "E302",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/tests/common.py",
+  "location": {
+   "row": 19
+  },
+  "message": "Expected 2 blank lines, found 1"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/tests/test_edi.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/tests/test_import_vendor_bill.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "F401",
+  "filename": "/data/build/merge_base_odoo/addons/account_edi/wizard/__init__.py",
+  "location": {
+   "row": 1
+  },
+  "message": "`.account_resequence` imported but unused; consider removing, adding to `__all__`, or using a redundant alias"
+ },
+ {
+  "code": "UP009",
+  "filename": "/data/build/merge_base_odoo/addons/l10n_es_edi_tbai/models/account_move.py",
+  "location": {
+   "row": 1
+  },
+  "message": "UTF-8 encoding declaration is unnecessary"
+ },
+ {
+  "code": "RUF069",
+  "filename": "/data/build/merge_base_odoo/addons/l10n_es_edi_tbai/models/account_move.py",
+  "location": {
+   "row": 351
+  },
+  "message": "Unreliable floating point equality comparison `line.tax_repartition_line_id.factor_percent != -100.0`"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 36
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "E261",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 218
+  },
+  "message": "Insert at least two spaces before an inline comment"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 227
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "SIM905",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 257
+  },
+  "message": "Consider using a list literal instead of `str.split`"
+ },
+ {
+  "code": "SIM905",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 269
+  },
+  "message": "Consider using a list literal instead of `str.split`"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 635
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 815
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 838
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "COM819",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 1069
+  },
+  "message": "Trailing comma prohibited"
+ },
+ {
+  "code": "UP025",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 1078
+  },
+  "message": "Remove unicode literals from strings"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 1093
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "F841",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 1831
+  },
+  "message": "Local variable `view2` is assigned to but never used"
+ },
+ {
+  "code": "E303",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 3251
+  },
+  "message": "Too many blank lines (2)"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 4240
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "F841",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 4385
+  },
+  "message": "Local variable `c` is assigned to but never used"
+ },
+ {
+  "code": "F841",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 4390
+  },
+  "message": "Local variable `d` is assigned to but never used"
+ },
+ {
+  "code": "UP008",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 4673
+  },
+  "message": "Use `super()` instead of `super(__class__, self)`"
+ },
+ {
+  "code": "E302",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 4890
+  },
+  "message": "Expected 2 blank lines, found 1"
+ },
+ {
+  "code": "E302",
+  "filename": "/data/build/merge_base_odoo/odoo/addons/base/tests/test_ir_ui_view.py",
+  "location": {
+   "row": 4900
+  },
+  "message": "Expected 2 blank lines, found 1"
+ }
+]

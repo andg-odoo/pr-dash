@@ -34,7 +34,7 @@ def find(globs: list[str], repo_short: str, branch: str) -> list[Path]:
 def diff_item(cfg: Config, ref: str | int) -> dict:
     """The Review queue row get_diff serves, else a miss saying how to diff an Authored PR locally."""
     try:
-        return tab.queue_only(cfg, ref, "get_diff")
+        return tab.only(cfg, ref, "get_diff")
     except tab.Elsewhere as e:
         if e.tab is not tab.MINE:
             raise

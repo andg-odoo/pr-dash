@@ -1,0 +1,319 @@
+[
+ {
+  "id": 87459850,
+  "description": false,
+  "global_state": "done",
+  "global_result": "ko",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2025-08-22 21:59:24",
+  "host": "runbot177.odoo.com",
+  "dest": "87459850-master",
+  "log_list": "install_all",
+  "parent_id": false,
+  "params_id": [
+   102490037,
+   "runbot.build.params,102490037"
+  ]
+ },
+ {
+  "id": 87459863,
+  "description": false,
+  "global_state": "done",
+  "global_result": "ok",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2025-08-22 21:59:25",
+  "host": "runbot130.odoo.com",
+  "dest": "87459863-master",
+  "log_list": "test_lint",
+  "parent_id": [
+   87459850,
+   "Parallel testing (legacy)"
+  ],
+  "params_id": [
+   102490070,
+   "runbot.build.params,102490070"
+  ]
+ },
+ {
+  "id": 87459864,
+  "description": false,
+  "global_state": "done",
+  "global_result": "ko",
+  "local_state": "done",
+  "local_result": "ko",
+  "create_date": "2025-08-22 21:59:25",
+  "host": "runbot208.odoo.com",
+  "dest": "87459864-master",
+  "log_list": "all_at_install",
+  "parent_id": [
+   87459850,
+   "Parallel testing (legacy)"
+  ],
+  "params_id": [
+   102490071,
+   "runbot.build.params,102490071"
+  ]
+ },
+ {
+  "id": 87460151,
+  "description": "testing post_install from account to account_asset_fleet",
+  "global_state": "done",
+  "global_result": "ok",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2025-08-22 22:11:28",
+  "host": "runbot147.odoo.com",
+  "dest": "87460151-master",
+  "log_list": "restore_all,test_only",
+  "parent_id": [
+   87459850,
+   "Parallel testing (legacy)"
+  ],
+  "params_id": [
+   102490384,
+   "runbot.build.params,102490384"
+  ]
+ },
+ {
+  "id": 87460152,
+  "description": "testing post_install from account_avatax to auth_timeout",
+  "global_state": "done",
+  "global_result": "ok",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2025-08-22 22:11:28",
+  "host": "runbot237.odoo.com",
+  "dest": "87460152-master",
+  "log_list": "restore_all,test_only",
+  "parent_id": [
+   87459850,
+   "Parallel testing (legacy)"
+  ],
+  "params_id": [
+   102490385,
+   "runbot.build.params,102490385"
+  ]
+ },
+ {
+  "id": 87460153,
+  "description": "testing post_install from auth_totp to microsoft_outlook",
+  "global_state": "done",
+  "global_result": "ok",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2025-08-22 22:11:28",
+  "host": "runbot177.odoo.com",
+  "dest": "87460153-master",
+  "log_list": "restore_all,test_only",
+  "parent_id": [
+   87459850,
+   "Parallel testing (legacy)"
+  ],
+  "params_id": [
+   102490386,
+   "runbot.build.params,102490386"
+  ]
+ },
+ {
+  "id": 87460154,
+  "description": "testing post_install from mrp to portal_rating",
+  "global_state": "done",
+  "global_result": "ok",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2025-08-22 22:11:28",
+  "host": "runbot203.odoo.com",
+  "dest": "87460154-master",
+  "log_list": "restore_all,test_only",
+  "parent_id": [
+   87459850,
+   "Parallel testing (legacy)"
+  ],
+  "params_id": [
+   102490387,
+   "runbot.build.params,102490387"
+  ]
+ },
+ {
+  "id": 87460155,
+  "description": "testing post_install from pos_account_reports to rpc",
+  "global_state": "done",
+  "global_result": "ok",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2025-08-22 22:11:28",
+  "host": "runbot229.odoo.com",
+  "dest": "87460155-master",
+  "log_list": "restore_all,test_only",
+  "parent_id": [
+   87459850,
+   "Parallel testing (legacy)"
+  ],
+  "params_id": [
+   102490388,
+   "runbot.build.params,102490388"
+  ]
+ },
+ {
+  "id": 87460156,
+  "description": "testing post_install from sale to sale_subscription_timesheet",
+  "global_state": "done",
+  "global_result": "ok",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2025-08-22 22:11:28",
+  "host": "runbot184.odoo.com",
+  "dest": "87460156-master",
+  "log_list": "restore_all,test_only",
+  "parent_id": [
+   87459850,
+   "Parallel testing (legacy)"
+  ],
+  "params_id": [
+   102490389,
+   "runbot.build.params,102490389"
+  ]
+ },
+ {
+  "id": 87460157,
+  "description": "testing post_install from sale_timesheet to stock_barcode_mrp",
+  "global_state": "done",
+  "global_result": "ok",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2025-08-22 22:11:28",
+  "host": "runbot233.odoo.com",
+  "dest": "87460157-master",
+  "log_list": "restore_all,test_only",
+  "parent_id": [
+   87459850,
+   "Parallel testing (legacy)"
+  ],
+  "params_id": [
+   102490390,
+   "runbot.build.params,102490390"
+  ]
+ },
+ {
+  "id": 87460158,
+  "description": "testing post_install from stock_barcode_mrp_subcontracting to test_mail_sms",
+  "global_state": "done",
+  "global_result": "ok",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2025-08-22 22:11:28",
+  "host": "runbot243.odoo.com",
+  "dest": "87460158-master",
+  "log_list": "restore_all,test_only",
+  "parent_id": [
+   87459850,
+   "Parallel testing (legacy)"
+  ],
+  "params_id": [
+   102490391,
+   "runbot.build.params,102490391"
+  ]
+ },
+ {
+  "id": 87460159,
+  "description": "testing post_install from test_main_flows to voip_sms",
+  "global_state": "done",
+  "global_result": "ok",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2025-08-22 22:11:28",
+  "host": "runbot115.odoo.com",
+  "dest": "87460159-master",
+  "log_list": "restore_all,test_only",
+  "parent_id": [
+   87459850,
+   "Parallel testing (legacy)"
+  ],
+  "params_id": [
+   102490392,
+   "runbot.build.params,102490392"
+  ]
+ },
+ {
+  "id": 87460160,
+  "description": "testing post_install from web to web",
+  "global_state": "done",
+  "global_result": "ok",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2025-08-22 22:11:28",
+  "host": "runbot227.odoo.com",
+  "dest": "87460160-master",
+  "log_list": "restore_all,test_only",
+  "parent_id": [
+   87459850,
+   "Parallel testing (legacy)"
+  ],
+  "params_id": [
+   102490393,
+   "runbot.build.params,102490393"
+  ]
+ },
+ {
+  "id": 87460161,
+  "description": "testing post_install from web_cohort to web_unsplash",
+  "global_state": "done",
+  "global_result": "ok",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2025-08-22 22:11:28",
+  "host": "runbot174.odoo.com",
+  "dest": "87460161-master",
+  "log_list": "restore_all,test_only",
+  "parent_id": [
+   87459850,
+   "Parallel testing (legacy)"
+  ],
+  "params_id": [
+   102490394,
+   "runbot.build.params,102490394"
+  ]
+ },
+ {
+  "id": 87460162,
+  "description": "testing post_install from website to website",
+  "global_state": "done",
+  "global_result": "ok",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2025-08-22 22:11:28",
+  "host": "runbot242.odoo.com",
+  "dest": "87460162-master",
+  "log_list": "restore_all,test_only",
+  "parent_id": [
+   87459850,
+   "Parallel testing (legacy)"
+  ],
+  "params_id": [
+   102490395,
+   "runbot.build.params,102490395"
+  ]
+ },
+ {
+  "id": 87460163,
+  "description": "testing post_install from website_appointment to worksheet",
+  "global_state": "done",
+  "global_result": "ok",
+  "local_state": "done",
+  "local_result": "ok",
+  "create_date": "2025-08-22 22:11:28",
+  "host": "runbot171.odoo.com",
+  "dest": "87460163-master",
+  "log_list": "restore_all,test_only",
+  "parent_id": [
+   87459850,
+   "Parallel testing (legacy)"
+  ],
+  "params_id": [
+   102490396,
+   "runbot.build.params,102490396"
+  ]
+ }
+]

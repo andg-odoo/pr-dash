@@ -1,0 +1,26 @@
+2026-10-08 21:34:00,260 26 INFO 128059598-20-0-all odoo.addons.website_sale.tests.test_snippets.TestSnippets.test_01_snippet_products_edition: Removing chrome user profile "/tmp/tmpnkstb1vk_chrome_odoo"
+2026-10-08 21:34:00,274 26 INFO 128059598-20-0-all odoo.addons.website_sale.tests.test_snippets: ======================================================================
+2026-10-08 21:34:00,274 26 ERROR 128059598-20-0-all odoo.addons.website_sale.tests.test_snippets: FAIL: TestSnippets.test_01_snippet_products_edition
+Traceback (most recent call last):
+  File "/data/build/odoo/addons/website_sale/tests/test_snippets.py", line 39, in test_01_snippet_products_edition
+    self.start_tour(
+    ~~~~~~~~~~~~~~~^
+        self.env["website"].get_client_action_url("/", True),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        "website_sale.snippet_products",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        login="admin",
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "/data/build/odoo/odoo/tests/common.py", line 3004, in start_tour
+    self.browser_js(url_path=url_path, code=code, ready=ready, timeout=timeout, success_signal="tour succeeded", **kwargs)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/build/odoo/odoo/tests/common.py", line 2979, in browser_js
+    self.fail(str(error))
+    ~~~~~~~~~^^^^^^^^^^^^
+AssertionError: FAILED: [16/16] Tour website_sale.snippet_products → Step Go to cart (trigger: :iframe a sup.my_cart_quantity:text(1)).
+Element (:iframe a sup.my_cart_quantity:text(1)) has not been found.
+TIMEOUT step failed to complete within 10000 ms.
+
+2026-10-08 21:34:00,276 26 INFO 128059598-20-0-all odoo.tests.suite: Disabling auto-retry after a failed test

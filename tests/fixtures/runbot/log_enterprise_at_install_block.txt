@@ -1,0 +1,76 @@
+2026-10-08 21:04:33,046 26 INFO 128070202-18-0-all odoo.addons.test_mail.tests.test_mail_composer: Starting TestComposerResultsMass.test_mail_composer_duplicates ... 
+2026-10-08 21:04:33,480 26 INFO 128070202-18-0-all odoo.addons.test_mail.tests.test_mail_composer: ====================================================================== 
+2026-10-08 21:04:33,480 26 ERROR 128070202-18-0-all odoo.addons.test_mail.tests.test_mail_composer: ERROR: Subtest TestComposerResultsMass.test_mail_composer_duplicates (template_values={'attachment_ids': [(<Command.CLEAR: 5>, 0, 0)], 'body_html': '<p>Common Body</p>', 'report_template_ids': [492], 'subject': 'Common Subject'}, customer_changes=[{'email': 'test@test.lan'}], login='employee')
+Traceback (most recent call last):
+  File "<1053>", line 424, in template_1053
+  File "<1053>", line 306, in template_1053_content
+AttributeError: 'NoneType' object has no attribute 'name'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<decorator-gen-345>", line 2, in test_mail_composer_duplicates
+  File "/data/build/odoo/odoo/tests/common.py", line 2591, in _users
+    func(*args, **kwargs)
+  File "/data/build/odoo/odoo/tools/misc.py", line 787, in deco
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/data/build/odoo/addons/test_mail/tests/test_mail_composer.py", line 2567, in test_mail_composer_duplicates
+    composer._action_send_mail()
+  File "/data/build/odoo/addons/mail/wizard/mail_compose_message.py", line 727, in _action_send_mail
+    result_mails_su += wizard._action_send_mail_mass_mail(res_ids, auto_commit=auto_commit)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/build/odoo/addons/mail/wizard/mail_compose_message.py", line 775, in _action_send_mail_mass_mail
+    res_ids_values = list(self._prepare_mail_values(res_ids_iter).values())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/build/odoo/addons/mail/wizard/mail_compose_message.py", line 916, in _prepare_mail_values
+    additional_values_all = self._prepare_mail_values_dynamic(res_ids)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/build/odoo/addons/mail/wizard/mail_compose_message.py", line 1059, in _prepare_mail_values_dynamic
+    template_values = self._generate_template_for_composer(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/build/odoo/addons/mail/wizard/mail_compose_message.py", line 1315, in _generate_template_for_composer
+    template_values = self.template_id._generate_template(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/build/odoo/addons/mail/models/mail_template.py", line 591, in _generate_template
+    template._generate_template_attachments(
+  File "/data/build/odoo/addons/mail/models/mail_template.py", line 321, in _generate_template_attachments
+    report_content, report_format = self.env['ir.actions.report']._render_qweb_pdf(report, [res_id])
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/build/enterprise/iot/models/ir_actions_report.py", line 121, in _render_qweb_pdf
+    return super()._render_qweb_pdf(report_ref, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/build/odoo/odoo/addons/base/models/ir_actions_report.py", line 1027, in _render_qweb_pdf
+    collected_streams, report_type = self._pre_render_qweb_pdf(report_ref, res_ids=res_ids, data=data)
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/build/odoo/odoo/addons/base/models/ir_actions_report.py", line 1015, in _pre_render_qweb_pdf
+    return self._render_qweb_html(report_ref, res_ids, data=data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/build/odoo/odoo/addons/base/models/ir_actions_report.py", line 1106, in _render_qweb_html
+    return self._render_template(report.report_name, data), 'html'
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/build/odoo/odoo/addons/base/models/ir_actions_report.py", line 776, in _render_template
+    return view_obj._render_template(template, values).encode()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/build/odoo/odoo/addons/base/models/ir_ui_view.py", line 2227, in _render_template
+    return self.env['ir.qweb']._render(template, values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/build/odoo/odoo/tools/profiler.py", line 325, in _tracked_method_render
+    return method_render(self, template, values, **options)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/build/odoo/odoo/addons/base/models/ir_qweb.py", line 619, in _render
+    result = ''.join(rendering)
+             ^^^^^^^^^^^^^^^^^^
+  File "<1747>", line 93, in template_1747
+  File "<1747>", line 75, in template_1747_content
+  File "<1747>", line 64, in template_1747_t_call_0
+  File "<1057>", line 97, in template_1057
+  File "<1057>", line 86, in template_1057_content
+  File "<1053>", line 432, in template_1053
+odoo.addons.base.models.ir_qweb.QWebException: Error while render the template
+AttributeError: 'NoneType' object has no attribute 'name'
+Template: web.external_layout_standard
+Path: /t/div[2]/h2
+Node: <h2 t-out="layout_document_title or o.name"/>
+ 
+2026-10-08 21:04:33,631 26 INFO 128070202-18-0-all odoo.addons.test_mail.tests.test_mail_composer: ====================================================================== 

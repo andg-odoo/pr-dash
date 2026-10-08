@@ -17,7 +17,9 @@ import click
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from pr_dash import checkout, config, db, derive, github, mergebot, render, sync, tab
+from pr_dash import (
+    checkout, config, db, derive, github, mergebot, render, runbot, runbot_cache, sync, tab,
+)
 from pr_dash import query as prquery
 
 console = Console()
@@ -76,7 +78,7 @@ def _notify(cron: bool, message: str, style: str = "") -> None:
 def _sync(conn, cfg, progress) -> sync.Sync:
     """A Sync over the real GitHub, announcing its phases on `progress`."""
     task = progress.add_task("", total=None)
-    return sync.Sync(conn, cfg, _github,
+    return sync.Sync(conn, cfg, _github, runbot_http=runbot.UrllibHttp(),
                      on_phase=lambda text: progress.update(task, description=text))
 
 
@@ -133,7 +135,11 @@ def _render_from_cache(conn, cfg, *, offline=False):
     render.render(payload, cfg.html_path, offline=offline,
                   last_refresh=db.get_meta(conn, "last_refresh"),
                   rendered_at=rendered_at, marks_port=cfg.hidden_sync_port,
-                  tracked=tracked, mine=mine + dismissed_mine)
+                  tracked=tracked, mine=mine + dismissed_mine,
+                  # The banner shows while a red check waits on the rejected session.
+                  runbot_expired=db.get_meta(conn, "runbot_session_expired") is not None
+                  and any(t["error"] == "expired"
+                          for s in mine for b in s["runbot"] for t in b["triggers"]))
     return payload, seen_updates, {"tracked": tracked_seen, "mine": mine_seen}
 
 
@@ -262,7 +268,8 @@ def _refresh(cfg, *, no_open: bool, force: bool, offline: bool, cron: bool) -> N
                               f"refreshed ({report.tracked_total} total)", "dim")
             if report.mine_refreshed is not None:
                 _notify(cron, f"mine: +{report.mine_added} new, {report.mine_refreshed} refreshed, "
-                              f"{report.mergebot_read} Mergebot pages read", "dim")
+                              f"{report.mergebot_read} Mergebot pages read, "
+                              f"{report.runbot_requests} runbot requests", "dim")
 
     payload, seen_updates, tab_seen = _render_from_cache(conn, cfg, offline=offline)
     if cron:
@@ -540,6 +547,19 @@ def query_mine(include_dismissed, config_path):
     sets = tab.MINE.load(cfg, include_dismissed=include_dismissed)
     sets = [tab.MINE.summarize(s) for s in sets]
     _emit({"count": len(sets), "branch_sets": sets})
+
+
+@query.command("runbot")
+@click.argument("ref")
+@click.option("--config", "config_path", type=click.Path(path_type=Path))
+def query_runbot(ref, config_path):
+    """Runbot status and failures of an Authored PR's Branch set, or of a bundle by name."""
+    cfg = _load_config_or_exit(config_path)
+    try:
+        _emit(runbot_cache.get_runbot(cfg, ref))
+    except ValueError as e:
+        click.echo(str(e), err=True)
+        sys.exit(1)
 
 
 @query.command("mergebot")

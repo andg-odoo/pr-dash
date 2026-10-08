@@ -1,0 +1,300 @@
+2026-10-08 16:16:06,256 26 INFO 128006873-master-all odoo.modules.loading: loading helpdesk_sale_timesheet/views/helpdesk_portal_templates.xml
+2026-10-08 16:16:06,308 26 INFO 128006873-master-all odoo.modules.loading: loading helpdesk_sale_timesheet/views/project_project_views.xml
+2026-10-08 16:16:06,388 26 INFO 128006873-master-all odoo.modules.loading: loading helpdesk_sale_timesheet/views/sale_order_views.xml
+2026-10-08 16:16:06,526 26 INFO 128006873-master-all odoo.modules.loading: loading helpdesk_sale_timesheet/report/helpdesk_ticket_analysis_views.xml
+2026-10-08 16:16:06,683 26 INFO 128006873-master-all odoo.modules.loading: loading helpdesk_sale_timesheet/report/helpdesk_sla_analysis_views.xml
+2026-10-08 16:16:06,724 26 INFO 128006873-master-all odoo.modules.loading: loading helpdesk_sale_timesheet/report/helpdesk_sale_timesheet_report.xml
+2026-10-08 16:16:06,737 26 INFO 128006873-master-all odoo.modules.loading: loading helpdesk_sale_timesheet/security/ir.access.csv
+2026-10-08 16:16:06,920 26 INFO 128006873-master-all odoo.registry: Registry changed, signaling through the database
+2026-10-08 16:16:06,924 26 INFO 128006873-master-all odoo.modules.loading: Module helpdesk_sale_timesheet loaded in 1.93s, 555 queries (+555 other)
+2026-10-08 16:16:06,924 26 INFO 128006873-master-all odoo.modules.loading: Loading module planning_field_service_sale_timesheet (977/987)
+2026-10-08 16:16:07,537 26 INFO 128006873-master-all odoo.registry: module planning_field_service_sale_timesheet: creating or updating database tables
+2026-10-08 16:16:07,614 26 INFO 128006873-master-all odoo.fields: Prepare computation of res.company.planning_project_id in 7 records
+2026-10-08 16:16:08,407 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_timesheet/data/project_task_type_data.xml
+2026-10-08 16:16:08,454 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_timesheet/data/project_project_data.xml
+2026-10-08 16:16:08,734 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_timesheet/data/planning_role_data.xml
+2026-10-08 16:16:08,742 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_timesheet/data/product_product_data.xml
+2026-10-08 16:16:09,013 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_timesheet/data/res_config_settings_data.xml
+2026-10-08 16:16:09,131 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_timesheet/views/account_analytic_line_views.xml
+2026-10-08 16:16:09,387 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_timesheet/views/hr_employee_views.xml
+2026-10-08 16:16:09,535 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_timesheet/views/planning_slot_views.xml
+2026-10-08 16:16:09,809 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_timesheet/views/product_product_views.xml
+2026-10-08 16:16:09,885 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_timesheet/views/product_template_views.xml
+2026-10-08 16:16:09,892 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_timesheet/views/sale_order_views.xml
+2026-10-08 16:16:10,188 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_timesheet/views/planning_slot_portal_templates.xml
+2026-10-08 16:16:10,222 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_timesheet/views/planning_templates.xml
+2026-10-08 16:16:10,242 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_timesheet/views/res_config_settings_views.xml
+2026-10-08 16:16:10,931 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_timesheet/report/worksheet_custom_report_templates.xml
+2026-10-08 16:16:10,952 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_timesheet/views/planning_field_service_sale_timesheet_menus.xml
+2026-10-08 16:16:11,195 26 INFO 128006873-master-all odoo.registry: Registry changed, signaling through the database
+2026-10-08 16:16:11,201 26 INFO 128006873-master-all odoo.modules.loading: Module planning_field_service_sale_timesheet loaded in 4.28s, 1038 queries (+1038 other)
+2026-10-08 16:16:11,201 26 INFO 128006873-master-all odoo.modules.loading: Loading module sale_timesheet_enterprise_holidays (978/987)
+2026-10-08 16:16:11,519 26 INFO 128006873-master-all odoo.registry: module sale_timesheet_enterprise_holidays: creating or updating database tables
+2026-10-08 16:16:12,088 26 INFO 128006873-master-all odoo.registry: Registry changed, signaling through the database
+2026-10-08 16:16:12,091 26 INFO 128006873-master-all odoo.modules.loading: Module sale_timesheet_enterprise_holidays loaded in 0.89s, 126 queries (+126 other)
+2026-10-08 16:16:12,091 26 INFO 128006873-master-all odoo.modules.loading: Loading module spreadsheet_dashboard_sale_timesheet_enterprise (979/987)
+2026-10-08 16:16:12,231 26 INFO 128006873-master-all odoo.registry: module spreadsheet_dashboard_sale_timesheet_enterprise: creating or updating database tables
+2026-10-08 16:16:12,589 26 INFO 128006873-master-all odoo.modules.loading: loading spreadsheet_dashboard_sale_timesheet_enterprise/data/dashboards.xml
+2026-10-08 16:16:12,757 26 INFO 128006873-master-all odoo.registry: Registry changed, signaling through the database
+2026-10-08 16:16:12,761 26 INFO 128006873-master-all odoo.modules.loading: Module spreadsheet_dashboard_sale_timesheet_enterprise loaded in 0.67s, 100 queries (+100 other)
+2026-10-08 16:16:12,761 26 INFO 128006873-master-all odoo.modules.loading: Loading module helpdesk_planning_field_service_sale_timesheet (980/987)
+2026-10-08 16:16:12,910 26 INFO 128006873-master-all odoo.registry: module helpdesk_planning_field_service_sale_timesheet: creating or updating database tables
+2026-10-08 16:16:13,600 26 INFO 128006873-master-all odoo.registry: Registry changed, signaling through the database
+2026-10-08 16:16:13,603 26 INFO 128006873-master-all odoo.modules.loading: Module helpdesk_planning_field_service_sale_timesheet loaded in 0.84s, 71 queries (+71 other)
+2026-10-08 16:16:13,603 26 INFO 128006873-master-all odoo.modules.loading: Loading module planning_field_service_sale_stock (981/987)
+2026-10-08 16:16:13,979 26 INFO 128006873-master-all odoo.registry: module planning_field_service_sale_stock: creating or updating database tables
+2026-10-08 16:16:14,666 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_stock/views/planning_slot_views.xml
+2026-10-08 16:16:14,958 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_stock/views/stock_move_views.xml
+2026-10-08 16:16:15,011 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_stock/wizard/field_service_stock_tracking_views.xml
+2026-10-08 16:16:15,031 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_stock/views/product_product_views.xml
+2026-10-08 16:16:15,060 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_stock/security/ir.access.csv
+2026-10-08 16:16:15,184 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_stock/views/planning_vehicle_warehouse_views.xml
+2026-10-08 16:16:15,369 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_stock/views/res_config_settings_views.xml
+2026-10-08 16:16:15,781 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_stock/views/res_users_views.xml
+2026-10-08 16:16:16,003 26 INFO 128006873-master-all odoo.registry: Registry changed, signaling through the database
+2026-10-08 16:16:16,010 26 INFO 128006873-master-all odoo.modules.loading: Module planning_field_service_sale_stock loaded in 2.41s, 724 queries (+724 other)
+2026-10-08 16:16:16,010 26 INFO 128006873-master-all odoo.modules.loading: Loading module planning_field_service_sale_subscription (982/987)
+2026-10-08 16:16:16,197 26 INFO 128006873-master-all odoo.registry: module planning_field_service_sale_subscription: creating or updating database tables
+2026-10-08 16:16:16,624 26 INFO 128006873-master-all odoo.registry: Registry changed, signaling through the database
+2026-10-08 16:16:16,628 26 INFO 128006873-master-all odoo.modules.loading: Module planning_field_service_sale_subscription loaded in 0.62s, 110 queries (+110 other)
+2026-10-08 16:16:16,628 26 INFO 128006873-master-all odoo.modules.loading: Loading module planning_field_service_sale_timesheet_barcodes (983/987)
+2026-10-08 16:16:16,784 26 INFO 128006873-master-all odoo.registry: module planning_field_service_sale_timesheet_barcodes: creating or updating database tables
+2026-10-08 16:16:17,237 26 INFO 128006873-master-all odoo.registry: Registry changed, signaling through the database
+2026-10-08 16:16:17,240 26 INFO 128006873-master-all odoo.modules.loading: Module planning_field_service_sale_timesheet_barcodes loaded in 0.61s, 69 queries (+69 other)
+2026-10-08 16:16:17,240 26 INFO 128006873-master-all odoo.modules.loading: Loading module planning_field_service_sale_worksheet (984/987)
+2026-10-08 16:16:17,488 26 INFO 128006873-master-all odoo.registry: module planning_field_service_sale_worksheet: creating or updating database tables
+2026-10-08 16:16:17,515 26 INFO 128006873-master-all odoo.fields: Prepare computation of product.template.worksheet_template_id in 61 records
+2026-10-08 16:16:18,007 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_sale_worksheet/views/product_template_views.xml
+2026-10-08 16:16:18,724 26 INFO 128006873-master-all odoo.registry: Registry changed, signaling through the database
+2026-10-08 16:16:18,729 26 INFO 128006873-master-all odoo.modules.loading: Module planning_field_service_sale_worksheet loaded in 1.49s, 257 queries (+257 other)
+2026-10-08 16:16:18,729 26 INFO 128006873-master-all odoo.modules.loading: Loading module project_timesheet_forecast_field_service_sale (985/987)
+2026-10-08 16:16:18,875 26 INFO 128006873-master-all odoo.registry: module project_timesheet_forecast_field_service_sale: creating or updating database tables
+2026-10-08 16:16:19,225 26 INFO 128006873-master-all odoo.modules.loading: loading project_timesheet_forecast_field_service_sale/views/planning_slot_views.xml
+2026-10-08 16:16:19,825 26 INFO 128006873-master-all odoo.modules.loading: loading project_timesheet_forecast_field_service_sale/views/project_task_views.xml
+2026-10-08 16:16:19,943 26 INFO 128006873-master-all odoo.modules.loading: loading project_timesheet_forecast_field_service_sale/views/res_config_settings_views.xml
+2026-10-08 16:16:20,219 26 INFO 128006873-master-all odoo.modules.loading: loading project_timesheet_forecast_field_service_sale/report/planning_analysis_report_views.xml
+2026-10-08 16:16:20,377 26 INFO 128006873-master-all odoo.registry: Registry changed, signaling through the database
+2026-10-08 16:16:20,385 26 INFO 128006873-master-all odoo.modules.loading: Module project_timesheet_forecast_field_service_sale loaded in 1.66s, 276 queries (+276 other)
+2026-10-08 16:16:20,385 26 INFO 128006873-master-all odoo.modules.loading: Loading module planning_field_service_repair (986/987)
+2026-10-08 16:16:20,566 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_repair/security/ir.access.csv
+2026-10-08 16:16:20,990 26 INFO 128006873-master-all odoo.registry: Caches invalidated, signaling through the database: ['default', 'stable']
+2026-10-08 16:16:20,994 26 INFO 128006873-master-all odoo.modules.loading: Module planning_field_service_repair loaded in 0.61s, 72 queries (+72 other)
+2026-10-08 16:16:20,994 26 INFO 128006873-master-all odoo.modules.loading: Loading module planning_field_service_stock_subscription (987/987)
+2026-10-08 16:16:21,936 26 INFO 128006873-master-all odoo.registry: module planning_field_service_stock_subscription: creating or updating database tables
+2026-10-08 16:16:21,975 26 INFO 128006873-master-all odoo.fields: Prepare computation of sale.order.line.lot_ids
+2026-10-08 16:16:22,519 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_stock_subscription/security/planning_field_service_security.xml
+2026-10-08 16:16:22,734 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_stock_subscription/views/res_config_settings_views.xml
+2026-10-08 16:16:23,190 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_stock_subscription/views/planning_slot_views.xml
+2026-10-08 16:16:23,447 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_stock_subscription/views/sale_order_views.xml
+2026-10-08 16:16:23,586 26 INFO 128006873-master-all odoo.modules.loading: loading planning_field_service_stock_subscription/views/stock_lot_views.xml
+2026-10-08 16:16:23,843 26 INFO 128006873-master-all odoo.registry: Registry changed, signaling through the database
+2026-10-08 16:16:23,849 26 INFO 128006873-master-all odoo.modules.loading: Module planning_field_service_stock_subscription loaded in 2.86s, 419 queries (+419 other)
+2026-10-08 16:16:23,849 26 INFO 128006873-master-all odoo.modules.loading: 987 modules loaded in 1619.58s, 514612 queries (+514637 extra)
+2026-10-08 16:16:27,213 26 INFO 128006873-master-all odoo.registry: verifying fields for every extended model
+2026-10-08 16:16:30,839 26 INFO 128006873-master-all odoo.modules.loading: Modules loaded.
+2026-10-08 16:16:30,840 26 INFO 128006873-master-all odoo.addons.base.models.ir_qweb: Pregenerating assets bundles
+2026-10-08 16:16:35,870 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/account_followup.assets_followup_report.min.js (id:6201)
+2026-10-08 16:16:35,896 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/f6a06e9/ai_website.ai_assets.min.js (id:6202)
+2026-10-08 16:16:35,912 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/b1123c4/ai_website.ai_editor_assets.min.js (id:6203)
+2026-10-08 16:16:36,472 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/bf334a1/api_doc.assets.min.js (id:6204)
+2026-10-08 16:16:36,495 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/ebfa267/bus.websocket_worker_assets.min.js (id:6205)
+2026-10-08 16:16:36,532 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/documents.public_page_assets.min.js (id:6206)
+2026-10-08 16:16:44,179 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/7752e88/documents.webclient.min.js (id:6207)
+2026-10-08 16:16:44,286 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/f67b874/frontdesk.assets_frontdesk.min.js (id:6208)
+2026-10-08 16:16:44,365 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/481b8a9/frontdesk_partnership.assets_frontdesk_partnership.min.js (id:6209)
+2026-10-08 16:16:44,493 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/52803b4/hr_attendance.assets_public_attendance.min.js (id:6210)
+2026-10-08 16:16:44,505 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/66eb5c9/html_editor.assets_history_diff.min.js (id:6211)
+2026-10-08 16:16:44,522 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/7085d92/html_editor.assets_image_cropper.min.js (id:6212)
+2026-10-08 16:16:44,896 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/8e85c6f/im_livechat.assets_embed_external.min.js (id:6213)
+2026-10-08 16:16:44,925 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cea6cdb/im_livechat.assets_livechat_support_tours.min.js (id:6214)
+2026-10-08 16:16:45,071 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/09ca98e/im_livechat.embed_assets_unit_tests.min.js (id:6215)
+2026-10-08 16:16:50,590 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/85ddf77/im_livechat.embed_assets_unit_tests_setup.min.js (id:6216)
+2026-10-08 16:16:51,880 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/0c062a3/knowledge.webclient.min.js (id:6217)
+2026-10-08 16:16:51,918 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/9d22e69/mail.assets_discuss_public_test_tours.min.js (id:6218)
+2026-10-08 16:16:51,937 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/f4a852c/mail.assets_lamejs.min.js (id:6219)
+2026-10-08 16:16:52,113 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/7ca1846/mail.assets_odoo_sfu.min.js (id:6220)
+2026-10-08 16:16:52,485 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/9229020/mail.assets_public.min.js (id:6221)
+2026-10-08 16:16:53,205 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/d77fe04/mass_mailing.assets_builder.min.js (id:6222)
+2026-10-08 16:16:53,305 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/e10f954/mass_mailing.assets_iframe_style.min.js (id:6223)
+2026-10-08 16:16:53,322 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/6e9c095/mass_mailing.mailing_assets.min.js (id:6224)
+2026-10-08 16:16:53,494 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/dcefd36/mrp_subcontracting.webclient.min.js (id:6225)
+2026-10-08 16:16:53,659 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/be141d6/point_of_sale.assets_debug.min.js (id:6226)
+2026-10-08 16:16:54,123 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/ad45b32/point_of_sale.assets_prod.min.js (id:6227)
+2026-10-08 16:16:54,549 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/ad45b32/point_of_sale.assets_prod_dark.min.js (id:6228)
+2026-10-08 16:16:54,651 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/74ef375/point_of_sale.customer_display_assets.min.js (id:6229)
+2026-10-08 16:16:54,793 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/74ef375/point_of_sale.customer_display_assets_dark.min.js (id:6230)
+2026-10-08 16:16:54,812 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/c807a2f/point_of_sale.customer_display_assets_test.min.js (id:6231)
+2026-10-08 16:16:55,081 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/fc9c222/portal.assets_chatter.min.js (id:6232)
+2026-10-08 16:16:55,206 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/703cfbf/pos_order_tracking_display.assets.min.js (id:6233)
+2026-10-08 16:16:55,423 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/40af199/pos_preparation_display.assets.min.js (id:6234)
+2026-10-08 16:16:55,630 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/40af199/pos_preparation_display.assets_dark.min.js (id:6235)
+2026-10-08 16:16:55,662 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/45620ce/pos_preparation_display.assets_tour_tests.min.js (id:6236)
+2026-10-08 16:16:55,831 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/9258197/pos_self_order.assets.min.js (id:6237)
+2026-10-08 16:16:55,884 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/34b7857/pos_self_order.assets_tests.min.js (id:6238)
+2026-10-08 16:16:56,276 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/99959fb/project.webclient.min.js (id:6239)
+2026-10-08 16:16:56,342 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/eaa6c76/room.assets_room_booking.min.js (id:6240)
+2026-10-08 16:16:56,360 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/sign.assets_pdf_iframe.min.js (id:6241)
+2026-10-08 16:16:56,511 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/62e2cef/sign.assets_public_sign.min.js (id:6242)
+2026-10-08 16:16:56,549 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/snailmail.report_assets_snailmail.min.js (id:6243)
+2026-10-08 16:16:56,582 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/snailmail_account_followup.followup_report_assets_snailmail.min.js (id:6244)
+2026-10-08 16:16:56,594 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/37e9bde/social_push_notifications.assets_push_notifications.min.js (id:6245)
+2026-10-08 16:16:57,148 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cff90b6/spreadsheet.o_spreadsheet.min.js (id:6246)
+2026-10-08 16:16:58,169 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/f6a7cdc/spreadsheet.public_spreadsheet.min.js (id:6247)
+2026-10-08 16:16:58,299 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/1f86e3c/survey.survey_assets.min.js (id:6248)
+2026-10-08 16:16:58,310 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/19ea169/survey.survey_user_input_session_assets.min.js (id:6249)
+2026-10-08 16:16:58,324 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/92d3bff/test_assetsbundle.bundle1.min.js (id:6250)
+2026-10-08 16:16:58,335 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/92d3bff/test_assetsbundle.bundle4.min.js (id:6251)
+2026-10-08 16:16:58,348 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/48daabf/voip.assets_sip_demo.min.js (id:6252)
+2026-10-08 16:16:59,854 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/84010f8/web.__assets_tests_call__.min.js (id:6253)
+2026-10-08 16:16:59,877 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/7efa84e/web.ace_lib.min.js (id:6254)
+2026-10-08 16:16:59,892 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/d231596/web.assets_clickbot.min.js (id:6255)
+2026-10-08 16:17:00,063 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/11bd966/web.assets_emoji.min.js (id:6256)
+2026-10-08 16:17:00,458 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/dbad550/web.assets_frontend.min.js (id:6257)
+2026-10-08 16:17:00,877 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/f4f3804/web.assets_frontend_lazy.min.js (id:6258)
+2026-10-08 16:17:00,893 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/a0e96c7/web.assets_frontend_minimal.min.js (id:6259)
+2026-10-08 16:17:00,977 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/7e22cf2/web.assets_tests.min.js (id:6260)
+2026-10-08 16:17:10,063 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/96aa07c/web.assets_unit_tests.min.js (id:6261)
+2026-10-08 16:17:11,994 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/d97075d/web.assets_unit_tests_setup.min.js (id:6262)
+2026-10-08 16:17:13,256 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/82a2183/web.assets_web.min.js (id:6263)
+2026-10-08 16:17:13,272 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/4ad3b45/web.chartjs_lib.min.js (id:6264)
+2026-10-08 16:17:13,288 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/017f628/web.fullcalendar_lib.min.js (id:6265)
+2026-10-08 16:17:13,295 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/web.material_symbols_outlined.min.js (id:6266)
+2026-10-08 16:17:13,302 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/web.material_symbols_rounded.min.js (id:6267)
+2026-10-08 16:17:13,309 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/web.material_symbols_sharp.min.js (id:6268)
+2026-10-08 16:17:13,317 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/web.odoo_ui_icons.min.js (id:6269)
+2026-10-08 16:17:13,413 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/704fefb/web.report_assets_common.min.js (id:6270)
+2026-10-08 16:17:13,421 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/web.report_assets_pdf.min.js (id:6271)
+2026-10-08 16:17:13,458 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/web_studio.report_assets.min.js (id:6272)
+2026-10-08 16:17:13,607 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/1d13871/web_studio.studio_assets.min.js (id:6273)
+2026-10-08 16:17:13,626 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/dc91691/web_tour.interactive.min.js (id:6274)
+2026-10-08 16:17:13,645 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/419aa28/web_tour.recorder.min.js (id:6275)
+2026-10-08 16:17:13,686 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/website.assets_theme_colors_preview.min.js (id:6276)
+2026-10-08 16:17:13,918 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/0efa5f0/website.website_builder_assets.min.js (id:6277)
+2026-10-08 16:17:14,025 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/9765b26/website_slides.slide_embed_assets.min.js (id:6278)
+2026-10-08 16:17:14,026 26 INFO 128006873-master-all odoo.addons.base.models.ir_qweb: JS Assets bundles generated in 38.33221769332886 seconds
+2026-10-08 16:17:14,031 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/012ef47/web.material_symbols_outlined.min.woff2 (id:6279)
+2026-10-08 16:17:14,037 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/89bde09/web.material_symbols_rounded.min.woff2 (id:6280)
+2026-10-08 16:17:14,043 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/f662334/web.material_symbols_sharp.min.woff2 (id:6281)
+2026-10-08 16:17:14,049 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/15af346/web.odoo_ui_icons.min.woff2 (id:6282)
+2026-10-08 16:17:14,050 26 INFO 128006873-master-all odoo.addons.base.models.ir_qweb: Binary Assets bundles generated in 0.023569107055664062 seconds
+2026-10-08 16:17:15,109 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/5417b9f/account_followup.assets_followup_report.min.css (id:6283)
+2026-10-08 16:17:16,169 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/ad7a53a/account_reports.assets_pdf_export.min.css (id:6284)
+2026-10-08 16:17:17,128 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/611e80b/api_doc.assets.min.css (id:6285)
+2026-10-08 16:17:17,134 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/bus.websocket_worker_assets.min.css (id:6286)
+2026-10-08 16:17:17,145 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/200f7c2/documents.assets_email.min.css (id:6287)
+2026-10-08 16:17:18,317 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/3ecdf52/documents.public_page_assets.min.css (id:6288)
+2026-10-08 16:17:21,565 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/3886b2e/documents.webclient.min.css (id:6289)
+2026-10-08 16:17:22,867 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/c99c91f/frontdesk.assets_frontdesk.min.css (id:6290)
+2026-10-08 16:17:24,193 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/7c0829c/frontdesk_partnership.assets_frontdesk_partnership.min.css (id:6291)
+2026-10-08 16:17:25,436 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/773795a/hr_attendance.assets_public_attendance.min.css (id:6292)
+2026-10-08 16:17:25,449 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/34cc863/html_editor.assets_history_diff.min.css (id:6293)
+2026-10-08 16:17:25,459 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/8775d2d/html_editor.assets_image_cropper.min.css (id:6294)
+2026-10-08 16:17:26,998 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/4749842/im_livechat.assets_embed_external.min.css (id:6295)
+2026-10-08 16:17:27,001 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/im_livechat.assets_livechat_support_tours.min.css (id:6296)
+2026-10-08 16:17:27,004 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/im_livechat.embed_assets_unit_tests.min.css (id:6297)
+2026-10-08 16:17:30,973 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/90dfc87/im_livechat.embed_assets_unit_tests_setup.min.css (id:6298)
+2026-10-08 16:17:30,984 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/8af1a26/knowledge.assets_knowledge_print.min.css (id:6299)
+2026-10-08 16:17:33,838 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/3886b2e/knowledge.webclient.min.css (id:6300)
+2026-10-08 16:17:33,843 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/mail.assets_discuss_public_test_tours.min.css (id:6301)
+2026-10-08 16:17:33,846 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/mail.assets_lamejs.min.css (id:6302)
+2026-10-08 16:17:33,856 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/eafe0e3/mail.assets_markdown.min.css (id:6303)
+2026-10-08 16:17:33,860 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/mail.assets_odoo_sfu.min.css (id:6304)
+2026-10-08 16:17:35,354 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/b1c32bf/mail.assets_public.min.css (id:6305)
+2026-10-08 16:17:35,893 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/c8d8060/mass_mailing.assets_builder.min.css (id:6306)
+2026-10-08 16:17:37,608 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/4c64ac4/mass_mailing.assets_iframe_style.min.css (id:6307)
+2026-10-08 16:17:37,617 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/793f836/mass_mailing.mailing_assets.min.css (id:6308)
+2026-10-08 16:17:38,779 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/4c1210d/mrp_subcontracting.webclient.min.css (id:6309)
+2026-10-08 16:17:38,783 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/point_of_sale.assets_debug.min.css (id:6310)
+2026-10-08 16:17:41,122 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/4a9e2f3/point_of_sale.assets_prod.min.css (id:6311)
+2026-10-08 16:17:43,305 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/e4342ed/point_of_sale.assets_prod_dark.min.css (id:6312)
+2026-10-08 16:17:44,447 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/fcb4ac5/point_of_sale.customer_display_assets.min.css (id:6313)
+2026-10-08 16:17:45,580 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/18e50ba/point_of_sale.customer_display_assets_dark.min.css (id:6314)
+2026-10-08 16:17:45,583 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/point_of_sale.customer_display_assets_test.min.css (id:6315)
+2026-10-08 16:17:45,794 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/8f253fa/portal.assets_chatter.min.css (id:6316)
+2026-10-08 16:17:46,985 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/2bd7de5/pos_order_tracking_display.assets.min.css (id:6317)
+2026-10-08 16:17:48,797 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/880465e/pos_preparation_display.assets.min.css (id:6318)
+2026-10-08 16:17:50,411 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/2dbe1f6/pos_preparation_display.assets_dark.min.css (id:6319)
+2026-10-08 16:17:50,415 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/pos_preparation_display.assets_tour_tests.min.css (id:6320)
+2026-10-08 16:17:51,940 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/da9abe7/pos_self_order.assets.min.css (id:6321)
+2026-10-08 16:17:51,944 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/pos_self_order.assets_tests.min.css (id:6322)
+2026-10-08 16:17:54,238 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/6717556/project.webclient.min.css (id:6323)
+2026-10-08 16:17:55,427 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/2f77eb7/room.assets_room_booking.min.css (id:6324)
+2026-10-08 16:17:55,439 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/450151b/sign.assets_green_report.min.css (id:6325)
+2026-10-08 16:17:55,900 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/149476d/sign.assets_pdf_iframe.min.css (id:6326)
+2026-10-08 16:17:57,294 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/4dc9071/sign.assets_public_sign.min.css (id:6327)
+2026-10-08 16:17:57,463 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/c61e9fe/snailmail.report_assets_snailmail.min.css (id:6328)
+2026-10-08 16:17:57,637 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/c61e9fe/snailmail_account_followup.followup_report_assets_snailmail.min.css (id:6329)
+2026-10-08 16:17:57,645 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/9914e49/social_push_notifications.assets_push_notifications.min.css (id:6330)
+2026-10-08 16:17:57,648 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/spreadsheet.o_spreadsheet.min.css (id:6331)
+2026-10-08 16:18:00,510 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/9e7e4c9/spreadsheet.public_spreadsheet.min.css (id:6332)
+2026-10-08 16:18:00,516 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/stock.assets_stock_print_report.min.css (id:6333)
+2026-10-08 16:18:00,742 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/5976677/survey.survey_assets.min.css (id:6334)
+2026-10-08 16:18:00,745 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/survey.survey_user_input_session_assets.min.css (id:6335)
+2026-10-08 16:18:00,749 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/test_assetsbundle.bundle1.min.css (id:6336)
+2026-10-08 16:18:00,757 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/da865bf/test_assetsbundle.bundle4.min.css (id:6337)
+2026-10-08 16:18:00,761 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/voip.assets_sip_demo.min.css (id:6338)
+2026-10-08 16:18:00,766 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/web.__assets_tests_call__.min.css (id:6339)
+2026-10-08 16:18:00,770 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/web.ace_lib.min.css (id:6340)
+2026-10-08 16:18:00,774 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/web.assets_clickbot.min.css (id:6341)
+2026-10-08 16:18:00,778 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/web.assets_emoji.min.css (id:6342)
+2026-10-08 16:18:03,541 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/2745e69/web.assets_frontend.min.css (id:6343)
+2026-10-08 16:18:06,126 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/2745e69/web.assets_frontend_lazy.min.css (id:6344)
+2026-10-08 16:18:06,130 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/web.assets_frontend_minimal.min.css (id:6345)
+2026-10-08 16:18:06,134 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/web.assets_tests.min.css (id:6346)
+2026-10-08 16:18:07,364 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/c685ca8/web.assets_unit_tests.min.css (id:6347)
+2026-10-08 16:18:10,957 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/dbc631d/web.assets_unit_tests_setup.min.css (id:6348)
+2026-10-08 16:18:13,995 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/3886b2e/web.assets_web.min.css (id:6349)
+2026-10-08 16:18:18,150 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/e34b802/web.assets_web_dark.min.css (id:6350)
+2026-10-08 16:18:21,780 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/be8837c/web.assets_web_print.min.css (id:6351)
+2026-10-08 16:18:21,783 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/web.chartjs_lib.min.css (id:6352)
+2026-10-08 16:18:21,793 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/08bd6e9/web.fullcalendar_lib.min.css (id:6353)
+2026-10-08 16:18:21,799 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/b6e0ce4/web.material_symbols_outlined.min.css (id:6354)
+2026-10-08 16:18:21,807 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/52e2767/web.material_symbols_rounded.min.css (id:6355)
+2026-10-08 16:18:21,814 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/5a7caba/web.material_symbols_sharp.min.css (id:6356)
+2026-10-08 16:18:21,822 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/352fa0c/web.odoo_ui_icons.min.css (id:6357)
+2026-10-08 16:18:22,976 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/7711f2e/web.report_assets_common.min.css (id:6358)
+2026-10-08 16:18:22,993 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/2f38ab3/web.report_assets_pdf.min.css (id:6359)
+2026-10-08 16:18:23,172 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/7d9be0f/web_studio.report_assets.min.css (id:6360)
+2026-10-08 16:18:24,021 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/9aedb7d/web_studio.studio_assets.min.css (id:6361)
+2026-10-08 16:18:24,025 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/web_tour.interactive.min.css (id:6362)
+2026-10-08 16:18:24,029 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/cf83e13/web_tour.recorder.min.css (id:6363)
+2026-10-08 16:18:24,162 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/6d34d85/website.assets_theme_colors_preview.min.css (id:6364)
+2026-10-08 16:18:24,406 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/7e70433/website.assets_wysiwyg.min.css (id:6365)
+2026-10-08 16:18:25,052 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/72e941d/website.website_builder_assets.min.css (id:6366)
+2026-10-08 16:18:25,061 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/5fc79ea/website_knowledge.assets_knowledge_print.min.css (id:6367)
+2026-10-08 16:18:27,878 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/95ef1d7/website_knowledge.assets_public_knowledge.min.css (id:6368)
+2026-10-08 16:18:29,029 26 INFO 128006873-master-all odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/1a6d73b/website_slides.slide_embed_assets.min.css (id:6369)
+2026-10-08 16:18:29,030 26 INFO 128006873-master-all odoo.addons.base.models.ir_qweb: CSS Assets bundles generated in 74.97986435890198 seconds
+2026-10-08 16:18:30,109 26 INFO 128006873-master-all odoo.models.unlink: User #1 deleted account.payment.method.line records with IDs: [163, 164, 165, 166, 167, 168, 183, 184, 185, 186, 187, 188]
+2026-10-08 16:18:30,170 26 INFO 128006873-master-all odoo.models.unlink: User #1 deleted pos.payment.method records with IDs: [113, 116]
+2026-10-08 16:18:30,282 26 INFO 128006873-master-all odoo.models.unlink: User #1 deleted account.journal records with IDs: [172, 175]
+ cascading delete mail.alias records with IDs: [143, 146]
+ cascading delete documents.account.folder.setting records with IDs: [210, 213]
+2026-10-08 16:18:30,504 26 INFO 128006873-master-all odoo.models.unlink: User #1 deleted account.account records with IDs: [220, 223]
+ cascading delete ir.model.data records with IDs: [422263, 422373]
+ cascading delete mail.message records with IDs: [5393, 5389]
+2026-10-08 16:18:32,122 26 INFO 128006873-master-all odoo.addons.populate: Populate module was installed or upgraded - scanning modules for populate data...
+2026-10-08 16:18:32,207 26 INFO 128006873-master-all odoo.addons.populate: loading base/populate/common.xml
+2026-10-08 16:18:32,221 26 INFO 128006873-master-all odoo.addons.populate: loading product/populate/benchmarks.xml
+2026-10-08 16:18:32,248 26 INFO 128006873-master-all odoo.addons.populate: loading product/populate/common.xml
+2026-10-08 16:18:32,253 26 INFO 128006873-master-all odoo.addons.populate: loading product/populate/config_parameter.xml
+2026-10-08 16:18:32,262 26 INFO 128006873-master-all odoo.addons.populate: loading product/populate/populate_demo.xml
+2026-10-08 16:18:32,292 26 INFO 128006873-master-all odoo.addons.populate: loading account/populate/benchmarks.xml
+2026-10-08 16:18:32,309 26 INFO 128006873-master-all odoo.addons.populate: loading account/populate/populate_demo.xml
+2026-10-08 16:18:32,324 26 INFO 128006873-master-all odoo.addons.populate: loading payment/populate/blueprints.xml
+2026-10-08 16:18:32,330 26 INFO 128006873-master-all odoo.addons.populate: loading sale/populate/benchmarks.xml
+2026-10-08 16:18:32,347 26 INFO 128006873-master-all odoo.addons.populate: loading sale/populate/populate_demo.xml
+2026-10-08 16:18:32,355 26 INFO 128006873-master-all odoo.addons.populate: loading stock/populate/benchmarks.xml
+2026-10-08 16:18:32,378 26 INFO 128006873-master-all odoo.addons.populate: loading stock/populate/populate_demo.xml
+2026-10-08 16:18:32,387 26 INFO 128006873-master-all odoo.addons.populate: loading project/populate/benchmarks.xml
+2026-10-08 16:18:32,412 26 INFO 128006873-master-all odoo.addons.populate: loading project/populate/populate_demo.xml
+2026-10-08 16:18:32,422 26 INFO 128006873-master-all odoo.addons.populate: loading hr_payroll/populate/benchmarks.xml
+2026-10-08 16:18:32,433 26 INFO 128006873-master-all odoo.addons.populate: loading hr_payroll_account/populate/benchmarks.xml
+2026-10-08 16:18:32,442 26 INFO 128006873-master-all odoo.addons.populate: loading l10n_be_hr_payroll/populate/benchmarks.xml
+2026-10-08 16:18:32,449 26 INFO 128006873-master-all odoo.addons.populate: loading test_populate/populate/sample_blueprints.xml
+2026-10-08 16:18:32,772 26 INFO 128006873-master-all odoo.registry: Registry changed, signaling through the database
+2026-10-08 16:18:32,849 26 INFO 128006873-master-all odoo.registry: Registry loaded in 1762.854s
+2026-10-08 16:18:32,850 26 INFO 128006873-master-all odoo.service.server.ThreadedServer: Initiating shutdown
+2026-10-08 16:18:32,850 26 INFO 128006873-master-all odoo.service.server.ThreadedServer: Hit CTRL-C again or send a second signal to force the shutdown.
+2026-10-08 16:18:32,850 26 INFO 128006873-master-all odoo.addons.bus.websocket: Disconnecting 0 websockets
+2026-10-08 16:18:32,950 26 INFO 128006873-master-all odoo.service.server.ThreadedServer: Logging uses the database, stop logging then close DB connections
