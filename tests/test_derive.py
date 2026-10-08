@@ -557,6 +557,15 @@ def test_override_greens_ci_but_an_unlisted_red_check_stays_red():
         "needs", [("upgrade#11485", "ci", "CI red: upgradeci/matt")])
 
 
+def test_ready_and_staged_pages_flag_how_close_a_member_is():
+    pages = {"odoo/odoo#293745": _page("odoo_odoo_293745_ready"),
+             "odoo/odoo#292618": _page("odoo_odoo_292618_staged")}
+    sets = _sets([_mine_row("odoo/odoo", 293745, "a"), _mine_row("odoo/odoo", 292618, "b"),
+                  _mine_row("odoo/odoo", 291953, "c")], pages)
+    assert [_member(sets, "odoo/odoo", n)["staging"] for n in (293745, 292618, 291953)] == [
+        "waiting", "staged", None]
+
+
 def test_lazy_page_check_is_pending_not_red():
     pages = {"odoo/odoo#291953": _page("odoo_odoo_291953_missing_statuses")}
     sets = _sets([_mine_row("odoo/odoo", 291953, "b")], pages)

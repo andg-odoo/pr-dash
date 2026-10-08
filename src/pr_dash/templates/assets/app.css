@@ -1511,6 +1511,7 @@ body {
 .mine-dot-closed { background: var(--fg-faint); }
 
 .mine-unknown { background: #33290f; color: var(--yellow); }
+.mine-staging { color: var(--green); }
 .mine-dim { color: var(--fg-faint); }
 .mine-ci-green { color: var(--green); }
 

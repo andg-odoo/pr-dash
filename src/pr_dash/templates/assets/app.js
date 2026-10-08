@@ -531,8 +531,12 @@
     return m.conflict || m.ci === "red" ? "bad" : "ok";
   }
 
+  const STAGING = { waiting: "waiting for staging", staged: "staged" };
+  const memberStaging = m => m.staging ? ` · <span class="mine-staging">${STAGING[m.staging]}</span>` : "";
+
   function memberChip(m) {
     const bits = [];
+    if (m.staging) bits.push(m.staging === "staged" ? "staged" : "queued");
     if (m.ci === "red") bits.push("ci✕");
     if (m.conflict) bits.push("conflict");
     if (m.decision === "APPROVED") bits.push("✓");
@@ -1262,7 +1266,7 @@
         const rows = s.members.map(m => `
       <tr>
         <td title="${escapeHTML(m.title)}">${escapeHTML(m.ref)}</td>
-        <td>${escapeHTML(m.state.toLowerCase())}${m.draft ? " · draft" : ""}${
+        <td>${escapeHTML(m.state.toLowerCase())}${m.draft ? " · draft" : ""}${memberStaging(m)}${
           m.conflict ? ' · <span class="tr-ci-failure">conflict</span>' : ""}${
           m.mergebot_unknown ? ' · <span class="mine-unknown">mergebot?</span>' : ""}</td>
         <td>${memberCI(m)}</td>
@@ -1273,7 +1277,7 @@
       </tr>${m.fw.map(f => `
       <tr>
         <td>&nbsp;&nbsp;↳ ${escapeHTML(f.ref)}</td>
-        <td>${escapeHTML(f.state.toLowerCase())}${f.flag ? " · " + fwLabel(f) : ""}${
+        <td>${escapeHTML(f.state.toLowerCase())}${f.flag ? " · " + fwLabel(f) : ""}${memberStaging(f)}${
           f.mergebot_unknown ? ' · <span class="mine-unknown">mergebot?</span>' : ""}</td>
         <td>${memberCI(f)}</td>
         <td class="mine-dim">fw to ${escapeHTML(f.base)}</td>
