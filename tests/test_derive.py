@@ -471,8 +471,8 @@ def _mine_row(repo, number, branch, *, checks=(("ci/runbot", "SUCCESS"),),
         "commits": {"nodes": [{"commit": {
             "committedDate": pushed,
             "statusCheckRollup": {"contexts": {"nodes": [
-                {"__typename": "StatusContext", "context": name, "state": state}
-                for name, state in checks
+                {"__typename": "StatusContext", "context": name, "state": state, "targetUrl": url}
+                for name, state, url in (c if len(c) == 3 else (*c, None) for c in checks)
             ]}},
         }}]},
         **over,
@@ -528,9 +528,11 @@ def test_branch_sets_group_by_head_branch_across_repos():
 
 def test_override_greens_ci_but_an_unlisted_red_check_stays_red():
     branch = "master-x-1234567-andg"
+    light = "https://runbot.odoo.com/runbot/batch/1/build/2"
     rows = [
         _mine_row("odoo/odoo", 290109, branch, reviewDecision="APPROVED",
-                  checks=[("ci/style", "ERROR"), ("ci/runbot", "SUCCESS")]),
+                  checks=[("ci/style", "ERROR"), ("ci/runbot", "SUCCESS"),
+                          ("ci/runbot (light)", "FAILURE", light)]),
         _mine_row("odoo/upgrade", 11485, branch,
                   checks=[("upgradeci/matt", "ERROR"), ("ci/runbot", "SUCCESS")]),
     ]
@@ -546,6 +548,7 @@ def test_override_greens_ci_but_an_unlisted_red_check_stays_red():
     # A GitHub approval is not an r+, the two are shown apart.
     assert (odoo["decision"], odoo["r_plus"], odoo["mergebot_unknown"]) == (
         "APPROVED", False, False)
+    # A runbot check the page does not list is optional, a non-runbot one keeps GitHub's red.
     upgrade = _member(sets, "odoo/upgrade", 11485)
     assert (upgrade["ci"], upgrade["ci_failing"]) == ("red", ["upgradeci/matt"])
     # The Overridden check raises nothing, and linked PRs missing only an r+ wait on a reviewer.

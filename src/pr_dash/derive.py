@@ -1145,8 +1145,12 @@ def _mine_member(row: dict, mergebot: dict | None) -> dict:
     """One Branch set member, its readiness read from the Mergebot page where there is one."""
     managed = mergebot is not None and mergebot["state"] not in ("unmanaged", "unknown")
     page_checks = mergebot["checks"] if managed else []
-    checks = {c["name"]: c["state"] for c in row["checks"]}
-    # The page lists only the checks it requires, the rest keep GitHub's state.
+    listed = {c["name"] for c in page_checks}
+    # The page lists every runbot check it requires, so `ci/runbot (light)` is optional.
+    checks = {
+        c["name"]: c["state"] for c in row["checks"]
+        if not (managed and c["name"] not in listed and "runbot.odoo.com" in (c["url"] or ""))
+    }
     for c in page_checks:
         if c["overridden"] or c["status"] == "ok":
             checks[c["name"]] = "success"
