@@ -17,10 +17,20 @@ class NoMatch(ValueError):
     """No row of the view holds the PR a ref names."""
 
 
+class Elsewhere(NoMatch):
+    """The PR a ref names is not in the view asked, but in `tab` as `row`."""
+
+    def __init__(self, tab: Tab, row: dict, message: str):
+        super().__init__(message)
+        self.tab, self.row = tab, row
+
+
 @dataclass(frozen=True)
 class Tab:
     """One view: its `load` takes include_dismissed, its `resolve` raises NoMatch or ambiguity."""
 
+    label: str
+    reader: str
     load: Callable[..., list[dict]]
     resolve: Callable[[list[dict], str | int], dict]
     summarize: Callable[[dict], dict]
@@ -70,13 +80,7 @@ def _resolve_queue(items: list[dict], ref: str | int) -> dict:
     if len(found) == 1:
         return found[0]
     if not found:
-        labels = [_queue_label(it) for it in items[:20]]
-        if len(items) > 20:
-            labels.append(f"... (+{len(items) - 20} more)")
-        raise NoMatch(
-            f"No PR matching {ref!r}. Available: "
-            f"{', '.join(labels) if labels else '(cache is empty)'}"
-        )
+        raise NoMatch(f"No PR matching {ref!r} among {len(items)} Review queue PRs, see list_prs.")
     number = query._parse_ref(ref)[2]
     raise ValueError(
         f"Ambiguous PR reference {ref!r} matches: "
@@ -88,12 +92,11 @@ def _resolve_queue(items: list[dict], ref: str | int) -> dict:
 def _resolve_tracked(items: list[dict], ref: str | int) -> dict:
     found = hits(items, ref)
     if not found:
-        known = ", ".join(f"{t['repo_short']}#{t['number']}" for t in items[:20])
-        raise NoMatch(f"No tracked PR matches {ref!r}. Tracked: {known or '(none)'}")
+        raise NoMatch(f"No tracked PR matches {ref!r} among {len(items)}, see list_tracked.")
     return _single(ref, found)
 
 
-def _mine_prs(branch_set: dict) -> list[dict]:
+def mine_prs(branch_set: dict) -> list[dict]:
     return [
         {"repo": pr["repo"], "repo_short": pr["repo"].split("/")[-1], "number": pr["num"]}
         for m in branch_set["members"]
@@ -103,33 +106,39 @@ def _mine_prs(branch_set: dict) -> list[dict]:
 
 def _resolve_mine(sets: list[dict], ref: str | int) -> dict:
     """Match every member of a Branch set and each of their Forward-ports."""
-    found = hits(sets, ref, _mine_prs)
+    found = hits(sets, ref, mine_prs)
     if not found:
-        known = ", ".join(
-            f"{m['repo'].split('/')[-1]}#{m['num']}" for s in sets[:20] for m in s["members"]
-        )
-        raise NoMatch(f"No Authored PR matches {ref!r}. Authored: {known or '(none)'}")
+        raise NoMatch(f"No Authored PR matches {ref!r} among {len(sets)} Branch sets, see list_mine.")
     return _single(ref, found)
 
 
 QUEUE = Tab(
+    label="Review queue",
+    reader="get_pr",
     load=lambda cfg, include_dismissed=False: query.load_items(cfg),
     resolve=_resolve_queue,
     summarize=query.summarize,
     detail=lambda _cfg, item: query.detail(item),
 )
 TRACKED = Tab(
+    label="Tracked tab",
+    reader="get_tracked",
     load=query.load_tracked,
     resolve=_resolve_tracked,
     summarize=query.summarize_tracked,
     detail=lambda _cfg, t: query.tracked_detail(t),
 )
 MINE = Tab(
+    label="Mine tab",
+    reader="get_mine",
     load=query.load_mine,
     resolve=_resolve_mine,
     summarize=query.summarize_mine,
     detail=query.mine_detail,
 )
+
+# The order get_comments and queue_only walk the views in.
+TABS = (QUEUE, MINE, TRACKED)
 
 
 def first(cfg: Config, ref: str | int, *tabs: Tab) -> tuple[Tab, dict]:
@@ -143,9 +152,26 @@ def first(cfg: Config, ref: str | int, *tabs: Tab) -> tuple[Tab, dict]:
     raise misses[0]
 
 
+def queue_only(cfg: Config, ref: str | int, tool: str) -> dict:
+    """The Review queue row `ref` names, else an Elsewhere naming the first other view holding it."""
+    try:
+        return QUEUE.find(cfg, ref)
+    except NoMatch as miss:
+        for tab in TABS[1:]:
+            try:
+                row = tab.find(cfg, ref)
+            except NoMatch:
+                continue
+            raise Elsewhere(tab, row, (
+                f"{ref!r} is in the {tab.label}, {tool} covers the {QUEUE.label} only. "
+                f"{tab.reader} reads it."
+            )) from miss
+        raise
+
+
 def get_comments(cfg: Config, ref: str | int) -> dict:
     """The Discussion of the cached PR `ref` names, in the Review queue, Mine or Tracked."""
-    tab, row = first(cfg, ref, QUEUE, MINE, TRACKED)
+    tab, row = first(cfg, ref, *TABS)
     if tab is QUEUE:
         return {"id": row["id"], "discussion": row["discussion"]}
     return tab.detail(cfg, row)

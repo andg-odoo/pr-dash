@@ -276,7 +276,7 @@ Tools:
 
 - `list_prs(status)` - compact triage rows; `status` is `pending` / `archived` / `all`.
 - `get_pr(ref)` - full detail for one PR (body, threads, reviewers, CI, companion migration PR, per-file diff metadata).
-- `get_diff(ref, files, changed_since_review_only, max_chars)` - diff text, whole files only, under a char budget.
+- `get_diff(ref, files, changed_since_review_only, max_chars)` - diff text, whole files only, under a char budget. Review queue only: on an Authored PR it errors with the local checkout to diff, found through `[paths] checkouts` globs, else a `gh pr diff` command.
 - `get_ai_review(ref)` - the cached AI first-pass sanity check, if any.
 - `set_ai_review(ref, summary, verdict, concerns)` - record a review by hand, in the slot the automatic pass writes to (it skips PRs whose diff is too big to cache). Re-renders the dashboard shortly after, so the row shows up on the next browser reload; several calls in a row coalesce into one render, and concurrent sessions take turns.
 - `review_history(author, module, verdict, limit)` - your archived reviews as triage rows.

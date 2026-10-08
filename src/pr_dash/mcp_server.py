@@ -12,7 +12,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from pr_dash import ai, branch_set, config, db, derive, github, query, tab
+from pr_dash import ai, branch_set, checkout, config, db, derive, github, query, tab
 
 # stderr only: stdout is the MCP protocol channel, so a single stray print or
 # rich.Console write there corrupts the stream. Everything human-facing goes to
@@ -415,7 +415,7 @@ def hide_pr(ref: str) -> dict:
     Returns {id, hidden: true, hidden_count}.
     """
     cfg = _get_cfg()
-    item = tab.QUEUE.find(cfg, ref)
+    item = tab.queue_only(cfg, ref, "hide_pr")
     # An archived row's cached sha can be long stale; a hide recorded at it
     # would auto-unhide against the live sha immediately. Best-effort live
     # lookup per member, cached shas as the offline fallback.
@@ -446,7 +446,7 @@ def unhide_pr(ref: str) -> dict:
     Returns {id, hidden: false, hidden_count}.
     """
     cfg = _get_cfg()
-    item = tab.QUEUE.find(cfg, ref)
+    item = tab.queue_only(cfg, ref, "unhide_pr")
     _apply_mark_ops(cfg, [{"kind": "hide", "op": "clear", "key": item["id"]}])
     return {"id": item["id"], "hidden": False, "hidden_count": _hidden_count(cfg)}
 
@@ -464,8 +464,9 @@ def get_diff(
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
     files: restrict to these paths (exact, basename, or suffix match).
     changed_since_review_only: only files that changed since your last review.
+    Review queue only: an Authored PR's diff is not cached, its miss names the local checkout.
     """
-    item = tab.QUEUE.find(_get_cfg(), ref)
+    item = checkout.diff_item(_get_cfg(), ref)
     return query.get_diff_text(
         item, files=files,
         changed_since_review_only=changed_since_review_only,
@@ -480,7 +481,7 @@ def get_ai_review(ref: str) -> dict:
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
     """
-    item = tab.QUEUE.find(_get_cfg(), ref)
+    item = tab.queue_only(_get_cfg(), ref, "get_ai_review")
     ai_reviews = item.get("ai_reviews") or []
     out = {
         "id": item["id"],
@@ -530,7 +531,7 @@ def set_ai_review(ref: str, summary: str, verdict: str,
     up on the next browser reload without a `pr-dash refresh`.
     """
     cfg = _get_cfg()
-    item = tab.QUEUE.find(cfg, ref)
+    item = tab.queue_only(cfg, ref, "set_ai_review")
     if verdict not in ai._VERDICTS:
         raise ValueError(
             f"verdict must be one of {', '.join(ai._VERDICTS)}, got {verdict!r}",

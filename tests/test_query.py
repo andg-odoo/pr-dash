@@ -165,9 +165,9 @@ def test_resolve_ambiguous_bare_number():
     assert tab.QUEUE.resolve(items, "enterprise#100")["id"] == "odoo/enterprise#100"
 
 
-def test_resolve_not_found_lists_candidates():
+def test_resolve_not_found_counts_candidates():
     items = [_item("odoo/odoo#100")]
-    with pytest.raises(ValueError, match="odoo/odoo#100"):
+    with pytest.raises(ValueError, match="among 1 Review queue PRs, see list_prs"):
         tab.QUEUE.resolve(items, "odoo/odoo#404")
 
 

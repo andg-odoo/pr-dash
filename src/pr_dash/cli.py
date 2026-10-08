@@ -17,7 +17,7 @@ import click
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from pr_dash import config, db, derive, github, mergebot, render, sync, tab
+from pr_dash import checkout, config, db, derive, github, mergebot, render, sync, tab
 from pr_dash import query as prquery
 
 console = Console()
@@ -477,7 +477,11 @@ def query_show(ref, config_path):
 def query_diff(ref, files, changed_only, max_chars, config_path):
     """Per-member diff text for one PR."""
     cfg = _load_config_or_exit(config_path)
-    item = _resolve_or_exit(tab.QUEUE, tab.QUEUE.load(cfg), ref)
+    try:
+        item = checkout.diff_item(cfg, ref)
+    except ValueError as e:
+        click.echo(str(e), err=True)
+        sys.exit(1)
     _emit(prquery.get_diff_text(
         item, files=list(files) or None,
         changed_since_review_only=changed_only, max_chars=max_chars,

@@ -560,6 +560,7 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
     def seed(conn):
         _seed_pr(conn, "odoo/odoo#1", "sha1")
         _seed_mine(conn, "odoo/odoo#290109", ec, comments=[("jov-odoo", "Why here?")])
+        db.update_tab_state(conn, "mine", "odoo/odoo#290109", {"target_branch": "master"})
         _seed_mine(conn, "odoo/enterprise#132695", ec)
         _seed_mine(conn, "odoo/upgrade#11389", ec)
         _seed_mine(conn, "odoo/enterprise#1", "master-other-andg", state="CLOSED")
@@ -607,6 +608,22 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
     assert mcp_server.get_comments("40")["id"] == "odoo/odoo#40"
     with pytest.raises(ValueError, match="No PR matching 'enterprise#40'"):
         mcp_server.get_comments("enterprise#40")
+
+    # A queue-only tool names the tab holding the PR, get_diff the checkout of an Authored one.
+    gitdir, wt = tmp_path / "gitdir", tmp_path / "wt" / "ec" / "odoo"
+    gitdir.mkdir()
+    (gitdir / "HEAD").write_text(f"ref: refs/heads/{ec}\n")
+    wt.mkdir(parents=True)
+    (wt / ".git").write_text("gitdir: ../../../gitdir\n")
+    cfg.checkout_globs = [str(tmp_path / "wt" / "*" / "*")]
+    with pytest.raises(ValueError, match=rf"in the Mine tab, get_diff .*`git -C {wt} diff origin/master"):
+        mcp_server.get_diff("odoo#290109")
+    with pytest.raises(ValueError, match="No local checkout .* `gh pr diff 132695 -R odoo/enterprise`"):
+        mcp_server.get_diff("enterprise#132695")
+    with pytest.raises(ValueError, match="Forward-port with no local branch"):
+        mcp_server.get_diff("odoo#291981")
+    with pytest.raises(ValueError, match="in the Tracked tab, hide_pr covers the Review queue only. get_tracked"):
+        mcp_server.hide_pr("40")
 
     conn = db.connect(cfg.db_path)
     try:
