@@ -75,7 +75,7 @@ def test_timer_ticks_search_the_queue_hourly_and_each_tab_when_stale(w):
 
     assert tick() == {QUEUE, TRACKED, MINE}
     assert tick() == set()
-    assert tick(cron=False) == {QUEUE}
+    assert tick(cron=False) == {QUEUE, TRACKED, MINE}
     # Each gate keeps a minute of slack but the tracked one, a tick lands seconds short.
     w.clock.advance(minutes=14)
     assert tick() == {MINE}
@@ -320,8 +320,8 @@ def test_mine_keeps_resolved_members_and_stops_reading_their_final_page(w):
     for repo, number in (("odoo/odoo", 10), ("odoo/upgrade", 20)):
         w.gh.add(repo, number, author="me", head_branch="master-x-6396725-andg")
     w.mergebot.pages = {"odoo/odoo#10": "blocked"}
-    w.refresh()
-    w.refresh()
+    w.refresh(cron=True)
+    w.refresh(cron=True)
     assert sorted(w.mergebot.reads) == ["odoo/odoo#10", "odoo/upgrade#20"]
 
     # Both left the open search and closed, the Mergebot telling Merged from closed.
@@ -334,6 +334,20 @@ def test_mine_keeps_resolved_members_and_stops_reading_their_final_page(w):
     assert [(s["key"], s["band"], [(m["num"], m["state"]) for m in s["members"]])
             for s in w.mine()] == [
         ("master-x-6396725-andg", "done", [(10, "MERGED"), (20, "CLOSED")])]
+
+
+def test_a_manual_refresh_picks_up_a_review_submitted_after_the_timer_tick(w):
+    w.gh.add("odoo/odoo", 1, author="me")
+    w.refresh(cron=True)
+    drafted = w.clock().strftime("%Y-%m-%dT%H:%M:%SZ")
+    w.clock.advance(minutes=3)
+    # The draft comment keeps its earlier stamp once the review is submitted.
+    w.gh.prs[ODOO].threads.append({"id": "T1", "path": "a.py", "comments": [
+        {"author": "clbr", "at": drafted, "body": "why?", "review": "R1"}]})
+    w.gh.review(ODOO, "clbr", state="COMMENTED", body="Pretty solid")
+    w.clock.advance(minutes=5)
+    w.refresh()
+    assert {c["author"] for c in db.list_discussions(w.conn, "mine")[ODOO]} == {"clbr"}
 
 
 def test_mine_hangs_confirmed_forward_ports_under_their_source(w):

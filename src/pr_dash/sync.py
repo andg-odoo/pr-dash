@@ -103,8 +103,9 @@ class Sync:
                      for s in branch_set.group(dict(r) for r in db.list_prs(self.conn))}
             db.clear_marks(self.conn, "hide", db.marks(self.conn, "hide").keys()
                            - db.live_marks(self.conn, "hide", heads).keys())
-        self._refresh_tracked(report, force=force)
-        self._refresh_mine(report, force=force)
+        # A manual run refreshes every tab, the staleness gates only pace the timer.
+        self._refresh_tracked(report, force=force or not cron)
+        self._refresh_mine(report, force=force or not cron)
         db.sweep_discussions(self.conn)
         # Stamped only on a run that reached GitHub, so the header dates the data.
         db.set_meta(self.conn, "last_refresh", self._stamp())
