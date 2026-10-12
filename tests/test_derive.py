@@ -760,6 +760,9 @@ def test_a_review_since_the_last_push_stands_in_for_a_dropped_request():
     ]
     [s] = _sets(rows, {}, streams={"odoo/odoo#1": before})
     assert _actions(s) == [("odoo#1", "reviewers", "no reviewer requested")]
+    # An r+ from before the push still stands, so no reviewer is needed.
+    pages = {"odoo/odoo#1": _page("odoo_odoo_293745_ready")}
+    assert _sets(rows, pages, streams={"odoo/odoo#1": before})[0]["actions"] == []
 
 
 def _fw(number, base, **over):

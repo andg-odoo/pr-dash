@@ -928,7 +928,7 @@ def _member_attention(
                  or parse_iso(c["created_at"]) > parse_iso(row["head_committed_at"]))
             for c in stream
         )
-        if not m["requested_people"] and not reviewed:
+        if not m["requested_people"] and not reviewed and not m["r_plus"]:
             removed = [e["at"] for e in row["review_request_events"]
                        if e["kind"] == "removed" and not e["is_team"]]
             text = "only teams requested" if m["requested_teams"] else "no reviewer requested"
