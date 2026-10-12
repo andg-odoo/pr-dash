@@ -253,7 +253,7 @@ def _gh_once(args: list[str], *, input: str | None = None, timeout: int = 60,
     try:
         result = subprocess.run(
             ["gh", *args],
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True, text=True, errors="replace", timeout=timeout,
             check=not allow_failure, input=input,
         )
         # A gateway error comes back as an HTML body, which is no partial response to keep.
