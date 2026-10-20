@@ -30,6 +30,8 @@
   const STATE_KEY = "pr-dash:filters:v1";
   const TAB_KEY = "pr-dash:tab:v1";
   const MARK_QUEUE_KEY = "pr-dash:mark-queue:v1";
+  const PRESET_KEY = "pr-dash:presets:v1";
+  const PRESET_ACTIVE_KEY = "pr-dash:preset-active:v1";
   const MARKS_PORT = window.MARKS_PORT || null;
 
   // Mark ops `{kind, op, key, guard?, at, sent?}`, oldest first, `sent` when the listener took it.
@@ -1366,6 +1368,7 @@
       ? d.listHTML(d.visible, r => d.rowHTML(r, badges(r)))
       : `<li class="tr-empty">${escapeHTML(d.empty())}</li>`;
     highlight(d);
+    syncPreset(d);
   }
 
   function highlight(d) {
@@ -1470,11 +1473,154 @@
   }
 
   function filtersHTML(d) {
-    return Object.entries(d.chips).map(([g, c]) => `
+    return `
+      <div class="preset">
+        <input class="preset-input" type="text" placeholder="preset…" autocomplete="off" spellcheck="false">
+        <button class="preset-save" type="button" title="Save these filters under the typed name">save</button>
+        <button class="preset-del" type="button" title="Delete this preset">×</button>
+        <ul class="preset-list" hidden></ul>
+      </div>` + Object.entries(d.chips).map(([g, c]) => `
       <div class="filter-group" data-group="${g}">
         <div class="filter-label">${c.title}</div>
         <div class="chips">${(c.of ? c.values : c.chips).map(v => chipHTML(g, c, v)).join("")}</div>
       </div>`).join("");
+  }
+
+  // ---- presets: named chip selections and sort of one view, picked or saved from one combobox --
+
+  // `{view: {name: {groups: {group: [ids]}, sort}}}` and `{view: name}` for the one applied.
+  const presets = loadJSON(PRESET_KEY) || {};
+  const activePreset = loadJSON(PRESET_ACTIVE_KEY) || {};
+  function savePresets() {
+    localStorage.setItem(PRESET_KEY, JSON.stringify(presets));
+    localStorage.setItem(PRESET_ACTIVE_KEY, JSON.stringify(activePreset));
+  }
+
+  const snapshot = d => ({
+    groups: Object.fromEntries(Object.keys(d.chips).map(g => [g, [...filters[g]].sort()])),
+    sort: d.sort,
+  });
+  // A preset as it applies today, without the chips its view no longer offers.
+  function presetState(d, p) {
+    const groups = Object.fromEntries(Object.entries(d.chips).map(([g, c]) => {
+      const ok = new Set(c.of ? c.values : c.chips.map(x => x.id));
+      return [g, (p.groups[g] || []).filter(v => ok.has(v)).sort()];
+    }));
+    return { groups, sort: p.sort in d.sorts ? p.sort : d.sort };
+  }
+
+  function applyPreset(d, name) {
+    const { groups, sort } = presetState(d, presets[d.key][name]);
+    for (const [g, v] of Object.entries(groups)) filters[g] = new Set(v);
+    d.sort = sort;
+    localStorage.setItem(d.sortStore, sort);
+    const sortEl = document.getElementById(`${d.key}-sort`);
+    if (sortEl) sortEl.value = sort;
+    activePreset[d.key] = name;
+    savePresets();
+    saveFilters();
+    refreshChipStates();
+    renderView(d);
+  }
+
+  function savePreset(d, name) {
+    (presets[d.key] ??= {})[name] = snapshot(d);
+    activePreset[d.key] = name;
+    savePresets();
+    syncPreset(d);
+  }
+
+  function deletePreset(d, name) {
+    delete presets[d.key]?.[name];
+    if (activePreset[d.key] === name) delete activePreset[d.key];
+    savePresets();
+    syncPreset(d);
+  }
+
+  // The applied preset's name in the box, flagged once a chip or the sort moves away from it.
+  function syncPreset(d) {
+    const input = d.presetEl.querySelector(".preset-input");
+    const p = presets[d.key]?.[activePreset[d.key]];
+    if (!p) delete activePreset[d.key];
+    if (document.activeElement !== input) input.value = activePreset[d.key] || "";
+    d.presetEl.classList.toggle("is-modified",
+      !!p && JSON.stringify(presetState(d, p)) !== JSON.stringify(snapshot(d)));
+    d.presetEl.querySelector(".preset-del").disabled = !presets[d.key]?.[input.value.trim()];
+    d.presetEl.querySelector(".preset-save").disabled = !input.value.trim();
+  }
+
+  // Indices of `q` in `name` ignoring case, as one run when it is a substring, else in order, or null.
+  function fuzzy(name, q) {
+    const n = name.toLowerCase(), t = q.toLowerCase().replace(/\s+/g, ""), at = n.indexOf(t), idx = [];
+    if (at >= 0) return [...t].map((_, j) => at + j);
+    let i = 0;
+    for (const ch of t) {
+      i = n.indexOf(ch, i);
+      if (i < 0) return null;
+      idx.push(i++);
+    }
+    return idx;
+  }
+
+  function wirePreset(d) {
+    const input = d.presetEl.querySelector(".preset-input");
+    const list = d.presetEl.querySelector(".preset-list");
+    let items = [], hl = -1;
+
+    function draw() {
+      const q = input.value.trim();
+      const names = Object.keys(presets[d.key] || {});
+      const hits = names.map(name => ({ name, idx: fuzzy(name, q) })).filter(h => h.idx)
+        .sort((a, b) => (a.idx[0] ?? 0) - (b.idx[0] ?? 0) || a.name.localeCompare(b.name));
+      items = [...hits, ...(q && !names.includes(q) ? [{ save: q }] : [])];
+      hl = Math.min(Math.max(hl, q ? 0 : -1), items.length - 1);
+      list.innerHTML = items.map((it, i) => `<li class="preset-item${i === hl ? " is-hl" : ""}${
+        it.name === activePreset[d.key] ? " is-active" : ""}" data-i="${i}">${it.save
+        ? `save “${escapeHTML(it.save)}”`
+        : it.name.split("").map((c, j) => it.idx.includes(j) ? `<mark>${escapeHTML(c)}</mark>` : escapeHTML(c)).join("")
+      }</li>`).join("") || '<li class="preset-empty">Type a name to save these filters</li>';
+      list.hidden = false;
+      syncPreset(d);
+    }
+
+    function pick(i) {
+      const it = items[i];
+      if (!it) return;
+      it.save ? savePreset(d, it.save) : applyPreset(d, it.name);
+      input.blur();
+    }
+
+    input.addEventListener("focus", () => { hl = -1; input.select(); draw(); });
+    input.addEventListener("input", () => { hl = 0; draw(); });
+    input.addEventListener("blur", () => { list.hidden = true; syncPreset(d); });
+    input.addEventListener("keydown", (e) => {
+      const n = items.length, q = input.value.trim();
+      if ((e.key === "ArrowDown" || e.key === "ArrowUp") && n) {
+        e.preventDefault();
+        hl = e.key === "ArrowDown" ? (hl + 1) % n : (hl <= 0 ? n : hl) - 1;
+        draw();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (hl >= 0) pick(hl);
+        else if (presets[d.key]?.[q]) { applyPreset(d, q); input.blur(); }
+        else if (q) { savePreset(d, q); input.blur(); }
+      } else if (e.key === "Escape") {
+        input.blur();
+      }
+    });
+    // Mousedown keeps the focus in the box, so a click reads what was typed before blur resets it.
+    d.presetEl.addEventListener("mousedown", (e) => { if (e.target !== input) e.preventDefault(); });
+    list.addEventListener("click", (e) => { const li = e.target.closest("[data-i]"); if (li) pick(+li.dataset.i); });
+    d.presetEl.querySelector(".preset-save").addEventListener("click", () => {
+      const name = input.value.trim();
+      if (name) { savePreset(d, name); input.blur(); }
+    });
+    d.presetEl.querySelector(".preset-del").addEventListener("click", () => {
+      deletePreset(d, input.value.trim());
+      input.value = "";
+      input.focus();
+      draw();
+    });
   }
 
   // The sort picker when a view has a choice of orders, then its key hints.
@@ -1497,13 +1643,18 @@
     d.listHTML ??= (rows, rowHTML) => rows.map(rowHTML).join("");
     for (const g of Object.keys(d.chips)) filters[g] ??= new Set();
     document.getElementById(`${key}-filters`).innerHTML = filtersHTML(d);
+    d.presetEl = document.querySelector(`#${key}-filters .preset`);
+    wirePreset(d);
     document.getElementById(`${key}-sort-bar`).innerHTML = sortBarHTML(d);
 
     const sortEl = document.getElementById(`${key}-sort`);
-    const stored = d.sortKey || `pr-dash:${key}-sort:v1`;
-    d.sort = localStorage.getItem(stored) || Object.keys(d.sorts)[0];
+    d.sortStore = d.sortKey || `pr-dash:${key}-sort:v1`;
+    d.sort = localStorage.getItem(d.sortStore) || Object.keys(d.sorts)[0];
     if (sortEl) sortEl.value = d.sort;
-    sortEl?.addEventListener("change", () => { localStorage.setItem(stored, d.sort = sortEl.value); renderView(d); });
+    sortEl?.addEventListener("change", () => {
+      localStorage.setItem(d.sortStore, d.sort = sortEl.value);
+      renderView(d);
+    });
 
     d.list.addEventListener("click", (e) => {
       const li = e.target.closest(".pr-row");
@@ -1540,6 +1691,8 @@
 
   resetBtn.addEventListener("click", () => {
     for (const k of Object.keys(filters)) filters[k].clear();
+    for (const k of Object.keys(activePreset)) delete activePreset[k];
+    savePresets();
     saveFilters();
     refreshChipStates();
     searchQuery = "";

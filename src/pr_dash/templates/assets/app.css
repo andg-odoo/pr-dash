@@ -133,6 +133,72 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.preset {
+  position: relative;
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.preset-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.preset-input:focus { outline: none; border-color: var(--accent); }
+.preset.is-modified .preset-input { font-style: italic; color: var(--fg-dim); }
+.preset.is-modified::after {
+  content: "modified";
+  position: absolute;
+  right: 72px;
+  top: 5px;
+  font-size: 10px;
+  color: var(--yellow);
+  pointer-events: none;
+}
+
+.preset button {
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.preset button:disabled { opacity: 0.4; cursor: default; }
+
+.preset-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  margin: 2px 0 0;
+  padding: 2px 0;
+  list-style: none;
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+.preset-item { padding: 4px 8px; cursor: pointer; color: var(--fg-dim); }
+.preset-item.is-active { color: var(--fg); font-weight: 600; }
+.preset-item.is-hl,
+.preset-item:hover { background: var(--chip-bg); color: var(--fg); }
+.preset-item mark { background: none; color: var(--accent); font-weight: 700; }
+.preset-empty { padding: 4px 8px; color: var(--fg-faint); }
+
 .filter-group { margin-bottom: 6px; }
 
 .filter-label {
