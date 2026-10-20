@@ -32,6 +32,7 @@
   const MARK_QUEUE_KEY = "pr-dash:mark-queue:v1";
   const PRESET_KEY = "pr-dash:presets:v1";
   const PRESET_ACTIVE_KEY = "pr-dash:preset-active:v1";
+  const FILTERS_OPEN_KEY = "pr-dash:filters-open:v1";
   const MARKS_PORT = window.MARKS_PORT || null;
 
   // Mark ops `{kind, op, key, guard?, at, sent?}`, oldest first, `sent` when the listener took it.
@@ -1369,6 +1370,7 @@
       : `<li class="tr-empty">${escapeHTML(d.empty())}</li>`;
     highlight(d);
     syncPreset(d);
+    syncFilterPanel(d);
   }
 
   function highlight(d) {
@@ -1475,15 +1477,37 @@
   function filtersHTML(d) {
     return `
       <div class="preset">
-        <input class="preset-input" type="text" placeholder="preset…" autocomplete="off" spellcheck="false">
-        <button class="preset-save" type="button" title="Save these filters under the typed name">save</button>
-        <button class="preset-del" type="button" title="Delete this preset">×</button>
-        <ul class="preset-list" hidden></ul>
-      </div>` + Object.entries(d.chips).map(([g, c]) => `
+        <div class="preset-field">
+          <input class="preset-input" type="text" placeholder="preset…" autocomplete="off" spellcheck="false">
+          <ul class="preset-list" hidden></ul>
+        </div>
+        <button class="preset-clear" type="button" title="Clear the box, the chips stay as they are">×</button>
+        <button class="filters-toggle" type="button" title="Show or hide the chips">chips</button>
+      </div>
+      <div class="filter-summary" title="Show the chips"></div>
+      <div class="filter-groups">${Object.entries(d.chips).map(([g, c]) => `
       <div class="filter-group" data-group="${g}">
         <div class="filter-label">${c.title}</div>
         <div class="chips">${(c.of ? c.values : c.chips).map(v => chipHTML(g, c, v)).join("")}</div>
-      </div>`).join("");
+      </div>`).join("")}</div>`;
+  }
+
+  // Chips are folded by default to one line naming the active ones, open per tab on demand.
+  const filtersOpen = loadJSON(FILTERS_OPEN_KEY) || {};
+  function syncFilterPanel(d) {
+    const el = document.getElementById(`${d.key}-filters`);
+    el.classList.toggle("is-open", !!filtersOpen[d.key]);
+    const labels = (g, c) => c.of ? c.values.filter(v => filters[g].has(v)).map(v => c.label ? c.label(v) : v)
+      : c.chips.filter(x => filters[g].has(x.id)).map(x => x.label);
+    const active = Object.entries(d.chips).filter(([g]) => filters[g].size)
+      .map(([g, c]) => `${c.title}: ${labels(g, c).join(", ")}`);
+    el.querySelector(".filter-summary").textContent = active.join("  ·  ") || "no chips active";
+  }
+
+  function toggleFilterPanel(d) {
+    filtersOpen[d.key] = !filtersOpen[d.key];
+    localStorage.setItem(FILTERS_OPEN_KEY, JSON.stringify(filtersOpen));
+    syncFilterPanel(d);
   }
 
   // ---- presets: named chip selections and sort of one view, picked or saved from one combobox --
@@ -1537,16 +1561,19 @@
     syncPreset(d);
   }
 
+  const isDrifted = (d, p = presets[d.key]?.[activePreset[d.key]]) =>
+    !!p && JSON.stringify(presetState(d, p)) !== JSON.stringify(snapshot(d));
+
   // The applied preset's name in the box, flagged once a chip or the sort moves away from it.
   function syncPreset(d) {
     const input = d.presetEl.querySelector(".preset-input");
     const p = presets[d.key]?.[activePreset[d.key]];
     if (!p) delete activePreset[d.key];
     if (document.activeElement !== input) input.value = activePreset[d.key] || "";
-    d.presetEl.classList.toggle("is-modified",
-      !!p && JSON.stringify(presetState(d, p)) !== JSON.stringify(snapshot(d)));
-    d.presetEl.querySelector(".preset-del").disabled = !presets[d.key]?.[input.value.trim()];
-    d.presetEl.querySelector(".preset-save").disabled = !input.value.trim();
+    const drifted = isDrifted(d);
+    d.presetEl.classList.toggle("is-modified", drifted);
+    input.title = drifted ? "The chips or sort changed since this preset was applied, update it from the list" : "";
+    d.presetEl.querySelector(".preset-clear").disabled = !input.value;
   }
 
   // Indices of `q` in `name` ignoring case, as one run when it is a substring, else in order, or null.
@@ -1565,20 +1592,24 @@
   function wirePreset(d) {
     const input = d.presetEl.querySelector(".preset-input");
     const list = d.presetEl.querySelector(".preset-list");
-    let items = [], hl = -1;
+    let items = [], hl = -1, typed = false;
 
+    const delBtn = '<button class="preset-item-del" type="button" title="Delete this preset">delete</button>';
+
+    // Until a key is typed the list shows every preset, not just the one whose name fills the box.
     function draw() {
-      const q = input.value.trim();
+      const q = typed ? input.value.trim() : "", active = activePreset[d.key];
       const names = Object.keys(presets[d.key] || {});
       const hits = names.map(name => ({ name, idx: fuzzy(name, q) })).filter(h => h.idx)
         .sort((a, b) => (a.idx[0] ?? 0) - (b.idx[0] ?? 0) || a.name.localeCompare(b.name));
-      items = [...hits, ...(q && !names.includes(q) ? [{ save: q }] : [])];
+      items = [...(isDrifted(d) && (!q || q === active) ? [{ save: active, label: "update" }] : []), ...hits,
+        ...(q && !names.includes(q) ? [{ save: q, label: "save as new" }] : [])];
       hl = Math.min(Math.max(hl, q ? 0 : -1), items.length - 1);
       list.innerHTML = items.map((it, i) => `<li class="preset-item${i === hl ? " is-hl" : ""}${
-        it.name === activePreset[d.key] ? " is-active" : ""}" data-i="${i}">${it.save
-        ? `save “${escapeHTML(it.save)}”`
+        it.name === activePreset[d.key] ? " is-active" : ""}" data-i="${i}"><span class="preset-name">${it.save
+        ? `<span class="preset-action">${it.label}</span> “${escapeHTML(it.save)}”`
         : it.name.split("").map((c, j) => it.idx.includes(j) ? `<mark>${escapeHTML(c)}</mark>` : escapeHTML(c)).join("")
-      }</li>`).join("") || '<li class="preset-empty">Type a name to save these filters</li>';
+      }</span>${it.save ? "" : delBtn}</li>`).join("") || '<li class="preset-empty">Type a name to save these filters</li>';
       list.hidden = false;
       syncPreset(d);
     }
@@ -1590,8 +1621,8 @@
       input.blur();
     }
 
-    input.addEventListener("focus", () => { hl = -1; input.select(); draw(); });
-    input.addEventListener("input", () => { hl = 0; draw(); });
+    input.addEventListener("focus", () => { hl = -1; typed = false; input.select(); draw(); });
+    input.addEventListener("input", () => { hl = 0; typed = true; draw(); });
     input.addEventListener("blur", () => { list.hidden = true; syncPreset(d); });
     input.addEventListener("keydown", (e) => {
       const n = items.length, q = input.value.trim();
@@ -1610,16 +1641,24 @@
     });
     // Mousedown keeps the focus in the box, so a click reads what was typed before blur resets it.
     d.presetEl.addEventListener("mousedown", (e) => { if (e.target !== input) e.preventDefault(); });
-    list.addEventListener("click", (e) => { const li = e.target.closest("[data-i]"); if (li) pick(+li.dataset.i); });
-    d.presetEl.querySelector(".preset-save").addEventListener("click", () => {
-      const name = input.value.trim();
-      if (name) { savePreset(d, name); input.blur(); }
-    });
-    d.presetEl.querySelector(".preset-del").addEventListener("click", () => {
-      deletePreset(d, input.value.trim());
-      input.value = "";
-      input.focus();
+    // Delete takes a second click on the same button, as it cannot be undone.
+    list.addEventListener("click", (e) => {
+      const li = e.target.closest("[data-i]"), del = e.target.closest(".preset-item-del");
+      if (!li) return;
+      if (!del) return pick(+li.dataset.i);
+      if (!del.classList.contains("is-armed")) {
+        del.classList.add("is-armed");
+        del.textContent = "delete?";
+        return;
+      }
+      deletePreset(d, items[+li.dataset.i].name);
       draw();
+    });
+    d.presetEl.querySelector(".preset-clear").addEventListener("click", () => {
+      delete activePreset[d.key];
+      savePresets();
+      input.value = "";
+      document.activeElement === input ? draw() : syncPreset(d);
     });
   }
 
@@ -1645,6 +1684,9 @@
     document.getElementById(`${key}-filters`).innerHTML = filtersHTML(d);
     d.presetEl = document.querySelector(`#${key}-filters .preset`);
     wirePreset(d);
+    for (const sel of [".filters-toggle", ".filter-summary"]) {
+      document.querySelector(`#${key}-filters ${sel}`).addEventListener("click", () => toggleFilterPanel(d));
+    }
     document.getElementById(`${key}-sort-bar`).innerHTML = sortBarHTML(d);
 
     const sortEl = document.getElementById(`${key}-sort`);

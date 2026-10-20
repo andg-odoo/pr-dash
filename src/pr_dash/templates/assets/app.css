@@ -134,15 +134,20 @@ body {
 }
 
 .preset {
-  position: relative;
   display: flex;
   gap: 4px;
   margin-bottom: 8px;
 }
 
-.preset-input {
+.preset-field {
+  position: relative;
   flex: 1;
   min-width: 0;
+}
+
+.preset-input {
+  width: 100%;
+  box-sizing: border-box;
   background: var(--chip-bg);
   border: 1px solid var(--border);
   color: var(--fg);
@@ -152,16 +157,7 @@ body {
 }
 
 .preset-input:focus { outline: none; border-color: var(--accent); }
-.preset.is-modified .preset-input { font-style: italic; color: var(--fg-dim); }
-.preset.is-modified::after {
-  content: "modified";
-  position: absolute;
-  right: 72px;
-  top: 5px;
-  font-size: 10px;
-  color: var(--yellow);
-  pointer-events: none;
-}
+.preset.is-modified .preset-input { font-style: italic; border-color: var(--yellow); }
 
 .preset button {
   background: var(--chip-bg);
@@ -179,7 +175,10 @@ body {
   position: absolute;
   top: 100%;
   left: 0;
-  right: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: 60vw;
+  box-sizing: border-box;
   z-index: 10;
   margin: 2px 0 0;
   padding: 2px 0;
@@ -192,12 +191,53 @@ body {
   font-size: 12px;
 }
 
-.preset-item { padding: 4px 8px; cursor: pointer; color: var(--fg-dim); }
+.preset-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  color: var(--fg-dim);
+}
+
+.preset-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preset .preset-item-del {
+  visibility: hidden;
+  padding: 0 6px;
+  font-size: 10px;
+}
+
+.preset-item:hover .preset-item-del,
+.preset-item.is-hl .preset-item-del { visibility: visible; }
+.preset .preset-item-del:hover,
+.preset .preset-item-del.is-armed { visibility: visible; color: var(--red); border-color: var(--red); }
 .preset-item.is-active { color: var(--fg); font-weight: 600; }
 .preset-item.is-hl,
 .preset-item:hover { background: var(--chip-bg); color: var(--fg); }
 .preset-item mark { background: none; color: var(--accent); font-weight: 700; }
+.preset-action { color: var(--accent); }
 .preset-empty { padding: 4px 8px; color: var(--fg-faint); }
+
+.filter-summary {
+  font-size: 11px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.filter-summary:hover { color: var(--fg); }
+.filters.is-open .filter-summary,
+.filters:not(.is-open) .filter-groups { display: none; }
+.filters.is-open .filters-toggle { color: var(--fg); border-color: var(--accent); }
 
 .filter-group { margin-bottom: 6px; }
 
