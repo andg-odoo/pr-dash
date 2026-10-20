@@ -1826,3 +1826,15 @@ body {
 .rb-trig a {
   color: var(--accent);
 }
+
+.commit { margin: 6px 0 10px; font-size: 13px; }
+.commit code { color: var(--fg-dim); }
+.commit-body {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: pre-wrap;
+}

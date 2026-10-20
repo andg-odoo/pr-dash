@@ -322,16 +322,14 @@ def get_pr(ref: str, fresh: bool = False) -> dict:
 
 
 def _review_members(cfg: config.Config, members: list[dict]) -> list[dict]:
-    """Each Review queue member with its stored commits and its runbot batch, fetched when stale."""
+    """Each Review queue member with its runbot batch, fetched when stale."""
     staleness = timedelta(minutes=cfg.thresholds.mine_staleness_minutes)
     conn = db.connect(cfg.db_path)
     try:
         out = []
         for m in members:
             row = db.get_cached_pr(conn, f"{m['repo']}#{m['number']}")
-            out.append({**m, "commits": row["commits"] and json.loads(row["commits"]),
-                        "commit_count": row["commit_count"],
-                        "runbot": runbot_cache.batch_runbot(conn, row["runbot_url"], staleness)})
+            out.append({**m, "runbot": runbot_cache.batch_runbot(conn, row["runbot_url"], staleness)})
         return out
     finally:
         conn.close()

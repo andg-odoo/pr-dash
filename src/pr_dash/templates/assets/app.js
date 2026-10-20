@@ -1057,6 +1057,20 @@
             </section>
             `).join("");
 
+        // One list per half, flagged when it holds more than one commit to squash before merge.
+        const commits = () => pr.members.map(m => `
+            <section class="section">
+              <h3>${escapeHTML(m.repo_short)}#${m.number} · ${m.commit_count ?? "?"} commit${m.commit_count === 1 ? "" : "s"}${
+                m.commit_count > 1 ? ' <span class="diff-closed-badge">squash?</span>' : ""}</h3>
+              ${m.commits ? m.commits.map(c => `
+              <div class="commit"><code>${escapeHTML(c.sha)}</code> <strong>${escapeHTML(c.headline)}</strong>
+                ${c.body ? `<pre class="commit-body">${escapeHTML(c.body)}</pre>` : ""}</div>`).join("")
+                : '<div class="empty">Not fetched yet, the next refresh fills it.</div>'}
+              ${m.commit_count > (m.commits || []).length ? `<a href="${escapeHTML(m.url)}/commits" target="_blank"
+                rel="noopener">All ${m.commit_count} on GitHub ↗</a>` : ""}
+            </section>`).join("");
+        const commitTotal = pr.members.reduce((n, m) => n + (m.commit_count || 0), 0);
+
         const wireDiffs = pane => pr.diffs.forEach((d, i) => {
           if (!d.available || !d.diff) return;
           const container = pane.querySelector(`.diff-container[data-diff-idx="${i}"]`);
@@ -1110,6 +1124,7 @@
             sections: diffs,
             wire: wireDiffs,
           },
+          { label: "Commits", count: commitTotal ? String(commitTotal) : "", sections: commits },
         ] };
       },
 

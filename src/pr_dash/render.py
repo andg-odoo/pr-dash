@@ -133,6 +133,8 @@ def _build_pr_record(
         "target_branch": pr["target_branch"],
         "head_branch": pr["head_branch"],
         "head_sha": pr["head_sha"],
+        "commits": json.loads(pr["commits"]) if pr.get("commits") else None,
+        "commit_count": pr.get("commit_count"),
         "additions": pr["additions"],
         "deletions": pr["deletions"],
         "changed_files": pr["changed_files"],
@@ -348,7 +350,8 @@ def _make_item(bset: branch_set.BranchSet, my_login: str) -> dict:
         "members": [
             {"repo": m["repo"], "repo_short": m["repo_short"], "number": m["number"],
              "url": m["url"], "head_sha": m["head_sha"], "title": m["title"],
-             "closed": m["state"] != "OPEN", "reviewed": bool(m["archived_at"])}
+             "closed": m["state"] != "OPEN", "reviewed": bool(m["archived_at"]),
+             "commits": m["commits"], "commit_count": m["commit_count"]}
             for m in members
         ],
         "title": primary["title"],
