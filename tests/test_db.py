@@ -363,3 +363,20 @@ def test_a_cache_newer_than_the_code_is_refused_not_downgraded(tmp_path):
     with pytest.raises(RuntimeError, match=f"v{db.SCHEMA_VERSION + 1}"):
         db.connect(path)
     assert sqlite3.connect(path).execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION + 1
+
+
+def test_migration_marks_every_queue_row_of_a_v32_cache_for_a_refetch(tmp_path):
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path, isolation_level=None)
+    conn.executescript(db.SCHEMA_SQL.replace("  commits              TEXT,\n", "")
+                       .replace("  commit_count         INTEGER,\n", "")
+                       + "INSERT INTO meta VALUES ('last_queue_refresh', 't');")
+    conn.execute("PRAGMA user_version = 32")
+    _insert(conn, "odoo/odoo#1", reviewed=1, archived="2026-07-01")
+    conn.close()
+
+    conn = db.connect(path)
+    # The commits fill on the next refresh, which runs at once rather than after its hourly gate.
+    [row] = db.list_prs(conn)
+    assert (row["commits"], row["fetched_at"]) == (None, db.UNFETCHED)
+    assert db.get_meta(conn, "last_queue_refresh") is None

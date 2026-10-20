@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import pytest
 
 from pr_dash import db, derive, github, mergebot, render, runbot, runbot_cache, sync, tab
@@ -219,9 +221,12 @@ def test_priming_an_archived_half_keeps_it_archived(w):
 
 def test_a_half_the_migration_left_unfetched_is_primed_once(w):
     insert_pr(w.conn, ENT, fetched_at=db.UNFETCHED)
-    w.gh.add("odoo/enterprise", 2, comments=[{"author": "x", "at": T0, "body": "b"}])
+    w.gh.add("odoo/enterprise", 2, comments=[{"author": "x", "at": T0, "body": "b"}],
+             commits=["[FIX] m: fix"])
     w.gh.add("odoo/odoo", 1, requested=["me"])
     assert w.refresh().primed == 1
+    assert (w.row(ENT)["commits"], w.row(ENT)["commit_count"]) == (
+        '[{"sha": "00000000", "headline": "[FIX] m: fix", "body": ""}]', 1)
     assert w.refresh().primed == 0
 
 
@@ -831,3 +836,52 @@ def test_get_runbot_serves_a_branch_set_and_a_bundle(w):
                                 runbot.REQUESTS_PER_DAY)
     deferred = get("master-l10n_pe")
     assert (deferred["error"], deferred["requests"], len(deferred["batches"])) == ("deferred", 0, 1)
+
+
+def test_get_pr_carries_each_halfs_commits_and_its_runbot_batch_tally(w, monkeypatch):
+    from pr_dash import mcp_server
+
+    w.gh.add("odoo/odoo", 1, requested=["me"], commits=[f"[FIX] m: step {i}" for i in range(21)])
+    ent = w.gh.add("odoo/enterprise", 2, requested=["me"],
+                   commits=["[FIX] m: fix\n\nWhy it broke.", "fixup! [FIX] m: fix"])
+    ent.checks["ci/runbot"] = "FAILURE"
+    ent.check_urls["ci/runbot"] = "https://runbot.odoo.com/runbot/batch/2799890/build/1"
+    builds = _seed_bundles(w.runbot)
+    red = builds[2799890, "Enterprise Tests"]["id"]
+    w.runbot.rows["runbot.build"] += [
+        {"id": 9001, "parent_id": [red, ""], "trigger_id": [0, "Enterprise Tests"],
+         "description": "Test at install", "local_state": "done", "local_result": "ok"},
+        _red(9002) | {"parent_id": [red, ""], "description": "Test post install",
+                      "log_list": "test_only", "host": "h", "dest": "d"}]
+    w.refresh()
+    monkeypatch.setattr(mcp_server, "_cfg", w.cfg)
+    monkeypatch.setattr(runbot, "UrllibHttp", lambda: w.runbot)
+    monkeypatch.setenv("RUNBOT_SESSION_ID", "sid")
+
+    odoo_half, ent_half = mcp_server.get_pr("enterprise#2")["members"]
+    # Twenty commits of the 21, oldest first, with the fixup that needs squashing listed.
+    assert (odoo_half["commit_count"], [c["headline"] for c in odoo_half["commits"]]) == (
+        21, [f"[FIX] m: step {i}" for i in range(20)])
+    assert [(c["headline"], c["body"]) for c in ent_half["commits"]] == [
+        ("[FIX] m: fix", "Why it broke."), ("fixup! [FIX] m: fix", "")]
+    assert odoo_half["runbot"] == {"error": "no runbot check on the PR's head"}
+    # One slot read and one tree read, the failing child named without reading its log.
+    assert w.runbot.calls == ["rpc runbot.batch.slot", "rpc runbot.build"]
+    tally = {t["name"]: t for t in ent_half["runbot"]["triggers"]}
+    assert (len(tally), tally["Enterprise Tests"]["result"], tally["Enterprise Tests"]["children"],
+            tally["Enterprise Tests"]["failed"]) == (16, "red", "1/2 sub-builds ok",
+                                                     ["Test post install"])
+    mcp_server.get_pr("enterprise#2")
+    assert len(w.runbot.calls) == 2
+
+    # Unread, a batch the cap or a missing cookie keeps from runbot is an explicit error.
+    def read(session):
+        return runbot_cache.batch_runbot(
+            w.conn, "https://runbot.odoo.com/runbot/batch/2795085/build/1", timedelta(minutes=15),
+            http=w.runbot, find_session=lambda: session, clock=w.clock)
+
+    assert read("") == {"error": "runbot session expired: log in to runbot.odoo.com in Firefox"}
+    for _ in range(runbot.REQUESTS_PER_HOUR):
+        db.claim_runbot_request(w.conn, w.clock(), runbot.REQUESTS_PER_HOUR,
+                                runbot.REQUESTS_PER_DAY)
+    assert read("sid") == {"error": "runbot cap of 30/hour or 150/day reached"}

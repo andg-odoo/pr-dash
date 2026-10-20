@@ -104,6 +104,7 @@ class FakePR:
     :param checks: CI context name -> state, the rollup state derived from them
     :param check_urls: CI context name -> target URL, for the checks that have one
     :param cross_refs: (repo, number, author) of the PRs cross-referencing this one
+    :param commits: commit messages oldest first, the headline then a blank line and the body
     """
     repo: str
     number: int
@@ -131,6 +132,7 @@ class FakePR:
     comments: list[dict] = field(default_factory=list)
     threads: list[dict] = field(default_factory=list)
     cross_refs: list[tuple[str, int, str]] = field(default_factory=list)
+    commits: list[str] = field(default_factory=list)
     subscribed: bool = False
 
     @property
@@ -208,6 +210,11 @@ def pr_node(pr: FakePR, view: str = "queue", **over) -> dict:
         "commits": {"nodes": [{"commit": {
             "oid": pr.head_sha, "committedDate": pr.pushed_at,
             "statusCheckRollup": _rollup(pr.checks, pr.check_urls)}}]},
+        "commitLog": _page([
+            {"commit": {"oid": f"{i:040x}", "messageHeadline": msg.partition("\n\n")[0],
+                        "messageBody": msg.partition("\n\n")[2]}}
+            for i, msg in enumerate(pr.commits)
+        ]),
         "timelineItems": {"nodes": timeline},
         "files": _page([{"path": path} for path in pr.files]),
         "crossReferences": {"nodes": [

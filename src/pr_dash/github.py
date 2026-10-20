@@ -118,6 +118,10 @@ fragment PRFields on PullRequest {
     nodes { author { login } state commit { oid } }
   }
   """ + _connections(_PAGES, 30, 30) + """
+  commitLog: commits(first: 20) {
+    totalCount
+    nodes { commit { oid messageHeadline messageBody } }
+  }
   commits(last: 1) {
     nodes {
       commit {

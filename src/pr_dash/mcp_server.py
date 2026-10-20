@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import threading
+from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -294,6 +295,9 @@ def get_pr(ref: str, fresh: bool = False) -> dict:
     my_pending_review is true when you have an unsent review draft (get_comments
     shows its body). Output stays slim - no comment bodies here.
 
+    Each review-queue member carries `commits` (oldest first, at most 20 of `commit_count`) and
+    `runbot`, its latest runbot batch's trigger builds with their sub-build tally, or {error}.
+
     A ref naming no review-queue PR but one of your Authored PRs returns its
     Branch set instead, as get_mine does but without the discussion.
 
@@ -306,6 +310,8 @@ def get_pr(ref: str, fresh: bool = False) -> dict:
         stale = _fresh(row["id"] if view is tab.QUEUE else row["members"][0]["id"])
         view, row = tab.first(cfg, ref, tab.QUEUE, tab.MINE)
     out = {**view.detail(cfg, row), **stale}
+    if view is tab.QUEUE:
+        out["members"] = _review_members(cfg, out["members"])
     if view is tab.MINE:
         out["members"] = [
             {**{k: v for k, v in m.items() if k != "discussion"},
@@ -313,6 +319,22 @@ def get_pr(ref: str, fresh: bool = False) -> dict:
             for m in out["members"]
         ]
     return out
+
+
+def _review_members(cfg: config.Config, members: list[dict]) -> list[dict]:
+    """Each Review queue member with its stored commits and its runbot batch, fetched when stale."""
+    staleness = timedelta(minutes=cfg.thresholds.mine_staleness_minutes)
+    conn = db.connect(cfg.db_path)
+    try:
+        out = []
+        for m in members:
+            row = db.get_cached_pr(conn, f"{m['repo']}#{m['number']}")
+            out.append({**m, "commits": row["commits"] and json.loads(row["commits"]),
+                        "commit_count": row["commit_count"],
+                        "runbot": runbot_cache.batch_runbot(conn, row["runbot_url"], staleness)})
+        return out
+    finally:
+        conn.close()
 
 
 @mcp.tool()

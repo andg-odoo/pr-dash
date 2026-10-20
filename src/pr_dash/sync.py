@@ -932,6 +932,8 @@ class Sync:
             "archived_at": None,
             "state": node.get("state") or "OPEN",
             "my_pending_review": int(derive.has_pending_draft(node, login)),
+            "commits": json.dumps(derive.commit_log(node)),
+            "commit_count": (node.get("commitLog") or {}).get("totalCount"),
             "fetched_at": self._stamp(),
         }
         return pr_row, modules, reviewers, stream

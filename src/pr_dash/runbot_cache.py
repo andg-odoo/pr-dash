@@ -1,4 +1,4 @@
-"""Snapshots of runbot builds and bundles, shared by the refresh and get_runbot."""
+"""Snapshots of runbot builds, batches and bundles, shared by the refresh, get_runbot and get_pr."""
 
 from __future__ import annotations
 
@@ -221,3 +221,45 @@ def _bundle_payload(conn, name: str, snap: dict | None, requests: int,
     return {"ref": name, "requests": requests, "error": error,
             "session_expired": db.get_meta(conn, "runbot_session_expired") is not None,
             "batches": batches}
+
+
+def batch_runbot(conn, runbot_url: str | None, staleness: timedelta, *,
+                 http: runbot.Http | None = None,
+                 find_session: Callable[[], str] = runbot.find_session_id,
+                 clock: Callable[[], datetime] = lambda: datetime.now(UTC)) -> dict:
+    """The trigger tally of the batch a Review queue PR's runbot check names, else an `error`."""
+    ids = runbot.parse_check_url(runbot_url or "")
+    if ids is None:
+        return {"error": "no runbot check on the PR's head"}
+    subject = f"batch:{ids[0]}"
+    snap = db.get_runbot_snapshots(conn).get(subject)
+    if snap is None or derive.parse_iso(snap["fetched_at"]) <= clock() - staleness:
+        client = _runbot_client(conn, http or runbot.UrllibHttp(), _session(conn, find_session),
+                                clock)
+        if client is None:
+            return {"error": "runbot session expired: log in to runbot.odoo.com in Firefox"}
+        try:
+            triggers = client.batch(ids[0])
+        except runbot.SessionExpired as e:
+            db.set_meta(conn, "runbot_session_expired", _digest(client.session_id))
+            return {"error": str(e)}
+        except Exception as e:
+            log.exception("runbot read of %s failed", subject)
+            return {"error": str(e)}
+        db.delete_meta(conn, "runbot_session_expired")
+        snap = {"fetched_at": clock().isoformat(timespec="seconds"),
+                "triggers": [asdict(t) for t in triggers]}
+        # No refresh tick reads a batch, get_pr refetches it once the snapshot is stale.
+        db.upsert_runbot_snapshot(conn, subject, "", snap["fetched_at"], snap["triggers"], None,
+                                  retry=False)
+    return {"batch_id": ids[0], "fetched_at": snap["fetched_at"],
+            "triggers": [_tally(t) for t in snap["triggers"]]}
+
+
+def _tally(trigger: dict) -> dict:
+    """One trigger build as runbot_status.py batch prints it, with its failing builds named."""
+    kids = trigger["children"]
+    summary = f"{kids['ok']}/{kids['done'] + kids['testing']} sub-builds ok"
+    return {"name": trigger["name"], "url": trigger["url"], "result": trigger["verdict"],
+            "children": summary + (f", {kids['testing']} testing" if kids["testing"] else ""),
+            "failed": list(dict.fromkeys(f["build_name"] for f in trigger["failures"]))}

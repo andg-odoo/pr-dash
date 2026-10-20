@@ -310,6 +310,16 @@ class Runbot:
                     t.previous = verdict
         return BundleBatch(rows[0]["name"], batches[0], key, triggers)
 
+    def batch(self, batch_id: int) -> list[Trigger]:
+        """Read the slot builds of batch `batch_id` and their trees, reading no failing log."""
+        slots = self.search_read(
+            "runbot.batch.slot", [("batch_id", "=", batch_id), ("active", "=", True)], ["build_id"],
+            limit=1000)
+        roots = [s["build_id"][0] for s in slots if s["build_id"]]
+        if not roots:
+            return []
+        return [self._trigger(root, tree, {}, log_budget=0) for root, tree in self._trees(roots)]
+
     def _trees(self, build_ids: list[int]) -> list[tuple[dict, list[dict]]]:
         """Read `build_ids` with their descendants and linked builds, as (root, tree) pairs."""
         by_id = {r["id"]: r for r in self._read_tree(build_ids)}
@@ -346,10 +356,11 @@ class Runbot:
             log.info("retrying without build_time: %s", e)
             return self.search_read("runbot.build", domain, _TREE_FIELDS, limit=_TREE_LIMIT)
 
-    def _trigger(self, root: dict, tree: list[dict], known: dict[int, list[dict]]) -> Trigger:
+    def _trigger(self, root: dict, tree: list[dict], known: dict[int, list[dict]], *,
+                 log_budget: int = FAILING_LOGS_PER_TREE) -> Trigger:
         kids = [b for b in tree if b is not root]
         done = [b for b in kids if b["local_state"] == "done"]
-        failures, settled = self._tree_failures(tree, known)
+        failures, settled = self._tree_failures(tree, known, log_budget)
         verdict = _verdict(tree)
         # runbot's own aggregate wins when the tree read missed the failing build.
         if root.get("global_result") in _FAILED and verdict != "red":
@@ -373,7 +384,7 @@ class Runbot:
             settled=settled,
         )
 
-    def _tree_failures(self, tree: list[dict], known: dict[int, list[dict]],
+    def _tree_failures(self, tree: list[dict], known: dict[int, list[dict]], log_budget: int,
                        ) -> tuple[list[dict], list[int]]:
         """Return the tree's failures and the failing builds settled, done and fully read."""
         failures, settled, logged = [], [], 0
@@ -387,7 +398,7 @@ class Runbot:
                 continue
             if build["local_result"] == "ko" and build["log_list"]:
                 logged += 1
-                if logged > FAILING_LOGS_PER_TREE:
+                if logged > log_budget:
                     failures.append({"log": "not fetched", **_where(build)})
                     continue
             found = self._failures(build)

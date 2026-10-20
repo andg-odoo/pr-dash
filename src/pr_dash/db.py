@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Iterator
 
 
-SCHEMA_VERSION = 32
+SCHEMA_VERSION = 33
 # A fetched_at no fetch ever wrote, so the row is fetched in full, its Discussion with it.
 UNFETCHED = "1970-01-01T00:00:00+00:00"
 
@@ -253,6 +253,8 @@ CREATE TABLE pr (
   ping_snippet         TEXT,
   push_at              TEXT,
   push_sha             TEXT,
+  commits              TEXT,
+  commit_count         INTEGER,
   fetched_at           TEXT NOT NULL
 );
 
@@ -619,6 +621,14 @@ def _migrate(conn: sqlite3.Connection, db_path: Path) -> None:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(mine)").fetchall()}
         if "previous_checks" not in cols:
             conn.execute("ALTER TABLE mine ADD COLUMN previous_checks TEXT NOT NULL DEFAULT '[]'")
+    if current < 33:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(pr)").fetchall()}
+        if "commits" not in cols:
+            conn.execute("ALTER TABLE pr ADD COLUMN commits TEXT")
+            conn.execute("ALTER TABLE pr ADD COLUMN commit_count INTEGER")
+        # Queue rows refetch on the next refresh, the hourly gate lifted, to fill their commits.
+        conn.execute("UPDATE pr SET fetched_at = ?", (UNFETCHED,))
+        conn.execute("DELETE FROM meta WHERE key = 'last_queue_refresh'")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 

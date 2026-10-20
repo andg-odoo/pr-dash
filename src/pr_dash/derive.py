@@ -725,6 +725,17 @@ def failing_checks(status_check_rollup: dict | None) -> list[dict]:
     ]
 
 
+def commit_log(node: dict) -> list[dict]:
+    """The PR's commits oldest first, each body cut at 1000 characters to keep get_pr slim."""
+    out = []
+    for n in (node.get("commitLog") or {}).get("nodes") or []:
+        c = n["commit"]
+        body = c["messageBody"]
+        out.append({"sha": c["oid"][:8], "headline": c["messageHeadline"],
+                    "body": body if len(body) <= 1000 else body[:1000].rstrip() + "…"})
+    return out
+
+
 def is_personally_requested(review_requests: list[dict], my_login: str) -> bool:
     for r in review_requests:
         rr = r.get("requestedReviewer") or {}
