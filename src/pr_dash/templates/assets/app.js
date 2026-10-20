@@ -360,6 +360,14 @@
   }
 
   const isDismissed = (kind, row) => isMarked(kind, row.id, row.dismissed_at);
+  // A Repo chip group over the repos of the live rows, busiest first, plus picked ones so they can be unpicked.
+  function repoChips(group, rows, of) {
+    const n = {};
+    for (const r of rows.flatMap(of)) n[r] = (n[r] || 0) + 1;
+    for (const r of filters[group] || []) n[r] ??= 0;
+    const values = Object.keys(n).sort((a, b) => n[b] - n[a] || a.localeCompare(b));
+    return { title: "Repo", values, label: v => v.replace(/^odoo\//, ""), of };
+  }
   // The x mark that dismisses each of a row's `members` as a mark of `kind`.
   function dismissMark(kind, members) {
     return {
@@ -1092,6 +1100,8 @@
       haystack: t => [t.title, t.author, t.target_branch, t.repo, t.repo_short,
                       `${t.repo_short}#${t.number}`, String(t.number)].join(" "),
       chips: {
+        "tracked-repo": repoChips("tracked-repo", TAB_DATA.tracked.filter(t => !isDismissed("dismiss_tracked", t)),
+                                  t => [t.repo]),
         "tracked-state": { title: "Show", chips: [
           { id: "resolved", label: "merged / closed", test: isResolved },
           { id: "moved", label: "moved since last look", test: hasMoved },
@@ -1116,14 +1126,15 @@
       counts(visible) {
         const live = TAB_DATA.tracked.filter(t => !isDismissed("dismiss_tracked", t));
         const gone = TAB_DATA.tracked.length - live.length;
-        const moved = live.filter(hasMoved).length;
+        const focus = live.filter(t => inRepos(this, t));
+        const moved = focus.filter(hasMoved).length;
         return {
           visible: `${visible.length} / ${TAB_DATA.tracked.length}${gone ? `  ·  ${gone} dismissed` : ""}`,
           total: "tracked PRs",
           totalTitle: "A subscribed PR that never notified is missing here until you run `pr-dash track <url>`.",
           look: moved ? `${moved} moved` : "",
           lookTitle: moved ? "Show only tracked PRs that moved since your last visit" : "",
-          tab: live.length,
+          tab: focus.length,
         };
       },
 
@@ -1204,7 +1215,11 @@
         : "No Authored PRs yet. The next refresh lists every open PR you opened.",
       haystack: s => [s.key, s.task || "", ...s.members.flatMap(m => [m.title, m.ref, m.repo, m.target_branch,
                                                                       ...m.fw.map(f => f.ref)])].join(" "),
-      chips: { "mine-state": { title: "Show", chips: [{ id: "show-dismissed", label: "show dismissed" }] } },
+      chips: {
+        "mine-repo": repoChips("mine-repo", TAB_DATA.mine.filter(s => !isMineDismissed(s)),
+                               s => s.members.map(m => m.repo)),
+        "mine-state": { title: "Show", chips: [{ id: "show-dismissed", label: "show dismissed" }] },
+      },
       sorts: {
         band: {
           by: (a, b) => mineRank(a) - mineRank(b)
@@ -1226,7 +1241,8 @@
       clickAdvances: true,
 
       counts() {
-        const n = band => TAB_DATA.mine.filter(s => !isMineDismissed(s) && mineBand(s) === band).length;
+        const n = band => TAB_DATA.mine.filter(s => !isMineDismissed(s) && mineBand(s) === band
+          && inRepos(this, s)).length;
         return {
           visible: `${n("needs")} need you · ${n("open")} open · ${n("done")} done`,
           total: "",
@@ -1319,12 +1335,12 @@
   const viewRow = (d, id) => d.rows.find(r => r.id === id);
 
   // A value group passes on any selected value, a chip list on every active chip with a test.
-  function passesChips(d, r) {
-    return Object.entries(d.chips).every(([g, c]) => {
-      if (c.of) return !filters[g].size || c.of(r).some(v => filters[g].has(v));
-      return c.chips.every(x => !x.test || !filters[g].has(x.id) || x.test(r));
-    });
+  function passesGroup(g, c, r) {
+    if (c.of) return !filters[g].size || c.of(r).some(v => filters[g].has(v));
+    return c.chips.every(x => !x.test || !filters[g].has(x.id) || x.test(r));
   }
+  const passesChips = (d, r) => Object.entries(d.chips).every(([g, c]) => passesGroup(g, c, r));
+  const inRepos = (d, r) => passesGroup(`${d.key}-repo`, d.chips[`${d.key}-repo`], r);
 
   function renderView(d) {
     const shown = id => Object.keys(d.chips).some(g => filters[g].has(id));
