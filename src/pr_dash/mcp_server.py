@@ -203,6 +203,27 @@ def _run_rerender() -> bool:
     return True
 
 
+def _refresh_prs(refs: list[str]) -> str | None:
+    """Run `pr-dash refresh --pr` over `owner/repo#n` refs, returning its output when it failed."""
+    cmd = [sys.executable, "-m", "pr_dash", "refresh", "--no-open", *(f"--pr={r}" for r in refs)]
+    cfg_path = _config_path()
+    if cfg_path is not None:
+        cmd += ["--config", str(cfg_path)]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    except (OSError, subprocess.SubprocessError) as e:
+        return str(e)
+    if proc.returncode == 0:
+        return None
+    return (proc.stdout + proc.stderr).strip()[-1000:] or f"exit status {proc.returncode}"
+
+
+def _fresh(pr_id: str) -> dict:
+    """Refetch `pr_id` and its Branch set, as the warning field to answer with when that failed."""
+    error = _refresh_prs([pr_id])
+    return {"warning": f"Refresh failed, so this answer may be stale: {error}"} if error else {}
+
+
 @mcp.tool()
 def list_prs(status: str = "pending", include_hidden: bool = False) -> dict:
     """List PRs as compact triage rows, in dashboard order (worst bucket / oldest
@@ -255,7 +276,7 @@ def list_prs(status: str = "pending", include_hidden: bool = False) -> dict:
 
 
 @mcp.tool()
-def get_pr(ref: str) -> dict:
+def get_pr(ref: str, fresh: bool = False) -> dict:
     """Full detail for one PR: body, threads, reviewers, ci_failures, ai_reviews,
     task links, companion migration PR, and per-file diff metadata (no
     diff text - use get_diff for that).
@@ -275,10 +296,16 @@ def get_pr(ref: str) -> dict:
 
     A ref naming no review-queue PR but one of your Authored PRs returns its
     Branch set instead, as get_mine does but without the discussion.
+
+    Use fresh=True when activity from the last few minutes matters.
     """
     cfg = _get_cfg()
     view, row = tab.first(cfg, ref, tab.QUEUE, tab.MINE)
-    out = view.detail(cfg, row)
+    stale = {}
+    if fresh:
+        stale = _fresh(row["id"] if view is tab.QUEUE else row["members"][0]["id"])
+        view, row = tab.first(cfg, ref, tab.QUEUE, tab.MINE)
+    out = {**view.detail(cfg, row), **stale}
     if view is tab.MINE:
         out["members"] = [
             {**{k: v for k, v in m.items() if k != "discussion"},
@@ -339,7 +366,7 @@ def list_tracked(state: str = "all", include_dismissed: bool = False) -> dict:
 
 
 @mcp.tool()
-def get_tracked(ref: str) -> dict:
+def get_tracked(ref: str, fresh: bool = False) -> dict:
     """Full detail for one tracked PR: body plus its Discussion tree.
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
@@ -351,9 +378,12 @@ def get_tracked(ref: str) -> dict:
     under the review that opened them. Entries carry author, created_at, body, url,
     is_bot (robodoo, fw-bot, *[bot]) and, for reviews, state (APPROVED /
     CHANGES_REQUESTED / COMMENTED / DISMISSED). A bot review's threads are orphans.
+
+    Use fresh=True when activity from the last few minutes matters.
     """
     cfg = _get_cfg()
-    return tab.TRACKED.detail(cfg, tab.TRACKED.find(cfg, ref))
+    stale = _fresh(tab.TRACKED.find(cfg, ref)["id"]) if fresh else {}
+    return {**tab.TRACKED.detail(cfg, tab.TRACKED.find(cfg, ref)), **stale}
 
 
 @mcp.tool()
@@ -392,7 +422,7 @@ def list_mine(band: str | None = None, include_dismissed: bool = False) -> dict:
 
 
 @mcp.tool()
-def get_mine(ref: str) -> dict:
+def get_mine(ref: str, fresh: bool = False) -> dict:
     """Full detail for the Branch set holding one of your Authored PRs: every
     member with its body and Discussion tree, each Forward-port with its own tree.
 
@@ -400,9 +430,12 @@ def get_mine(ref: str) -> dict:
     naming any member of the set or one of their Forward-ports.
 
     Each discussion has the get_tracked Discussion tree shape.
+
+    Use fresh=True when activity from the last few minutes matters.
     """
     cfg = _get_cfg()
-    return tab.MINE.detail(cfg, tab.MINE.find(cfg, ref))
+    stale = _fresh(tab.MINE.find(cfg, ref)["members"][0]["id"]) if fresh else {}
+    return {**tab.MINE.detail(cfg, tab.MINE.find(cfg, ref)), **stale}
 
 
 @mcp.tool()
@@ -676,18 +709,27 @@ def _make_handler(cfg: config.Config) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
 
         def do_POST(self) -> None:
-            if self.path.split("?", 1)[0] != "/marks":
+            path = self.path.split("?", 1)[0]
+            if path not in ("/marks", "/refresh"):
                 self._send_json(404, {"error": "not found"})
                 return
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length) if length else b"{}"
             try:
                 parsed = json.loads(raw or b"{}")
-                ops = parsed.get("ops") or []
+                items = parsed.get("ops" if path == "/marks" else "refs") or []
             except (ValueError, AttributeError):
                 self._send_json(400, {"error": "invalid body"})
                 return
-            self._send_json(200, {"ok": True, "count": _apply_mark_ops(cfg, ops)})
+            if path == "/marks":
+                self._send_json(200, {"ok": True, "count": _apply_mark_ops(cfg, items)})
+                return
+            if not (items and isinstance(items, list) and all(isinstance(r, str) for r in items)):
+                self._send_json(400, {"error": "refs must be a list of owner/repo#n"})
+                return
+            # The CLI holds the refresh lock and re-renders, so the page only has to reload.
+            error = _refresh_prs(items)
+            self._send_json(502 if error else 200, {"error": error} if error else {"ok": True})
 
     return MarksHandler
 

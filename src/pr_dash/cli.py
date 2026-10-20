@@ -177,7 +177,7 @@ def cli(ctx, no_open, force, offline, config_path, verbose):
     )
     if ctx.invoked_subcommand is not None:
         return
-    ctx.invoke(refresh, no_open=no_open, force=force, offline=offline, cron=False,
+    ctx.invoke(refresh, no_open=no_open, force=force, offline=offline, cron=False, prs=(),
                config_path=config_path)
 
 
@@ -232,10 +232,15 @@ def init(config_path):
               help="Unattended run: log to cron.log, skip if another refresh "
                    "holds the lock, cap AI reviews, and leave the "
                    "since-last-look baseline where the dashboard left it.")
+@click.option("--pr", "prs", multiple=True, metavar="OWNER/REPO#N",
+              help="Refetch only this PR and the rest of its Branch set, after a running refresh.")
 @click.option("--config", "config_path", type=click.Path(path_type=Path))
-def refresh(no_open, force, offline, cron, config_path):
+def refresh(no_open, force, offline, cron, prs, config_path):
     """Refresh cache and render dashboard (default action)."""
     cfg = _load_config_or_exit(config_path)
+    if prs:
+        _refresh_prs(cfg, prs)
+        return
     if cron:
         _setup_cron_logging(cfg)
     with _refresh_lock(cfg, wait=not cron) as held:
@@ -285,6 +290,28 @@ def _refresh(cfg, *, no_open: bool, force: bool, offline: bool, cron: bool) -> N
 
     if not no_open:
         _open_html(cfg.html_path)
+
+
+def _refresh_prs(cfg, prs: tuple[str, ...]) -> None:
+    """Refetch single PRs under the refresh lock and re-render, exiting 1 when one was not."""
+    try:
+        refs = [_parse_pr_ref(ref) for ref in prs]
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    with _refresh_lock(cfg, wait=True):
+        conn = db.connect(cfg.db_path)
+        report = _run_sync(conn, cfg, lambda s: s.refresh_prs(refs))
+        for name, ids in report.refreshed.items():
+            console.print(f"[dim]{name}: {', '.join(ids)}[/dim]")
+        for pr_id in report.unknown:
+            console.print(f"[yellow]{pr_id} is in no tab, so it was not fetched.[/yellow]")
+        for warning in report.warnings:
+            console.print(f"[yellow]{warning}[/yellow]")
+        if report.refreshed:
+            _rerender(conn, cfg)
+    if report.unknown or report.warnings:
+        sys.exit(1)
 
 
 _PR_REF_RE = re.compile(
@@ -341,7 +368,7 @@ def track(refs, config_path, skip_invalid):
     except github.GithubError as e:
         console.print(f"[yellow]Tracked, but could not fetch state yet: {e}[/yellow]")
     else:
-        console.print(f"[dim]{len(added)} new, {fetched} fetched[/dim]")
+        console.print(f"[dim]{len(added)} new, {len(fetched)} fetched[/dim]")
 
 
 @cli.command()

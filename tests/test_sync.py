@@ -483,7 +483,7 @@ def test_tracking_by_hand_fills_rows_at_once_and_outlives_a_github_failure(w):
     w.gh.add("odoo/odoo", 1, title="[FIX] x")
     refs = [("odoo/odoo", 1), ("odoo/odoo", 9)]
     assert w.sync.track(refs) == ["odoo/odoo#1", "odoo/odoo#9"]
-    assert w.sync.fetch_tracked(refs) == 1
+    assert w.sync.fetch_tracked(refs) == ["odoo/odoo#1"]
     assert db.get_tracked(w.conn, "odoo/odoo#1")["title"] == "[FIX] x"
 
     db.set_mark(w.conn, "dismiss_tracked", "odoo/odoo#1", None, T0)
@@ -516,6 +516,37 @@ def test_a_pr_in_two_tabs_shares_one_discussion_swept_once_it_leaves_them_all(w)
         db.remove_tracked(w.conn, pr.id)
     w.refresh()
     assert stored() == [ODOO]
+
+
+def test_refreshing_one_pr_refetches_its_branch_set_in_each_tab_holding_it(w):
+    w.gh.add("odoo/odoo", 1, requested=["me"])
+    w.gh.add("odoo/enterprise", 2, requested=["me"])
+    for repo, number in (("odoo/odoo", 10), ("odoo/upgrade", 20)):
+        w.gh.add(repo, number, author="me", head_branch="master-x-andg")
+    w.gh.add("odoo/odoo", 40, subscribed=True)
+    w.refresh()
+    w.clock.advance(minutes=4)
+    w.gh.review(ENT, "clbr", state="COMMENTED", body="Why here?")
+    w.gh.calls.clear()
+    w.mergebot.reads.clear()
+
+    report = w.sync.refresh_prs([("odoo/odoo", 1), ("odoo/odoo", 10), ("odoo/odoo", 9)])
+    assert (report.refreshed, report.unknown, report.warnings) == (
+        {"queue": [ODOO, ENT], "mine": ["odoo/odoo#10", "odoo/upgrade#20"]}, ["odoo/odoo#9"], [])
+    # No search or sweep, and the unchanged heads keep their cached diffs.
+    assert w.gh.calls == [("nodes", [("odoo/odoo", 1), ("odoo/enterprise", 2)], "queue"),
+                          ("nodes", [("odoo/odoo", 10), ("odoo/upgrade", 20)], "mine")]
+    assert sorted(w.mergebot.reads) == ["odoo/odoo#10", "odoo/upgrade#20"]
+    assert [(c["author"], c["body"]) for c in db.list_discussions(w.conn, "pr")[ENT]] == [
+        ("clbr", "Why here?")]
+
+    # A tab failure or a PR GitHub no longer serves is a warning, the other tabs still refetched.
+    w.gh.fail("nodes", lambda refs, view: view == "tracked")
+    del w.gh.prs[ENT]
+    report = w.sync.refresh_prs([("odoo/odoo", 40), ("odoo/odoo", 1)])
+    assert (report.refreshed, report.warnings) == ({"queue": [ODOO]}, [
+        "GitHub returned no Review queue state for odoo/enterprise#2",
+        "Tracked refresh failed: nodes: HTTP 502"])
 
 
 # --- diffs and the AI pass ---------------------------------------------------

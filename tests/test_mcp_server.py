@@ -173,6 +173,30 @@ def test_marks_listener_applies_ops_and_answers_cors(tmp_path):
         server.shutdown()
 
 
+def test_refresh_route_refetches_the_rows_members_and_reports_a_failure(tmp_path, monkeypatch):
+    from pr_dash import mcp_server
+
+    asked, errors = [], [None, "Tracked refresh failed: nodes: HTTP 502"]
+    monkeypatch.setattr(mcp_server, "_refresh_prs",
+                        lambda refs: asked.append(refs) or errors.pop(0))
+    server = mcp_server.start_marks_listener(_cfg(tmp_path, hidden_sync_port=0))
+    try:
+        def post(body):
+            conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+            conn.request("POST", "/refresh", json.dumps(body), {"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            return resp.status, json.loads(resp.read())
+
+        refs = ["odoo/odoo#1", "odoo/enterprise#2"]
+        assert post({"refs": refs}) == (200, {"ok": True})
+        assert post({"refs": ["odoo/odoo#40"]}) == (
+            502, {"error": "Tracked refresh failed: nodes: HTTP 502"})
+        assert post({"refs": "odoo/odoo#1"})[0] == post({})[0] == 400
+        assert asked == [refs, ["odoo/odoo#40"]]
+    finally:
+        server.shutdown()
+
+
 def test_marks_listener_second_bind_returns_none(tmp_path):
     from pr_dash import mcp_server
 
@@ -643,3 +667,30 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
         assert conn.execute("SELECT COUNT(*) FROM mine_seen").fetchone()[0] == 0
     finally:
         conn.close()
+
+
+def test_a_fresh_read_refetches_through_the_cli_first_and_flags_a_failure(tmp_path, monkeypatch):
+    import subprocess
+
+    from pr_dash import db
+
+    cfg, mcp_server = _seeded_cfg(tmp_path, monkeypatch, lambda conn: db.add_tracked(
+        conn, "odoo/odoo#40", "odoo/odoo", 40, "u", "notif", "t"))
+    runs = []
+
+    def cli(cmd, **kwargs):
+        runs.append(cmd[cmd.index("refresh"):])
+        conn = db.connect(cfg.db_path)
+        db.update_tab_state(conn, "tracked", "odoo/odoo#40", {"title": f"run {len(runs)}"})
+        conn.commit()
+        conn.close()
+        return subprocess.CompletedProcess(cmd, len(runs) - 1, "Tracked refresh failed: x\n", "")
+
+    monkeypatch.setattr(subprocess, "run", cli)
+    assert mcp_server.get_tracked("40")["title"] == ""
+    out = mcp_server.get_tracked("40", fresh=True)
+    assert (runs, out["title"], "warning" in out) == (
+        [["refresh", "--no-open", "--pr=odoo/odoo#40"]], "run 1", False)
+    out = mcp_server.get_tracked("40", fresh=True)
+    assert (out["title"], out["warning"]) == (
+        "run 2", "Refresh failed, so this answer may be stale: Tracked refresh failed: x")

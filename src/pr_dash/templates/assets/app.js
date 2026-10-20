@@ -71,6 +71,27 @@
     flushQueue();
   }
 
+  // A button refetching `ids` from GitHub through the listener, absent when no listener is set.
+  const refreshButton = ids => MARKS_PORT ? `<button class="detail-hide detail-refresh" type="button"
+    title="Refetch from GitHub" data-refs="${escapeHTML(ids.join(" "))}">↻</button>` : "";
+  // The listener re-renders before answering, so a reload shows the refetched rows.
+  function refreshRows(btn) {
+    btn.disabled = true;
+    btn.textContent = "↻ refreshing…";
+    fetch(`http://127.0.0.1:${MARKS_PORT}/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refs: btn.dataset.refs.split(" ") }),
+    }).then(r => r.json().then(body => {
+      if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+      location.reload();
+    })).catch(e => {
+      btn.disabled = false;
+      btn.textContent = "↻ failed";
+      btn.title = `Refresh failed: ${e.message}`;
+    });
+  }
+
   const isHidden = pr => isMarked("hide", pr.id, pr.hidden);
   const setHidden = (pr, on) => setMark("hide", pr.id, on, pr.heads_key);
 
@@ -930,6 +951,7 @@
               </div>
               <button class="detail-hide" type="button"
                       data-key="h">${isHidden(pr) ? "Unhide" : "Hide until next push"}</button>
+              ${refreshButton(pr.members.map(m => `${m.repo}#${m.number}`))}
             </div>
 
             ${mixedNotice}
@@ -1188,6 +1210,7 @@
           <a href="${escapeHTML(t.url)}" target="_blank" rel="noopener">GitHub: ${escapeHTML(t.repo_short)}#${t.number} ↗</a>
           <button class="detail-hide" type="button"
                   data-key="x">${isDismissed("dismiss_tracked", t) ? "Restore" : "Dismiss"}</button>
+          ${refreshButton([t.id])}
         </div>`, tabs: [{ label: "Overview", sections: () => `
         <section class="section">
           <h3>Status</h3>
@@ -1315,6 +1338,7 @@
 
         <div class="detail-links">
           <button class="detail-hide" type="button" data-key="x">${isMineDismissed(s) ? "Restore" : "Dismiss"}</button>
+          ${refreshButton(s.members.map(m => m.id))}
         </div>`, tabs: [{ label: "Overview", sections: () => `
         ${s.actions.length && mineBand(s) !== "done" ? `
         <section class="section">
@@ -1710,6 +1734,8 @@
 
   detailEl.addEventListener("click", (e) => {
     const d = VIEWS[activeTab];
+    const refresh = e.target.closest(".detail-refresh");
+    if (refresh) return refreshRows(refresh);
     const btn = e.target.closest("[data-key]");
     if (btn) mark(d, btn.dataset.key, d.selected, d.clickAdvances);
   });

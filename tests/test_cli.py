@@ -1,5 +1,7 @@
 import fcntl
 import os
+import threading
+import time
 
 import pytest
 from click.testing import CliRunner
@@ -95,6 +97,32 @@ def test_a_github_failure_fails_a_history_command_and_says_to_rerun(gh, run, com
     assert result.exit_code == 1
     assert f"GitHub error: {method}: HTTP 502" in result.output
     assert f"Nothing was stored, run {command} again." in result.output
+
+
+def test_a_pr_refresh_waits_for_a_running_refresh_then_rerenders(tmp_path, gh, run):
+    conn = db.connect(tmp_path / "pr_dash.db")
+    insert_pr(conn, "odoo/odoo#1")
+    conn.close()
+    gh.add("odoo/odoo", 1, title="[FIX] x", updated_at="2026-07-02T00:00:00Z")
+    results = []
+    fd = os.open(tmp_path / "refresh.lock", os.O_CREAT | os.O_RDWR)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        waiter = threading.Thread(
+            target=lambda: results.append(run("refresh", "--pr", "odoo/odoo#1")))
+        waiter.start()
+        time.sleep(0.3)
+        assert gh.calls == []
+    finally:
+        os.close(fd)
+    waiter.join(10)
+    assert results[0].exit_code == 0
+    # Stored under the lock, then rendered.
+    assert "[FIX] x" in (tmp_path / "index.html").read_text()
+
+    result = run("refresh", "--pr", "odoo/odoo#9")
+    assert (result.exit_code, result.output.strip()) == (
+        1, "odoo/odoo#9 is in no tab, so it was not fetched.")
 
 
 def test_track_names_each_pr_and_shows_why_its_state_was_not_fetched(tmp_path, gh, run):

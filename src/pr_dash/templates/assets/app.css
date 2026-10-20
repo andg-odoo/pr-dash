@@ -794,6 +794,10 @@ body {
   border-color: var(--red);
 }
 
+.detail-links .detail-refresh { margin-left: 0; }
+.detail-links .detail-refresh:hover { color: var(--accent); border-color: var(--accent); }
+.detail-links .detail-refresh:disabled { cursor: progress; opacity: 0.6; }
+
 .discord-copy { position: relative; display: inline-flex; }
 
 .discord-btn {

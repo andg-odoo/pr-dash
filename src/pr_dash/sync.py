@@ -44,6 +44,14 @@ class RefreshReport:
 
 
 @dataclass
+class PrRefreshReport:
+    """The ids each tab refetched, the refs no tab holds, and the tab failures."""
+    refreshed: dict[str, list[str]] = field(default_factory=dict)
+    unknown: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
 class ImportReport:
     """What the history import stored and dismissed."""
     closed: int
@@ -227,7 +235,7 @@ class Sync:
         if stale:
             self._phase(f"Refreshing {len(stale)} tracked PRs...")
             try:
-                report.tracked_refreshed = self.fetch_tracked(stale)
+                report.tracked_refreshed = len(self.fetch_tracked(stale))
             except github.GithubError as e:
                 report.warnings.append(f"Tracked PR refresh failed: {e}")
 
@@ -239,8 +247,8 @@ class Sync:
                 self.conn, f"{repo}#{n}", repo, n, f"https://github.com/{repo}/pull/{n}", "manual",
                 now)]
 
-    def fetch_tracked(self, refs: list[tuple[str, int]]) -> int:
-        """Refresh the cached GitHub state of the given Tracked PRs, returning how many."""
+    def fetch_tracked(self, refs: list[tuple[str, int]]) -> list[str]:
+        """Refresh the cached GitHub state of the given Tracked PRs, returning the ids fetched."""
         nodes = self.gh.nodes(refs, "tracked")
         now = self._stamp()
         with db.transaction(self.conn):
@@ -248,7 +256,7 @@ class Sync:
                 row, comments = derive.tracked_row_from_node(node, now)
                 db.update_tab_state(self.conn, "tracked", pr_id, row)
                 db.replace_discussion(self.conn, pr_id, comments)
-        return len(nodes)
+        return list(nodes)
 
     def _refresh_mine(self, report: RefreshReport, *, force: bool) -> None:
         """Refresh the open and the undismissed Authored PRs, and their Mergebot pages."""
@@ -272,11 +280,20 @@ class Sync:
         with db.transaction(conn):
             report.mine_added = self._store_authored(nodes, links, self._stamp())
         report.mine_refreshed = len(nodes)
+        report.mergebot_read = self._refresh_mergebot(db.list_mine(conn))
+        if self.runbot_http is not None:
+            self._refresh_runbot(report)
 
+    def _refresh_mergebot(self, rows: list[dict]) -> int:
+        """Read the Mergebot pages of Authored PR `rows`, then drop the outdated Acknowledgements.
+
+        :return: the number of pages read
+        """
+        conn = self.conn
         stored = db.list_mine_mergebot(conn)
         # A resolved PR's final Mergebot read cannot change, so it is not fetched again.
         unread = [
-            r["id"] for r in db.list_mine(conn)
+            r["id"] for r in rows
             if r["state"] == "OPEN"
             or stored.get(r["id"], {}).get("state") not in ("merged", "closed", "unmanaged")
         ]
@@ -285,11 +302,56 @@ class Sync:
         with db.transaction(conn):
             for pr_id, state in reads.items():
                 db.upsert_mine_mergebot(conn, pr_id, asdict(state), now)
-        report.mergebot_read = len(reads)
         sets, _ = render.build_mine_payload(conn, self.cfg.github_login, now=now)
         db.clear_marks(conn, "ack", [s["key"] for s in sets if not s["acknowledged"]])
-        if self.runbot_http is not None:
-            self._refresh_runbot(report)
+        return len(reads)
+
+    def refresh_prs(self, refs: list[tuple[str, int]]) -> PrRefreshReport:
+        """Refetch the given PRs and the rest of their Branch sets in each tab holding them."""
+        conn, report = self.conn, PrRefreshReport()
+        ids = {f"{repo}#{n}" for repo, n in refs}
+        queue = [m for s in branch_set.group(dict(r) for r in db.list_prs(conn))
+                 if any(m["id"] in ids for m in s.members) for m in s.members]
+        tracked = [r for r in db.list_tracked(conn, include_dismissed=True) if r["id"] in ids]
+        known = db.list_mine(conn, include_dismissed=True)
+        # A Forward-port maps to its Source PR's set, whose Forward-ports are refetched with it.
+        roots = {r["source_id"] or r["id"] for r in known if r["id"] in ids}
+        sources = {m["id"] for s in branch_set.group(r for r in known if not r["source_id"])
+                   if any(m["id"] in roots for m in s.members) for m in s.members}
+        mine = [r for r in known if (r["source_id"] or r["id"]) in sources]
+        report.unknown = sorted(ids - {r["id"] for r in (*queue, *tracked, *mine)})
+
+        def fetch_queue(rows: list[dict]) -> list[str]:
+            nodes = self.gh.nodes(_refs(rows), "queue")
+            # Unforced, an unchanged head keeps its diff and a new review has moved updated_at.
+            self._store_pr_nodes(nodes, rows, force=False)
+            return list(nodes)
+
+        def fetch_mine(rows: list[dict]) -> list[str]:
+            nodes, links = self._fetch_authored(_refs(rows), known, "mine")
+            with db.transaction(conn):
+                self._store_authored(nodes, links, self._stamp())
+            self._refresh_mergebot([r for r in db.list_mine(conn, include_dismissed=True)
+                                    if r["id"] in nodes])
+            return list(nodes)
+
+        for label, name, rows, fetch in (
+            ("Review queue", "queue", queue, fetch_queue),
+            ("Tracked", "tracked", tracked, lambda rows: self.fetch_tracked(_refs(rows))),
+            ("Mine", "mine", mine, fetch_mine),
+        ):
+            if not rows:
+                continue
+            try:
+                report.refreshed[name] = fetch(rows)
+            except github.GithubError as e:
+                report.warnings.append(f"{label} refresh failed: {e}")
+                continue
+            # The by-number fetch drops a PR it cannot read rather than failing its chunk.
+            missing = sorted({r["id"] for r in rows} - set(report.refreshed[name]))
+            if missing:
+                report.warnings.append(f"GitHub returned no {label} state for {', '.join(missing)}")
+        return report
 
     def _refresh_runbot(self, report: RefreshReport) -> None:
         """Snapshot each red runbot build of an open Authored PR, again while it is unfinished."""
@@ -505,13 +567,20 @@ class Sync:
         """
         if not targets:
             return 0
-        by_id = {r["id"]: r for r in targets}
         try:
             nodes = self.gh.nodes(_refs(targets), "queue")
         except github.GithubError as e:
             log.warning("row refresh failed (%s); keeping cached data", e)
             return 0
+        return self._store_pr_nodes(nodes, targets, force=force, kept_ids=kept_ids)
 
+    def _store_pr_nodes(self, nodes: dict[str, dict], targets: list[dict], *, force: bool,
+                        kept_ids: set[str] | None = None) -> int:
+        """Persist the queue nodes fetched for cached `targets`, skipping the unchanged ones.
+
+        :return: the number of rows re-persisted
+        """
+        by_id = {r["id"]: r for r in targets}
         refreshed = 0
         for node in nodes.values():
             pr_id = _node_id(node)
