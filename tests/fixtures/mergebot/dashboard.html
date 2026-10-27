@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1"/>
+            <meta name="color-scheme" content="dark light"/>
+        <title>Odoo</title>
+        <link type="image/x-icon" rel="shortcut icon" href="/web/static/img/favicon.ico"/>
+            <link rel="preload" href="/web/static/src/libs/fontawesome/fonts/fontawesome-webfont.woff2?v=4.7.0" as="font" crossorigin=""/>
+            <link type="text/css" rel="stylesheet" href="/web/assets/1/66972a6/runbot_merge.assets_frontend.min.css"/>
+        <script type="text/javascript" defer="defer" src="/web/assets/1/4afbf71/runbot_merge.assets_frontend.min.js" onerror="__odooAssetError=1"></script>
+        <script id="web.layout.odooscript" type="text/javascript">
+            var odoo = {
+                csrf_token: "b6e67f578931682e0984295c89bfcc66471f13c8o1824679767",
+                debug: "",
+            };
+        </script>
+            <script type="text/javascript">
+                odoo.__session_info__ = {"is_admin": false, "is_system": false, "is_public": true, "is_website_user": true, "user_id": false, "is_frontend": true, "profile_session": null, "profile_collectors": null, "profile_params": null, "show_effect": false, "currencies": {"134": {"symbol": "\u062f.\u0625", "position": "after", "digits": [69, 2]}, "48": {"symbol": "Afs", "position": "after", "digits": [69, 2]}, "123": {"symbol": "L", "position": "after", "digits": [69, 2]}, "51": {"symbol": "\u0564\u0580.", "position": "after", "digits": [69, 2]}, "71": {"symbol": "\u0192", "position": "after", "digits": [69, 2]}, "49": {"symbol": "Kz", "position": "after", "digits": [69, 2]}, "20": {"symbol": "$", "position": "after", "digits": [69, 2]}, "22": {"symbol": "$", "position": "after", "digits": [69, 2]}, "52": {"symbol": "Afl.", "position": "after", "digits": [69, 2]}, "53": {"symbol": "m", "position": "after", "digits": [69, 2]}, "63": {"symbol": "KM", "position": "after", "digits": [69, 2]}, "57": {"symbol": "Bds$", "position": "after", "digits": [69, 2]}, "56": {"symbol": "\u09f3", "position": "after", "digits": [69, 2]}, "27": {"symbol": "\u043b\u0432", "position": "after", "digits": [69, 2]}, "55": {"symbol": "BD", "position": "after", "digits": [69, 2]}, "65": {"symbol": "FBu", "position": "after", "digits": [69, 2]}, "60": {"symbol": "BD$", "position": "after", "digits": [69, 2]}, "114": {"symbol": "$", "position": "after", "digits": [69, 2]}, "62": {"symbol": "Bs.", "position": "after", "digits": [69, 2]}, "7": {"symbol": "R$", "position": "after", "digits": [69, 2]}, "54": {"symbol": "B$", "position": "after", "digits": [69, 2]}, "61": {"symbol": "Nu.", "position": "after", "digits": [69, 2]}, "64": {"symbol": "P", "position": "after", "digits": [69, 2]}, "58": {"symbol": "BR", "position": "after", "digits": [69, 2]}, "59": {"symbol": "BZ$", "position": "after", "digits": [69, 2]}, "5": {"symbol": "$", "position": "after", "digits": [69, 2]}, "69": {"symbol": "Fr", "position": "after", "digits": [69, 2]}, "6": {"symbol": "CHF", "position": "after", "digits": [69, 2]}, "46": {"symbol": "$", "position": "after", "digits": [69, 2]}, "8": {"symbol": "\u00a5", "position": "after", "digits": [69, 2]}, "9": {"symbol": "$", "position": "after", "digits": [69, 2]}, "40": {"symbol": "\u00a2", "position": "after", "digits": [69, 2]}, "70": {"symbol": "$", "position": "after", "digits": [69, 2]}, "172": {"symbol": "$", "position": "after", "digits": [69, 2]}, "72": {"symbol": "\u00a3", "position": "after", "digits": [69, 2]}, "10": {"symbol": "K\u010d", "position": "after", "digits": [69, 2]}, "73": {"symbol": "Fdj", "position": "after", "digits": [69, 2]}, "11": {"symbol": "kr", "position": "after", "digits": [69, 2]}, "74": {"symbol": "RD$", "position": "after", "digits": [69, 2]}, "115": {"symbol": "DZ", "position": "after", "digits": [69, 2]}, "76": {"symbol": "S/.", "position": "after", "digits": [69, 2]}, "77": {"symbol": "E\u00a3", "position": "after", "digits": [69, 2]}, "79": {"symbol": "Nfk", "position": "after", "digits": [69, 2]}, "80": {"symbol": "Br", "position": "after", "digits": [69, 2]}, "1": {"symbol": "\u20ac", "position": "after", "digits": [69, 2]}, "82": {"symbol": "FJ$", "position": "after", "digits": [69, 2]}, "81": {"symbol": "\u00a3", "position": "after", "digits": [69, 2]}, "151": {"symbol": "\u00a3", "position": "before", "digits": [69, 2]}, "83": {"symbol": "\u10da", "position": "after", "digits": [69, 2]}, "116": {"symbol": "GH\u00a2", "position": "after", "digits": [69, 2]}, "84": {"symbol": "\u00a3", "position": "after", "digits": [69, 2]}, "117": {"symbol": "D", "position": "after", "digits": [69, 2]}, "86": {"symbol": "FG", "position": "after", "digits": [69, 2]}, "176": {"symbol": "Q", "position": "after", "digits": [69, 2]}, "87": {"symbol": "\u00a4", "position": "after", "digits": [69, 2]}, "88": {"symbol": "$", "position": "after", "digits": [69, 2]}, "25": {"symbol": "$", "position": "after", "digits": [69, 2]}, "45": {"symbol": "L", "position": "after", "digits": [69, 2]}, "30": {"symbol": "kn", "position": "after", "digits": [69, 2]}, "89": {"symbol": "G", "position": "after", "digits": [69, 2]}, "12": {"symbol": "Ft", "position": "after", "digits": [69, 2]}, "13": {"symbol": "Rp", "position": "after", "digits": [69, 2]}, "93": {"symbol": "\u20aa", "position": "after", "digits": [69, 2]}, "21": {"symbol": "\u20b9", "position": "after", "digits": [69, 2]}, "92": {"symbol": " \u0639.\u062f", "position": "after", "digits": [69, 2]}, "91": {"symbol": "\ufdfc", "position": "after", "digits": [69, 2]}, "90": {"symbol": "kr", "position": "after", "digits": [69, 2]}, "159": {"symbol": "\u20a4", "position": "after", "digits": [69, 2]}, "94": {"symbol": "$", "position": "after", "digits": [69, 2]}, "95": {"symbol": " \u062f.\u0627", "position": "after", "digits": [69, 2]}, "26": {"symbol": "\u00a5", "position": "after", "digits": [69, 2]}, "97": {"symbol": "KSh", "position": "after", "digits": [69, 2]}, "99": {"symbol": "\u043b\u0432", "position": "after", "digits": [69, 2]}, "66": {"symbol": "\u17db", "position": "after", "digits": [69, 2]}, "68": {"symbol": "CF", "position": "after", "digits": [69, 2]}, "126": {"symbol": "\u20a9", "position": "after", "digits": [69, 2]}, "33": {"symbol": "\u20a9", "position": "after", "digits": [69, 2]}, "98": {"symbol": " \u062f.\u0643", "position": "after", "digits": [69, 2]}, "67": {"symbol": "$", "position": "after", "digits": [69, 2]}, "96": {"symbol": "\u043b\u0432", "position": "after", "digits": [69, 2]}, "100": {"symbol": "\u20ad", "position": "after", "digits": [69, 2]}, "101": {"symbol": "\u0644.\u0644", "position": "after", "digits": [69, 2]}, "149": {"symbol": "Rs", "position": "after", "digits": [69, 2]}, "103": {"symbol": "L$", "position": "after", "digits": [69, 2]}, "102": {"symbol": "L", "position": "after", "digits": [69, 2]}, "28": {"symbol": "Lt", "position": "after", "digits": [69, 2]}, "14": {"symbol": "Ls", "position": "after", "digits": [69, 2]}, "104": {"symbol": " \u0644.\u062f", "position": "after", "digits": [69, 2]}, "113": {"symbol": " \u062f.\u0645", "position": "after", "digits": [69, 2]}, "111": {"symbol": "L", "position": "after", "digits": [69, 2]}, "107": {"symbol": "Ar", "position": "after", "digits": [69, 2]}, "106": {"symbol": "\u0434\u0435\u043d", "position": "after", "digits": [69, 2]}, "120": {"symbol": "K", "position": "after", "digits": [69, 2]}, "112": {"symbol": "\u20ae", "position": "after", "digits": [69, 2]}, "105": {"symbol": "MOP$", "position": "after", "digits": [69, 2]}, "110": {"symbol": "UM", "position": "after", "digits": [69, 2]}, "41": {"symbol": "Rs", "position": "after", "digits": [69, 2]}, "109": {"symbol": ".\u0783", "position": "after", "digits": [69, 2]}, "108": {"symbol": "MK", "position": "after", "digits": [69, 2]}, "34": {"symbol": "$", "position": "after", "digits": [69, 2]}, "35": {"symbol": "RM", "position": "after", "digits": [69, 2]}, "119": {"symbol": "MT", "position": "after", "digits": [69, 2]}, "121": {"symbol": "$", "position": "after", "digits": [69, 2]}, "125": {"symbol": "\u20a6", "position": "after", "digits": [69, 2]}, "124": {"symbol": "C$", "position": "after", "digits": [69, 2]}, "15": {"symbol": "kr", "position": "after", "digits": [69, 2]}, "122": {"symbol": "\u20a8", "position": "after", "digits": [69, 2]}, "36": {"symbol": "$", "position": "after", "digits": [69, 2]}, "171": {"symbol": "\u0631.\u0639.", "position": "after", "digits": [69, 2]}, "17": {"symbol": "B/.", "position": "after", "digits": [69, 2]}, "167": {"symbol": "S/.", "position": "after", "digits": [69, 2]}, "169": {"symbol": "K", "position": "after", "digits": [69, 2]}, "37": {"symbol": "Php", "position": "after", "digits": [69, 2]}, "170": {"symbol": "Rs.", "position": "after", "digits": [69, 2]}, "18": {"symbol": "z\u0142", "position": "after", "digits": [69, 2]}, "166": {"symbol": "z\u0142", "position": "after", "digits": [69, 2]}, "168": {"symbol": "\u20b2", "position": "after", "digits": [69, 2]}, "165": {"symbol": "QR", "position": "after", "digits": [69, 2]}, "164": {"symbol": "L", "position": "after", "digits": [69, 2]}, "29": {"symbol": "lei", "position": "after", "digits": [69, 2]}, "156": {"symbol": "din.", "position": "after", "digits": [69, 2]}, "31": {"symbol": "\u0440\u0443\u0431", "position": "after", "digits": [69, 2]}, "162": {"symbol": "RF", "position": "after", "digits": [69, 2]}, "157": {"symbol": "SR", "position": "after", "digits": [69, 2]}, "153": {"symbol": "SI$", "position": "after", "digits": [69, 2]}, "155": {"symbol": "SR", "position": "after", "digits": [69, 2]}, "148": {"symbol": "\u00a3Sd", "position": "after", "digits": [69, 2]}, "19": {"symbol": "kr", "position": "after", "digits": [69, 2]}, "38": {"symbol": "$", "position": "after", "digits": [69, 2]}, "161": {"symbol": "\u00a3", "position": "after", "digits": [69, 2]}, "174": {"symbol": "\u00a4", "position": "after", "digits": [69, 2]}, "173": {"symbol": "Sk", "position": "after", "digits": [69, 2]}, "154": {"symbol": "Le", "position": "after", "digits": [69, 2]}, "152": {"symbol": "Sh.", "position": "after", "digits": [69, 2]}, "147": {"symbol": "$", "position": "after", "digits": [69, 2]}, "150": {"symbol": "\u00a3", "position": "after", "digits": [69, 2]}, "158": {"symbol": "Db", "position": "after", "digits": [69, 2]}, "78": {"symbol": "\u00a2", "position": "after", "digits": [69, 2]}, "145": {"symbol": "\u00a3", "position": "after", "digits": [69, 2]}, "146": {"symbol": "E", "position": "after", "digits": [69, 2]}, "141": {"symbol": "\u0e3f", "position": "after", "digits": [69, 2]}, "143": {"symbol": "\u00a4", "position": "after", "digits": [69, 2]}, "136": {"symbol": "m", "position": "after", "digits": [69, 2]}, "138": {"symbol": "DT", "position": "after", "digits": [69, 2]}, "140": {"symbol": "T$", "position": "after", "digits": [69, 2]}, "75": {"symbol": "\u00a4", "position": "after", "digits": [69, 2]}, "137": {"symbol": "TL", "position": "after", "digits": [69, 2]}, "32": {"symbol": "TL", "position": "after", "digits": [69, 2]}, "139": {"symbol": "$", "position": "after", "digits": [69, 2]}, "144": {"symbol": "NT$", "position": "after", "digits": [69, 2]}, "142": {"symbol": "x/y", "position": "after", "digits": [69, 2]}, "23": {"symbol": "\u20b4", "position": "after", "digits": [69, 2]}, "44": {"symbol": "USh", "position": "after", "digits": [69, 0]}, "3": {"symbol": "$", "position": "before", "digits": [69, 2]}, "133": {"symbol": "$U", "position": "after", "digits": [69, 2]}, "47": {"symbol": "$", "position": "after", "digits": [69, 2]}, "132": {"symbol": "\u043b\u0432", "position": "after", "digits": [69, 2]}, "130": {"symbol": "Bs", "position": "after", "digits": [69, 2]}, "4": {"symbol": "Bs.F", "position": "after", "digits": [69, 4]}, "24": {"symbol": "\u20ab", "position": "after", "digits": [69, 2]}, "131": {"symbol": "VT", "position": "after", "digits": [69, 2]}, "160": {"symbol": "WS$", "position": "after", "digits": [69, 2]}, "43": {"symbol": "FCFA", "position": "after", "digits": [69, 0]}, "50": {"symbol": "$", "position": "after", "digits": [69, 2]}, "42": {"symbol": "CFA", "position": "after", "digits": [69, 0]}, "16": {"symbol": "XPF", "position": "after", "digits": [69, 0]}, "129": {"symbol": "\ufdfc", "position": "after", "digits": [69, 2]}, "175": {"symbol": "\u0434\u0438\u043d.", "position": "after", "digits": [69, 2]}, "39": {"symbol": "R", "position": "after", "digits": [69, 2]}, "128": {"symbol": "ZK", "position": "after", "digits": [69, 2]}, "118": {"symbol": "\u01b5", "position": "after", "digits": [69, 2]}, "127": {"symbol": "Z$", "position": "after", "digits": [69, 2]}}, "bundle_params": {"lang": "en_US", "website_id": 1}, "websocket_worker_version": "17.0-3", "translationURL": "/website/translations", "cache_hashes": {"translations": "b6e649fbeda0d3d456429d92895c4e02a388d176"}, "geoip_country_code": "US", "geoip_phone_code": 1, "lang_url_code": "en_US"};
+                if (!/(^|;\s)tz=/.test(document.cookie)) {
+                    const userTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                    document.cookie = `tz=${userTZ}; path=/`;
+                }
+            </script>
+    </head>
+    <body>
+        <header id="top" data-anchor="true">
+                <nav>
+                    <ul id="top_menu" class="top_menu" role="menu">
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/page/homepage" class="nav-link ">
+            <span>Home</span>
+        </a>
+    </li>
+                    </ul>
+                    <ul class="extras">
+            <li class=" o_no_autohide_item">
+                <a href="/web/login" class="">Sign in</a>
+            </li>
+            <li class="theme-toggle">
+                <button class="fa fa-sun-o"></button>
+                <button class="fa fa-moon-o"></button>
+                <button class="fa fa-ban active"></button>
+            </li>
+                    </ul>
+                </nav>
+            </header>
+            <main>
+        <div id="alerts" class="row text-center">
+            <div class="alert alert-light col-md-12 h6 mb-0">
+                <a href="/runbot_merge/changelog">Changelog</a>
+            </div>
+        </div>
+            <nav>
+                <ul>
+                    <li>
+                        <a href="#project-1">
+                            RD
+                        </a>
+                    </li><li>
+                        <a href="#project-2">
+                            DEV
+                        </a>
+                    </li><li>
+                        <a href="#project-5">
+                            Spreadsheet
+                        </a>
+                    </li><li>
+                        <a href="#project-6">
+                            Industry
+                        </a>
+                    </li><li>
+                        <a href="#project-7">
+                            Tutorials
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+            <section id="project-1">
+                <h1>RD</h1>
+                <aside>
+                    key:
+                    <ul>
+                        <li class="bg-success">success (hopefully merged)</li>
+                        <li class="bg-info">ongoing</li>
+                        <li class="bg-danger">failure</li>
+                        <li class="bg-gray-lighter">cancelled</li>
+                    </ul>
+                </aside>
+                <section>
+                    <h2>
+                        <a href="/runbot_merge/134">
+                            20.0
+                        </a>
+                    </h2>
+        <ul class="stagings">
+                <li class="staging bg-info" title="last status at 2026-10-27 22:07:01Z" id="staging-180516">
+                    <ul>
+                        <li class="batch" data-batch-id="583007">
+                            odoo-dev:20.0-be-payroll-fix-2-yti
+        <a href="https://github.com/odoo/enterprise/pull/137219" title="20.0 be payroll fix 2 yti">odoo/enterprise#137219</a>
+                        </li><li class="batch" data-batch-id="581958">
+                            odoo-dev:20.0-pos-center-product-names-rhe
+        <a href="https://github.com/odoo/odoo/pull/297135" title="[FIX] point_of_sale: center product names">odoo/odoo#297135</a>
+                        </li><li class="batch" data-batch-id="575068">
+                            odoo-dev:20.0-stock_barcode_mrp-mandatory-serial-fix-tpma
+        <a href="https://github.com/odoo/odoo/pull/293178" title="[FIX] mrp: do not pick components requiring a scan">odoo/odoo#293178</a>
+        <a href="https://github.com/odoo/enterprise/pull/134474" title="[FIX] stock_barcode_mrp: avoid consuming unscanned mandatory components">odoo/enterprise#134474</a>
+                        </li><li class="batch" data-batch-id="582831">
+                            odoo-dev:20.0-menu-search-plain-text--seb
+        <a href="https://github.com/odoo/odoo/pull/297678" title="[FIX] mail: search messaging menu on the text of messages">odoo/odoo#297678</a>
+                        </li><li class="batch" data-batch-id="583843">
+                            odoo-dev:20.0-pos-BB2-rb-938435-manv
+        <a href="https://github.com/odoo/enterprise/pull/137508" title="[FIX] l10n_be_pos_blackbox: fix rb error 938435">odoo/enterprise#137508</a>
+                        </li><li class="batch" data-batch-id="582067">
+                            odoo-dev:20.0-fix_popover_reopen-pipu
+        <a href="https://github.com/odoo/odoo/pull/297198" title="[FIX] web: keep the handle of a reopened popover">odoo/odoo#297198</a>
+                        </li><li class="batch" data-batch-id="578681">
+                            odoo-dev:20.0-pos-fix-range-attributes-parp
+        <a href="https://github.com/odoo/odoo/pull/295208" title="[FIX] point_of_sale: display range attributes as pills">odoo/odoo#295208</a>
+                        </li><li class="batch" data-batch-id="570115">
+                            odoo-dev:20.0-task-timesheets-portal-fix-mjvi
+        <a href="https://github.com/odoo/odoo/pull/290133" title="[FIX] {hr, sale}_timesheet: make portal_timesheet_ids domain overridable">odoo/odoo#290133</a>
+        <a href="https://github.com/odoo/enterprise/pull/132717" title="[FIX] sale_timesheet_enterprise: use validated domain for `portal_timesheet_ids`">odoo/enterprise#132717</a>
+                        </li><li class="batch" data-batch-id="583340">
+                            odoo-dev:20.0-hr_attendance-fix_break_tests_tz_version-abgad
+        <a href="https://github.com/odoo/odoo/pull/297983" title="[FIX] hr_attendance: pin tz and version start in break tests">odoo/odoo#297983</a>
+                        </li><li class="batch" data-batch-id="583911">
+                            odoo-dev:20.0-l10n-be-hr-payroll-provider-fixes-v6-jugj
+        <a href="https://github.com/odoo/enterprise/pull/137540" title="[FIX] l10n_be_hr_payroll: no withholding tax on students&amp;#39; sick pay">odoo/enterprise#137540</a>
+                        </li><li class="batch" data-batch-id="523330">
+                            odoo-dev:master-timesheet_grid-search-bar-abbhi
+        <a href="https://github.com/odoo/enterprise/pull/116173" title="[IMP] timesheet_grid, helpdesk_timesheet: add search bar in Assistant">odoo/enterprise#116173</a>
+                        </li><li class="batch" data-batch-id="561533">
+                            odoo-dev:master-point_of_sale-add-number-address-mail-lort
+        <a href="https://github.com/odoo/odoo/pull/285067" title="[IMP] point_of_sale, pos_self_order: prep. ticket address">odoo/odoo#285067</a>
+        <a href="https://github.com/odoo/enterprise/pull/129825" title="[IMP] pos_urban_piper: `customer` in expected order change">odoo/enterprise#129825</a>
+                        </li><li class="batch" data-batch-id="583316">
+                            odoo-dev:20.0-attendance-time-off-yti
+        <a href="https://github.com/odoo/odoo/pull/297963" title="20.0 attendance time off yti">odoo/odoo#297963</a>
+        <a href="https://github.com/odoo/enterprise/pull/137351" title="20.0 attendance time off yti">odoo/enterprise#137351</a>
+                        </li><li class="batch" data-batch-id="575778">
+                            odoo-dev:20.0-fix-website-color-filter-map-qle
+        <a href="https://github.com/odoo/odoo/pull/293619" title="[FIX] website: improve map color filter rendering">odoo/odoo#293619</a>
+                        </li><li class="batch" data-batch-id="583358">
+                            odoo-dev:20.0-be-schedules-leaves-yti
+        <a href="https://github.com/odoo/odoo/pull/297996" title="20.0 be schedules leaves yti">odoo/odoo#297996</a>
+        <a href="https://github.com/odoo/enterprise/pull/137358" title="20.0 be schedules leaves yti">odoo/enterprise#137358</a>
+                        </li><li class="batch" data-batch-id="583162">
+                            odoo-dev:20.0-sale-fix-pay-links-vfe
+        <a href="https://github.com/odoo/odoo/pull/297873" title="[FIX] sale: allow payment amount bigger than SO amount">odoo/odoo#297873</a>
+                        </li><li class="batch" data-batch-id="583179">
+                            odoo-dev:20.0-19.0-task-6628182-lpe-583090-fw
+        <a href="https://github.com/odoo/enterprise/pull/137291" title="[FIX] web_studio: KeyedXMLDiffer: add comment">odoo/enterprise#137291</a>
+                        </li><li class="batch" data-batch-id="582656">
+                            odoo-dev:20.0-19.0-opw-6418124-reloadUrl_history_conflict-zavan-582214-fw
+        <a href="https://github.com/odoo/odoo/pull/297561" title="[FIX] website{,_event}: fix submenu button">odoo/odoo#297561</a>
+                        </li><li class="batch" data-batch-id="583594">
+                            odoo-dev:20.0-17.0-opw-6164721-jacw-583564-fw
+        <a href="https://github.com/odoo/enterprise/pull/137419" title="[FIX] l10n_mx_edi_sale: Advance payment descriptions">odoo/enterprise#137419</a>
+                        </li><li class="batch" data-batch-id="583782">
+                            odoo-dev:20.0-saas-19.3-pos-fix-image-rendering-rhe-578721-fw
+        <a href="https://github.com/odoo/odoo/pull/298288" title="[FIX] point_of_sale: improve image rendering in POS">odoo/odoo#298288</a>
+                        </li><li class="batch" data-batch-id="583516">
+                            odoo-dev:20.0-18.0-opw-6630666-alwhi-583428-fw
+        <a href="https://github.com/odoo/odoo/pull/298107" title="[FIX] product: making products on SO lines keeps user defined default UoM">odoo/odoo#298107</a>
+                        </li><li class="batch" data-batch-id="583742">
+                            odoo-dev:20.0-19.0-opw-6593167-pos_so_full_downpayment-roen-582634-fw
+        <a href="https://github.com/odoo/odoo/pull/298261" title="[FIX] pos_sale: show fully downpaid SO in PoS">odoo/odoo#298261</a>
+                        </li><li class="batch" data-batch-id="583204">
+                            odoo-dev:20.0-19.0-account_reports-imp-tax-return-email-reminder-unka-583202-fw
+        <a href="https://github.com/odoo/odoo/pull/297897" title="[IMP] account: improved help for incoming_einvoice_notification_email">odoo/odoo#297897</a>
+        <a href="https://github.com/odoo/enterprise/pull/137303" title="[IMP] account_reports: improved tax return deadline reminder">odoo/enterprise#137303</a>
+                        </li><li class="batch" data-batch-id="583783">
+                            odoo-dev:20.0-saas-18.4-consider-rewrite-source-text-hash-583554-fw
+        <a href="https://github.com/odoo/enterprise/pull/137480" title="[FIX] ai: allow AI rewrite on text containing source links">odoo/enterprise#137480</a>
+                        </li><li class="batch" data-batch-id="583973">
+                            odoo-dev:20.0-18.0-master-fix-6628945-vmac-582951-fw
+        <a href="https://github.com/odoo/odoo/pull/298394" title="[FIX] account_peppol: don&amp;#39;t submit hidden Peppol portal fields">odoo/odoo#298394</a>
+                        </li><li class="batch" data-batch-id="583454">
+                            odoo-dev:20.0-saas-19.3-pos-opw-6671273-pebr-583321-fw
+        <a href="https://github.com/odoo/odoo/pull/298062" title="[FIX] point_of_sale: skip archived attribute values">odoo/odoo#298062</a>
+                        </li><li class="batch" data-batch-id="580986">
+                            odoo-dev:20.0-saas-19.2-pos-opw-6662993-pebr-580884-fw
+        <a href="https://github.com/odoo/odoo/pull/296508" title="[FIX] point_of_sale: do not load archived products on search">odoo/odoo#296508</a>
+                        </li><li class="batch" data-batch-id="583855">
+                            odoo-dev:20.0-saas-19.3-live-map-focus-user-markers-auber-582730-fw
+        <a href="https://github.com/odoo/enterprise/pull/137514" title="[FIX] planning_field_service: live map should also focus on located resources">odoo/enterprise#137514</a>
+                        </li><li class="batch" data-batch-id="583854">
+                            odoo-dev:20.0-saas-19.3-opw-6649183-l10n_co_pos_dian_cert-roen-582373-fw
+        <a href="https://github.com/odoo/enterprise/pull/137513" title="[FIX] l10n_co_edi_pos: only use DIAN for companies with a certificate">odoo/enterprise#137513</a>
+                        </li><li class="batch" data-batch-id="584041">
+                            odoo-dev:20.0-18.0-l10n_cl_edi_stock-delivery-guide-update-5402211-andg-584040-fw
+        <a href="https://github.com/odoo/enterprise/pull/137594" title="[ADD] l10n_cl_edi_stock_reform: Res. 154 transport data">odoo/enterprise#137594</a>
+                        </li><li class="batch" data-batch-id="583781">
+                            odoo-dev:20.0-18.0-l10n_fr_pdp-import-partner-by-siret-loug-582784-fw
+        <a href="https://github.com/odoo/odoo/pull/298287" title="[FIX] l10n_fr_pdp: retrieve the partner by SIRET">odoo/odoo#298287</a>
+                        </li>
+                    </ul>
+            <button popovertarget="statuses-180516" style="anchor-name: --anchor-staging-180516" title="Staged at 2026-10-27 22:00:43Z for 5322s">
+                        Staged <span>1 hour ago</span>
+                        <wbr/>
+                        (duration <span>1 hr 29 min</span>)
+            </button>
+            <div class="dropdown staging-statuses" popover="" id="statuses-180516" style="--my-anchor: --anchor-staging-180516">
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346161" class="                             bg-success">
+                        odoo/odoo: legal/cla
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346179" class="                             bg-info">
+                        odoo/odoo: ci/runbot
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346190" class="                             bg-success">
+                        odoo/odoo: ci/upgrade_enterprise
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346183" class="                             bg-success">
+                        odoo/odoo: ci/template
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346181" class="                             bg-success">
+                        odoo/odoo: ci/documentation
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346180" class="                             bg-success">
+                        odoo/odoo: ci/design-theme
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346184" class="                             bg-success">
+                        odoo/odoo: ci/distro-check
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346161" class="                             bg-success">
+                        odoo/enterprise: legal/cla
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346179" class="                             bg-info">
+                        odoo/enterprise: ci/runbot
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346190" class="                             bg-success">
+                        odoo/enterprise: ci/upgrade_enterprise
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346183" class="                             bg-success">
+                        odoo/enterprise: ci/template
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346182" class="                             bg-success">
+                        odoo/enterprise: ci/l10n
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346180" class="                             bg-success">
+                        odoo/enterprise: ci/design-theme
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346184" class="                             bg-success">
+                        odoo/enterprise: ci/distro-check
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346180" class="                             bg-success">
+                        odoo/design-themes: ci/design-theme
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346184" class="                             bg-success">
+                        odoo/design-themes: ci/distro-check
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848444/build/130346181" class="                             bg-success">
+                        odoo/documentation: ci/documentation
+                    </a>
+            </div>
+                </li>
+                <li class="staging bg-success" id="staging-180505">
+                    <ul>
+                        <li class="batch" data-batch-id="583385">
+                            odoo-dev:20.0-saas-19.3-opw-6640835-fix_getTotalAvailableCapacity-aksi-583189-fw
+        <a href="https://github.com/odoo/enterprise/pull/137368" title="[FIX] pos_restaurant_appointment: traceback when opening Kanban view">odoo/enterprise#137368</a>
+                        </li><li class="batch" data-batch-id="582328">
+                            odoo-dev:20.0-19.0-opw-6577466-web_gantt-end-resize-dependency-reschedule-kdeb-582287-fw
+        <a href="https://github.com/odoo/enterprise/pull/137016" title="[FIX] web_gantt: resize dependent pill from end">odoo/enterprise#137016</a>
+                        </li><li class="batch" data-batch-id="583346">
+                            odoo-dev:20.0-saas-19.4-opw-6660402-POS-order-right-days-nutav-580675-fw
+        <a href="https://github.com/odoo/odoo/pull/297988" title="[FIX] point_of_sale: correctly handle dates in POS presets">odoo/odoo#297988</a>
+                        </li><li class="batch" data-batch-id="583350">
+                            odoo-dev:20.0-18.0-opw-6388560-fc-strn-xml-cohe-583131-fw
+        <a href="https://github.com/odoo/odoo/pull/297991" title="[FIX] account_edi_ubl_cii: fix invalid VAT and add FC support in Factur-X">odoo/odoo#297991</a>
+                        </li><li class="batch" data-batch-id="583695">
+                            odoo-dev:20.0-19.0-fix-mo-project-replenish-ryv-583560-fw
+        <a href="https://github.com/odoo/odoo/pull/298238" title="[FIX] project_mrp: propagate project to MTO replenishment">odoo/odoo#298238</a>
+                        </li><li class="batch" data-batch-id="583623">
+                            odoo-dev:20.0-18.0-fix-documents-access-domain-6538972-yoelf-580399-fw
+        <a href="https://github.com/odoo/enterprise/pull/137426" title="[FIX] documents: batch access propagation for large root sets">odoo/enterprise#137426</a>
+                        </li><li class="batch" data-batch-id="582189">
+                            odoo-dev:20.0-19.0-opw-6606346-fifo_multicompany_2-plha-580904-fw
+        <a href="https://github.com/odoo/odoo/pull/297274" title="[FIX] stock_account: correct fifo multicompany">odoo/odoo#297274</a>
+                        </li><li class="batch" data-batch-id="583597">
+                            odoo-dev:20.0-18.0-runbot-242508-ke_sale_stock_invoice_policy-qucol-583576-fw
+        <a href="https://github.com/odoo/odoo/pull/298170" title="[FIX] sale_stock: specify invoice_policy on test product">odoo/odoo#298170</a>
+                        </li>
+                    </ul>
+            <button popovertarget="statuses-180505" style="anchor-name: --anchor-staging-180505" title="Staged at 2026-10-27 20:04:48Z for 6827s">
+                        Staged <span>3 hours ago</span>
+                        <wbr/>
+                        (duration <span>1 hr 54 min</span>)
+            </button>
+            <div class="dropdown staging-statuses" popover="" id="statuses-180505" style="--my-anchor: --anchor-staging-180505">
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288297" class="                             bg-success">
+                        odoo/odoo: legal/cla
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288300" class="                             bg-success">
+                        odoo/odoo: ci/runbot
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288312" class="                             bg-success">
+                        odoo/odoo: ci/upgrade_enterprise
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288304" class="                             bg-success">
+                        odoo/odoo: ci/template
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288302" class="                             bg-success">
+                        odoo/odoo: ci/documentation
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288301" class="                             bg-success">
+                        odoo/odoo: ci/design-theme
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288305" class="                             bg-success">
+                        odoo/odoo: ci/distro-check
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288297" class="                             bg-success">
+                        odoo/enterprise: legal/cla
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288300" class="                             bg-success">
+                        odoo/enterprise: ci/runbot
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288312" class="                             bg-success">
+                        odoo/enterprise: ci/upgrade_enterprise
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288304" class="                             bg-success">
+                        odoo/enterprise: ci/template
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288303" class="                             bg-success">
+                        odoo/enterprise: ci/l10n
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288301" class="                             bg-success">
+                        odoo/enterprise: ci/design-theme
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288305" class="                             bg-success">
+                        odoo/enterprise: ci/distro-check
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288301" class="                             bg-success">
+                        odoo/design-themes: ci/design-theme
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288305" class="                             bg-success">
+                        odoo/design-themes: ci/distro-check
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848284/build/130288302" class="                             bg-success">
+                        odoo/documentation: ci/documentation
+                    </a>
+            </div>
+                </li>
+                <li class="staging bg-danger" title="timed out at 2026-10-27 17:33:23Z" id="staging-180468">
+                    <ul>
+                        <li class="batch" data-batch-id="583784">
+                            odoo-dev:20.0-pos-BB2-fixes-manv
+        <a href="https://github.com/odoo/enterprise/pull/137481" title="[FIX] l10n_be_pos_blackbox: fix FDM errors on price and employeeId">odoo/enterprise#137481</a>
+                        </li><li class="batch" data-batch-id="576182">
+                            odoo-dev:20.0-query-count-test-seru
+        <a href="https://github.com/odoo/odoo/pull/293858" title="[FIX] website: fix the number of queries in a test">odoo/odoo#293858</a>
+                        </li><li class="batch" data-batch-id="583363">
+                            odoo-dev:20.0-l10n-ae-end-of-service-yti
+        <a href="https://github.com/odoo/enterprise/pull/137361" title="[IMP] l10n_ae_hr_payroll: end of service reason addition">odoo/enterprise#137361</a>
+                        </li><li class="batch" data-batch-id="571072">
+                            odoo-dev:20.0-pos_appointment-fix-calendar-form-view-paan
+        <a href="https://github.com/odoo/enterprise/pull/133021" title="[FIX] pos_{ , restaurant }_appointment: quick form view">odoo/enterprise#133021</a>
+                        </li><li class="batch" data-batch-id="582009">
+                            odoo-dev:20.0-saas-19.4-runbot-243595-test-arrear-salary-noma-568120-fw
+        <a href="https://github.com/odoo/enterprise/pull/136899" title="[FIX] l10n_be_hr_payroll: make arrear salary same-year test date-independent">odoo/enterprise#136899</a>
+                        </li><li class="batch" data-batch-id="580510">
+                            odoo-dev:20.0-20.0-cla-jainiljoshi-580498-fw
+        <a href="https://github.com/odoo/odoo/pull/296216" title="[CLA] Sign individual CLA for jainiljoshi">odoo/odoo#296216</a>
+                        </li><li class="batch" data-batch-id="583596">
+                            odoo-dev:20.0-18.0-pdp-selfbill-state-err-roan-583574-fw
+        <a href="https://github.com/odoo/odoo/pull/298169" title="[FIX] l10n_fr_pdp: keep peppol_move_state on recv">odoo/odoo#298169</a>
+                        </li><li class="batch" data-batch-id="582787">
+                            odoo-dev:20.0-19.0-poc-assign-pbm-quwo-582243-fw
+        <a href="https://github.com/odoo/odoo/pull/297643" title="[FIX] stock, mrp: assign in progress MO">odoo/odoo#297643</a>
+                        </li><li class="batch" data-batch-id="583637">
+                            odoo-dev:20.0-17.0-wrong-operator-name-in-the-chat-request-4916026--seb-583622-fw
+        <a href="https://github.com/odoo/odoo/pull/298201" title="[FIX] website_livechat: name the agent of the new chat">odoo/odoo#298201</a>
+                        </li><li class="batch" data-batch-id="583385">
+                            odoo-dev:20.0-saas-19.3-opw-6640835-fix_getTotalAvailableCapacity-aksi-583189-fw
+        <a href="https://github.com/odoo/enterprise/pull/137368" title="[FIX] pos_restaurant_appointment: traceback when opening Kanban view">odoo/enterprise#137368</a>
+                        </li><li class="batch" data-batch-id="582328">
+                            odoo-dev:20.0-19.0-opw-6577466-web_gantt-end-resize-dependency-reschedule-kdeb-582287-fw
+        <a href="https://github.com/odoo/enterprise/pull/137016" title="[FIX] web_gantt: resize dependent pill from end">odoo/enterprise#137016</a>
+                        </li><li class="batch" data-batch-id="583346">
+                            odoo-dev:20.0-saas-19.4-opw-6660402-POS-order-right-days-nutav-580675-fw
+        <a href="https://github.com/odoo/odoo/pull/297988" title="[FIX] point_of_sale: correctly handle dates in POS presets">odoo/odoo#297988</a>
+                        </li><li class="batch" data-batch-id="583350">
+                            odoo-dev:20.0-18.0-opw-6388560-fc-strn-xml-cohe-583131-fw
+        <a href="https://github.com/odoo/odoo/pull/297991" title="[FIX] account_edi_ubl_cii: fix invalid VAT and add FC support in Factur-X">odoo/odoo#297991</a>
+                        </li><li class="batch" data-batch-id="583695">
+                            odoo-dev:20.0-19.0-fix-mo-project-replenish-ryv-583560-fw
+        <a href="https://github.com/odoo/odoo/pull/298238" title="[FIX] project_mrp: propagate project to MTO replenishment">odoo/odoo#298238</a>
+                        </li><li class="batch" data-batch-id="583623">
+                            odoo-dev:20.0-18.0-fix-documents-access-domain-6538972-yoelf-580399-fw
+        <a href="https://github.com/odoo/enterprise/pull/137426" title="[FIX] documents: batch access propagation for large root sets">odoo/enterprise#137426</a>
+                        </li><li class="batch" data-batch-id="582189">
+                            odoo-dev:20.0-19.0-opw-6606346-fifo_multicompany_2-plha-580904-fw
+        <a href="https://github.com/odoo/odoo/pull/297274" title="[FIX] stock_account: correct fifo multicompany">odoo/odoo#297274</a>
+                        </li><li class="batch" data-batch-id="583597">
+                            odoo-dev:20.0-18.0-runbot-242508-ke_sale_stock_invoice_policy-qucol-583576-fw
+        <a href="https://github.com/odoo/odoo/pull/298170" title="[FIX] sale_stock: specify invoice_policy on test product">odoo/odoo#298170</a>
+                        </li>
+                    </ul>
+            <button popovertarget="statuses-180468" style="anchor-name: --anchor-staging-180468" title="Staged at 2026-10-27 14:50:35Z for 9768s">
+                        Staged <span>9 hours ago</span>
+                        <wbr/>
+                        (duration <span>2 hr 43 min</span>)
+            </button>
+            <div class="dropdown staging-statuses" popover="" id="statuses-180468" style="--my-anchor: --anchor-staging-180468">
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262555" class="                             bg-success">
+                        odoo/odoo: legal/cla
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262614" class="                             bg-info">
+                        odoo/odoo: ci/runbot
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262691" class="                             bg-success">
+                        odoo/odoo: ci/upgrade_enterprise
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262618" class="                             bg-success">
+                        odoo/odoo: ci/template
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262616" class="                             bg-success">
+                        odoo/odoo: ci/documentation
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262615" class="                             bg-success">
+                        odoo/odoo: ci/design-theme
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262619" class="                             bg-success">
+                        odoo/odoo: ci/distro-check
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262555" class="                             bg-success">
+                        odoo/enterprise: legal/cla
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262614" class="                             bg-info">
+                        odoo/enterprise: ci/runbot
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262691" class="                             bg-success">
+                        odoo/enterprise: ci/upgrade_enterprise
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262618" class="                             bg-success">
+                        odoo/enterprise: ci/template
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262617" class="                             bg-success">
+                        odoo/enterprise: ci/l10n
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262615" class="                             bg-success">
+                        odoo/enterprise: ci/design-theme
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262619" class="                             bg-success">
+                        odoo/enterprise: ci/distro-check
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262615" class="                             bg-success">
+                        odoo/design-themes: ci/design-theme
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262619" class="                             bg-success">
+                        odoo/design-themes: ci/distro-check
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2847561/build/130262616" class="                             bg-success">
+                        odoo/documentation: ci/documentation
+                    </a>
+            </div>
+                </li>
+                </ul>
+                    <div class="pr-listing pr-awaiting">
+                        <h5>Awaiting</h5>
+                        <ul>
+                            <li>
+        <a href="https://github.com/odoo/odoo/pull/297219" title="[FIX] point_of_sale: drop stale rounding line on consolidated invoice">odoo/odoo#297219</a>
+                            </li><li>
+        <a href="https://github.com/odoo/enterprise/pull/137460" title="[FIX] point_of_sale: drop stale rounding line on consolidated invoice">odoo/enterprise#137460</a>
+                            </li><li>
+        <a href="https://github.com/odoo/enterprise/pull/136246" title="[IMP] l10n_dk_reports,l10n_dk_saft_import: add SAF-T Financial 2.0 export/import">odoo/enterprise#136246</a>
+                            </li><li>
+        <a href="https://github.com/odoo/odoo/pull/298097" title="[FIX] account: keep invoice currency when paying multiple vendors">odoo/odoo#298097</a>
+                            </li>
+                        </ul>
+                    </div>
+                </section><section>
+                    <h2>
+                        <a href="/runbot_merge/128">
+                            saas-19.3
+                        </a>
+                    </h2>
+        <ul class="stagings">
+                <li class="staging bg-info" title="last status at 2026-10-27 23:00:44Z" id="staging-180518">
+                    <ul>
+                        <li class="batch" data-batch-id="583558">
+                            odoo-dev:saas-19.3-18.0-pdp_use_siren_if_no_vat-prro-583514-fw
+        <a href="https://github.com/odoo/odoo/pull/298138" title="[FIX] l10n_fr_pdp: use SIRET for PDP if company has no VAT">odoo/odoo#298138</a>
+                        </li><li class="batch" data-batch-id="583520">
+                            odoo-dev:saas-19.3-17.0-opw-6164721-jacw-583448-fw
+        <a href="https://github.com/odoo/enterprise/pull/137401" title="[FIX] l10n_mx_edi_sale: Advance payment descriptions">odoo/enterprise#137401</a>
+                        </li>
+                    </ul>
+            <button popovertarget="statuses-180518" style="anchor-name: --anchor-staging-180518" title="Staged at 2026-10-27 22:52:09Z for 2236s">
+                        Staged <span>37 minutes ago</span>
+                        <wbr/>
+                        (duration <span>37 min</span>)
+            </button>
+            <div class="dropdown staging-statuses" popover="" id="statuses-180518" style="--my-anchor: --anchor-staging-180518">
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348275" class="                             bg-success">
+                        odoo/odoo: legal/cla
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348311" class="                             bg-info">
+                        odoo/odoo: ci/runbot
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348325" class="                             bg-info">
+                        odoo/odoo: ci/upgrade_enterprise
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348315" class="                             bg-success">
+                        odoo/odoo: ci/template
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348313" class="                             bg-success">
+                        odoo/odoo: ci/documentation
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348312" class="                             bg-info">
+                        odoo/odoo: ci/design-theme
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348316" class="                             bg-success">
+                        odoo/odoo: ci/distro-check
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348275" class="                             bg-success">
+                        odoo/enterprise: legal/cla
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348311" class="                             bg-info">
+                        odoo/enterprise: ci/runbot
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348325" class="                             bg-info">
+                        odoo/enterprise: ci/upgrade_enterprise
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348315" class="                             bg-success">
+                        odoo/enterprise: ci/template
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348314" class="                             bg-info">
+                        odoo/enterprise: ci/l10n
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348312" class="                             bg-info">
+                        odoo/enterprise: ci/design-theme
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348316" class="                             bg-success">
+                        odoo/enterprise: ci/distro-check
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348312" class="                             bg-info">
+                        odoo/design-themes: ci/design-theme
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348316" class="                             bg-success">
+                        odoo/design-themes: ci/distro-check
+                    </a>
+                    <a target="_blank" role="menuitem" href="https://runbot.odoo.com/runbot/batch/2848511/build/130348313" class="                             bg-success">
+                        odoo/documentation: ci/documentation
+                    </a>
+            </div>
+                </li>
+                </ul>
+                    <div class="splits pr-awaiting">
+                        <h5>Splits</h5>
+                        <ul>
+                            <li>
+                                <ul class="pr-listing">
+                                    <li>
+        <a href="https://github.com/odoo/odoo/pull/297895" title="[IMP] account: improved help for incoming_einvoice_notification_email">odoo/odoo#297895</a>
+                                    </li><li>
+        <a href="https://github.com/odoo/enterprise/pull/137301" title="[IMP] account_reports: improved tax return deadline reminder">odoo/enterprise#137301</a>
+                                    </li><li>
+        <a href="https://github.com/odoo/odoo/pull/297098" title="[FIX] hr_recruitment_skills: division by zero in job matching score">odoo/odoo#297098</a>
+                                    </li>
+                                </ul>
+                            </li><li>
+                                <ul class="pr-listing">
+                                    <li>
+        <a href="https://github.com/odoo/enterprise/pull/136731" title="[FIX] pos_urban_piper: crash on non-JSON error response">odoo/enterprise#136731</a>
+                                    </li><li>
+        <a href="https://github.com/odoo/enterprise/pull/135998" title="[FIX] l10n_be_pos_blackbox: fix rb error 938435">odoo/enterprise#135998</a>
+                                    </li>
+                                </ul>
+                            </li><li>
+                                <ul class="pr-listing">
+                                    <li>
+        <a href="https://github.com/odoo/enterprise/pull/133323" title="[FIX] account_followup: fix followup mail currency">odoo/enterprise#133323</a>
+                                    </li>
+                                </ul>
+                            </li><li>
+                                <ul class="pr-listing">
+                                    <li>
+        <a href="https://github.com/odoo/enterprise/pull/135756" title="[FIX] pos_appointment: handle missing appointment type">odoo/enterprise#135756</a>
+                                    </li>
+                                </ul>
+                            </li><li>
+                                <ul class="pr-listing">
+                                    <li>
+        <a href="https://github.com/odoo/enterprise/pull/137457" title="[FIX] hr_contract_salary: work address changed by the offers">odoo/enterprise#137457</a>
+                                    </li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="pr-listing pr-awaiting">
+                        <h5>Awaiting</h5>
+                        <ul>
+                            <li>
+        <a href="https://github.com/odoo/odoo/pull/298344" title="[FIX] point_of_sale: Keep selected order when deleting">odoo/odoo#298344</a>
+                            </li><li>
+        <a href="https://github.com/odoo/enterprise/pull/137592" title="[ADD] l10n_cl_edi_stock_reform: Res. 154 transport data">odoo/enterprise#137592</a>
+                            </li>
+                        </ul>
+                    </div>
+                </section>
+            </section><section id="project-2">
+                <h1>DEV</h1>
+                <aside>
+                    key:
+                    <ul>
+                        <li class="bg-success">success (hopefully merged)</li>
+                        <li class="bg-info">ongoing</li>
+                        <li class="bg-danger">failure</li>
+                        <li class="bg-gray-lighter">cancelled</li>
+                    </ul>
+                </aside>
+            </section><section id="project-5">
+                <h1>Spreadsheet</h1>
+                <aside>
+                    key:
+                    <ul>
+                        <li class="bg-success">success (hopefully merged)</li>
+                        <li class="bg-info">ongoing</li>
+                        <li class="bg-danger">failure</li>
+                        <li class="bg-gray-lighter">cancelled</li>
+                    </ul>
+                </aside>
+            </section><section id="project-6">
+                <h1>Industry</h1>
+                <aside>
+                    key:
+                    <ul>
+                        <li class="bg-success">success (hopefully merged)</li>
+                        <li class="bg-info">ongoing</li>
+                        <li class="bg-danger">failure</li>
+                        <li class="bg-gray-lighter">cancelled</li>
+                    </ul>
+                </aside>
+            </section><section id="project-7">
+                <h1>Tutorials</h1>
+                <aside>
+                    key:
+                    <ul>
+                        <li class="bg-success">success (hopefully merged)</li>
+                        <li class="bg-info">ongoing</li>
+                        <li class="bg-danger">failure</li>
+                        <li class="bg-gray-lighter">cancelled</li>
+                    </ul>
+                </aside>
+            </section>
+            </main>
+        </body>
+</html>

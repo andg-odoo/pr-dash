@@ -1622,6 +1622,10 @@ body {
 
 .mine-unknown { background: #33290f; color: var(--yellow); }
 .mine-staging { color: var(--green); }
+.mine-staging[title] { cursor: help; text-decoration: underline dotted; }
+.mine-table a, .mine-table a:visited, .mine-h3-link, .mine-h3-link:visited { color: var(--accent); }
+.mine-table .mine-staging a, .mine-table .mine-staging a:visited { color: var(--green); }
+.mine-h3-link { margin-left: 8px; text-transform: none; letter-spacing: 0; font-weight: 400; }
 .mine-dim { color: var(--fg-faint); }
 .mine-ci-green { color: var(--green); }
 

@@ -14,12 +14,17 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 PAGE_URL = "https://mergebot.odoo.com/{repo}/pull/{number}"
+HOME_URL = "https://mergebot.odoo.com/runbot_merge"
 TIMEOUT_SECONDS = 10
+# The dashboard lists every branch of every project, about a megabyte
+HOME_TIMEOUT_SECONDS = 30
 
 # runbot_merge/models/pull_requests.py writes this description on an overridden status
 _OVERRIDE_RE = re.compile(r"Overridden by @([\w-]+)")
 _LINKED_RE = re.compile(r"([\w.-]+/[\w.-]+)#(\d+)")
 _TABLE_HREF_RE = re.compile(r"/([\w.-]+/[\w.-]+)/pull/(\d+)")
+_GITHUB_PR_RE = re.compile(r"https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)")
+_RUNBOT_BATCH_RE = re.compile(r"https://runbot\.odoo\.com/runbot/batch/\d+")
 _VOID_TAGS = frozenset(
     {
         "area",
@@ -73,6 +78,20 @@ class MergebotState:
     merge_method: bool | None = None
     linked: list[LinkedPR] = field(default_factory=list)
     reason: str | None = None
+
+
+@dataclass
+class QueueSpot:
+    """Where an r+'d PR sits on the Mergebot dashboard: in the running staging, a split, or awaiting."""
+
+    branch: str
+    staging_url: str | None = None  # the runbot batch of the running staging holding the PR
+    staged: str | None = None  # the staging's "Staged at ... for Ns" title
+    in_split: bool = False
+    position: int | None = None  # rank in the Awaiting list, which is not the staging order
+    awaiting: int = 0
+    split_prs: int = 0
+    running: bool = False  # whether the branch has a staging in progress
 
 
 class _Unparseable(Exception):
@@ -162,6 +181,67 @@ def fetch(repo: str, number: int) -> MergebotState:
     except (OSError, http.client.HTTPException) as e:
         return MergebotState("unknown", reason=f"fetch {url} failed: {e}")
     return parse(html)
+
+
+def fetch_queue() -> dict[str, QueueSpot] | None:
+    """Read the Mergebot dashboard into the spot of each queued `owner/repo#n`, None when unreadable."""
+    try:
+        with urllib.request.urlopen(HOME_URL, timeout=HOME_TIMEOUT_SECONDS) as resp:
+            return parse_queue(resp.read().decode("utf-8", "replace"))
+    except (OSError, http.client.HTTPException):
+        return None
+
+
+def parse_queue(html: str) -> dict[str, QueueSpot]:
+    """Map each PR of a running staging, a split or an Awaiting list to its QueueSpot."""
+    builder = _TreeBuilder()
+    builder.feed(html)
+    builder.close()
+    out = {}
+    for section in builder.root.iter("section"):
+        h2 = next((c for c in section.elements if c.tag == "h2"), None)
+        a = h2 and next(h2.iter("a"), None)
+        # Project sections carry an <h1> and a ministate <h2> of staging anchors.
+        if a is None or not (a.attrs.get("href") or "").startswith("/runbot_merge/"):
+            continue
+        out.update(_branch_queue(section, a.text()))
+    return out
+
+
+def _branch_queue(section: _Node, branch: str) -> dict[str, QueueSpot]:
+    out = {}
+    running = False
+    for ul in section.elements:
+        if ul.tag != "ul" or "stagings" not in ul.classes:
+            continue
+        for li in ul.elements:
+            if "staging" not in li.classes or "bg-info" not in li.classes:
+                continue
+            running = True
+            batch = next((m.group(0) for x in li.iter("a")
+                          if (m := _RUNBOT_BATCH_RE.match(x.attrs.get("href") or ""))), None)
+            button = next(li.iter("button"), None)
+            for pr in _github_prs(li.child("ul")):
+                out[pr] = QueueSpot(branch, staging_url=batch,
+                                    staged=button and button.attrs.get("title"), running=True)
+    lists = {}
+    for div in section.elements:
+        h5 = div.tag == "div" and next((c for c in div.elements if c.tag == "h5"), None)
+        if h5:
+            lists[h5.own_text()] = _github_prs(div)
+    splits = lists.get("Splits", [])
+    for pr in splits:
+        out[pr] = QueueSpot(branch, in_split=True, split_prs=len(splits), running=running)
+    awaiting = lists.get("Awaiting", [])
+    for i, pr in enumerate(awaiting, 1):
+        out[pr] = QueueSpot(branch, position=i, awaiting=len(awaiting), split_prs=len(splits),
+                            running=running)
+    return out
+
+
+def _github_prs(node: _Node) -> list[str]:
+    return [f"{m.group(1)}#{m.group(2)}" for a in node.iter("a")
+            if (m := _GITHUB_PR_RE.fullmatch(a.attrs.get("href") or ""))]
 
 
 def parse(html: str) -> MergebotState:

@@ -564,7 +564,14 @@
   }
 
   const STAGING = { waiting: "waiting for staging", staged: "staged" };
-  const memberStaging = m => m.staging ? ` · <span class="mine-staging">${STAGING[m.staging]}</span>` : "";
+  function memberStaging(m) {
+    if (!m.staging) return "";
+    const title = m.staging_hint ? ` title="${escapeHTML(m.staging_hint)}"` : "";
+    const text = m.staging_url
+      ? `<a href="${escapeHTML(m.staging_url)}" target="_blank" rel="noopener">${STAGING[m.staging]} ↗</a>`
+      : STAGING[m.staging];
+    return ` · <span class="mine-staging"${title}>${text}</span>`;
+  }
 
   function memberChip(m) {
     const bits = [];
@@ -1364,7 +1371,8 @@
         </section>` : ""}
 
         <section class="section">
-          <h3>Members</h3>
+          <h3>Members${s.members.filter(m => m.mergebot_url).slice(0, 1).map(m =>
+            ` <a class="mine-h3-link" href="${escapeHTML(m.mergebot_url)}" target="_blank" rel="noopener">Mergebot ↗</a>`).join("")}</h3>
           <table class="mine-table">
             <tr><th>PR</th><th>State</th><th>CI</th><th>Review</th><th>Requested</th><th>Links</th></tr>
             ${rows}

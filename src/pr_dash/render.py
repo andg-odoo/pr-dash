@@ -8,7 +8,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from pr_dash import branch_set, db, derive
+from pr_dash import branch_set, db, derive, mergebot
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -565,6 +565,7 @@ def build_mine_payload(
     by_id = {r["id"]: r for r in rows}
     comments_by_pr = db.list_discussions(conn, "mine")
     pages, snapshots = db.list_mine_mergebot(conn), db.get_runbot_snapshots(conn)
+    queue = json.loads(db.get_meta(conn, "mergebot_queue") or '{"spots": {}}')
     sets = derive.branch_sets(
         rows, pages, streams=comments_by_pr, login=login,
         acks={key: m["guard"] for key, m in db.marks(conn, "ack").items()},
@@ -584,6 +585,10 @@ def build_mine_payload(
             runbot = {c["name"]: c["url"] for c in row["checks"]
                       if "runbot.odoo.com" in (c.get("url") or "")}
             m["runbot_url"] = runbot.get("ci/runbot") or next(iter(runbot.values()), None)
+            managed = pages.get(m["id"], {}).get("state") not in (None, "unmanaged", "unknown")
+            m["mergebot_url"] = mergebot.page_url(m["repo"], m["num"]) if managed else None
+            for pr in [m, *m["fw"]]:
+                pr.update(_queue_spot(pr, queue))
         s["runbot"] = derive.runbot_batches(
             [by_id[pr["id"]] for m in s["members"] for pr in [m, *m["fw"]]], pages, snapshots)
         s["discussion"] = derive.group_discussion([
@@ -591,6 +596,25 @@ def build_mine_payload(
             for m in s["members"] for pr in [m, *m["fw"]] for c in comments_by_pr.get(pr["id"], [])
         ])
     return sets, seen_updates
+
+
+def _queue_spot(pr: dict, queue: dict) -> dict:
+    """The staging link and hover text of a PR from the last dashboard read, when they agree."""
+    spot = queue["spots"].get(pr["id"])
+    as_of = f" (as of {queue.get('fetched_at', '')[11:16]} UTC)"
+    if not spot or not pr["staging"] or (pr["staging"] == "staged") != bool(spot["staging_url"]):
+        return {"staging_url": None, "staging_hint": None}
+    if spot["staging_url"]:
+        hint = f"{spot['branch']}: {spot['staged'] or 'staged'}"
+    elif spot["in_split"]:
+        hint = f"{spot['branch']}: in a split ({spot['split_prs']} PRs), staged next"
+    else:
+        hint = f"{spot['branch']}: #{spot['position']} of {spot['awaiting']} awaiting"
+        if spot["split_prs"]:
+            hint += f", after {spot['split_prs']} PRs in splits"
+        if spot["running"]:
+            hint += ", a staging is running"
+    return {"staging_url": spot["staging_url"], "staging_hint": hint + as_of}
 
 
 def commit_tab_seen_baseline(

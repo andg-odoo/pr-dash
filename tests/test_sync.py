@@ -41,6 +41,7 @@ class World:
         self.runbot = FakeRunbotHttp()
         self.session = "sid"
         self.sync = Sync(self.conn, self.cfg, self.gh, read_mergebot=self.mergebot,
+                         read_queue=self.mergebot.read_queue,
                          reviewer=self.reviewer, clock=self.clock, runbot_http=self.runbot,
                          find_session=lambda: self.session)
 
@@ -339,6 +340,38 @@ def test_mine_keeps_resolved_members_and_stops_reading_their_final_page(w):
     assert [(s["key"], s["band"], [(m["num"], m["state"]) for m in s["members"]])
             for s in w.mine()] == [
         ("master-x-6396725-andg", "done", [(10, "MERGED"), (20, "CLOSED")])]
+
+
+def test_queued_members_get_their_dashboard_spot_and_a_mergebot_link(w):
+    for repo, number in (("odoo/odoo", 10), ("odoo/enterprise", 20), ("odoo/upgrade", 30)):
+        w.gh.add(repo, number, author="me", head_branch="master-x-6396725-andg")
+    w.mergebot.pages = {"odoo/odoo#10": "blocked", "odoo/upgrade#30": "unmanaged"}
+    w.refresh(cron=True)
+    assert w.mergebot.queue_reads == 0
+
+    batch = "https://runbot.odoo.com/runbot/batch/1"
+    w.mergebot.pages = {"odoo/odoo#10": "ready", "odoo/enterprise#20": "staged"}
+    w.mergebot.queue = {
+        "odoo/odoo#10": mergebot.QueueSpot("master", position=3, awaiting=5, split_prs=2,
+                                           running=True),
+        "odoo/enterprise#20": mergebot.QueueSpot("master", staging_url=batch,
+                                                 staged="Staged at 12:00Z", running=True),
+    }
+    w.clock.advance(hours=1)
+    w.refresh(cron=True)
+    members = {m["id"]: m for m in w.mine()[0]["members"]}
+    assert [members[i]["staging_url"] for i in members] == [None, batch, None]
+    assert members["odoo/odoo#10"]["staging_hint"].startswith(
+        "master: #3 of 5 awaiting, after 2 PRs in splits, a staging is running (as of ")
+    assert [members[i]["mergebot_url"] for i in members] == [
+        "https://mergebot.odoo.com/odoo/odoo/pull/10",
+        "https://mergebot.odoo.com/odoo/enterprise/pull/20", None]
+
+    # A dashboard read disagreeing with the PR page shows no spot rather than a wrong one.
+    w.mergebot.pages["odoo/odoo#10"] = "staged"
+    w.clock.advance(hours=1)
+    w.refresh(cron=True)
+    assert w.mine()[0]["members"][0]["staging_hint"] is None
 
 
 def test_a_manual_refresh_picks_up_a_review_submitted_after_the_timer_tick(w):

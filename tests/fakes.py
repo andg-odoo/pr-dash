@@ -441,11 +441,17 @@ class FakeMergebot:
     def __init__(self):
         self.pages: dict[str, str] = {}
         self.reads: list[str] = []
+        self.queue: dict[str, mergebot.QueueSpot] | None = {}
+        self.queue_reads = 0
 
     def __call__(self, repo: str, number: int) -> mergebot.MergebotState:
         self.reads.append(f"{repo}#{number}")
         page = self.pages.get(f"{repo}#{number}", "unknown")
         return mergebot.MergebotState(page) if isinstance(page, str) else page
+
+    def read_queue(self) -> dict[str, mergebot.QueueSpot] | None:
+        self.queue_reads += 1
+        return self.queue
 
 
 class FakeReviewer:

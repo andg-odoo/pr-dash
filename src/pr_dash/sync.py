@@ -84,13 +84,15 @@ class Sync:
 
     def __init__(self, conn, cfg, gh: github.GitHub, *,
                  read_mergebot: Callable[[str, int], mergebot.MergebotState] = mergebot.fetch,
+                 read_queue: Callable[[], dict | None] = mergebot.fetch_queue,
                  reviewer: Callable[..., list[ai.ReviewOutcome]] = ai.review_batch,
                  clock: Callable[[], datetime] = lambda: datetime.now(UTC),
                  runbot_http: runbot.Http | None = None,
                  find_session: Callable[[], str] = runbot.find_session_id,
                  on_phase: Callable[[str], None] | None = None):
         self.conn, self.cfg, self.gh = conn, cfg, gh
-        self.read_mergebot, self.reviewer, self.clock = read_mergebot, reviewer, clock
+        self.read_mergebot, self.read_queue = read_mergebot, read_queue
+        self.reviewer, self.clock = reviewer, clock
         self.runbot_http, self.find_session = runbot_http, find_session
         self._phase = on_phase or (lambda text: None)
 
@@ -302,6 +304,14 @@ class Sync:
         with db.transaction(conn):
             for pr_id, state in reads.items():
                 db.upsert_mine_mergebot(conn, pr_id, asdict(state), now)
+        if any(state.state in ("ready", "staged") for state in reads.values()):
+            self._phase("Reading the Mergebot queue...")
+            spots = self.read_queue()
+            with db.transaction(conn):
+                db.set_meta(conn, "mergebot_queue", json.dumps({
+                    "fetched_at": now,
+                    "spots": {pr: asdict(spot) for pr, spot in (spots or {}).items()},
+                }))
         sets, _ = render.build_mine_payload(conn, self.cfg.github_login, now=now)
         db.clear_marks(conn, "ack", [s["key"] for s in sets if not s["acknowledged"]])
         return len(reads)

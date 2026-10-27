@@ -146,3 +146,15 @@ def test_query_mergebot_resolves_short_and_url_refs(monkeypatch):
         assert json.loads(result.output)["state"] == "closed"
     assert seen == [("odoo/enterprise", 132695)] * 2
     assert runner.invoke(cli.cli, ["query", "mergebot", "132695"]).exit_code == 1
+
+
+def test_dashboard_places_staged_split_and_awaiting_prs():
+    queue = mergebot.parse_queue((FIXTURES / "dashboard.html").read_text())
+    assert queue["odoo/enterprise#137594"] == mergebot.QueueSpot(
+        "20.0", staging_url="https://runbot.odoo.com/runbot/batch/2848444",
+        staged="Staged at 2026-10-27 22:00:43Z for 5322s", running=True)
+    assert queue["odoo/enterprise#137592"] == mergebot.QueueSpot(
+        "saas-19.3", position=2, awaiting=2, split_prs=8, running=True)
+    splits = [pr for pr, spot in queue.items() if spot.in_split]
+    assert len(splits) == 8
+    assert {spot.branch for spot in queue.values()} == {"20.0", "saas-19.3"}
