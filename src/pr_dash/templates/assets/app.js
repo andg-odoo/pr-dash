@@ -421,6 +421,8 @@
     return parts;
   }
 
+  const localDate = iso => new Date(iso).toLocaleDateString();
+
   /** "3d ago" from an ISO stamp; empty string when there is no stamp. */
   function daysAgo(iso) {
     if (!iso) return "";
@@ -620,7 +622,13 @@
   // ---- runbot: the Mine Runbot Detail tab, one section per runbot batch, each build once --
 
   const rbLink = (url, text) => `<a href="${escapeHTML(url)}" target="_blank" rel="noopener">${escapeHTML(text)}</a>`;
-  const rbDuration = secs => escapeHTML(`${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, "0")}s`);
+  function rbDuration(secs) {
+    const pad = n => String(n).padStart(2, "0");
+    const mins = Math.floor(secs / 60);
+    const hours = Math.floor(mins / 60);
+    if (hours) return `${hours}h${pad(mins % 60)}m${pad(secs % 60)}s`;
+    return mins ? `${mins}m${pad(secs % 60)}s` : `${secs}s`;
+  }
   const RB_LOG = {
     gone: "log gone (404)",
     "not fetched": "log not fetched, over the per-build budget",
@@ -927,7 +935,7 @@
           ? `<span class="pend-badge" title="You have an unsent (PENDING) review draft on this PR - it stays invisible to the author until you submit it on GitHub">draft review not sent</span>`
           : "";
         const archivedBadge = pr.is_archived
-          ? `<span class="archived-badge" title="No longer requested for review${pr.archived_at ? " · archived " + pr.archived_at.slice(0, 10) : ""}">archived</span>`
+          ? `<span class="archived-badge" title="No longer requested for review${pr.archived_at ? " · archived " + localDate(pr.archived_at) : ""}">archived</span>`
           : "";
 
         const head = `
@@ -964,7 +972,7 @@
             ${mixedNotice}
 
             ${pr.ping_at ? `
-            <div class="ping-notice" title="Informal re-review request after your last review - no formal re-request${pr.ping_at ? " · " + escapeHTML(pr.ping_at.slice(0, 10)) : ""}">
+            <div class="ping-notice" title="Informal re-review request after your last review - no formal re-request${pr.ping_at ? " · " + escapeHTML(localDate(pr.ping_at)) : ""}">
               <span class="ping-tag">PING</span>
               <span class="ping-who">@${escapeHTML(pr.ping_author || "?")}</span>
               <span class="ping-snippet">${escapeHTML(pr.ping_snippet || "asked for a re-review")}</span>
@@ -972,7 +980,7 @@
             ` : ""}
 
             ${pr.push_at ? `
-            <div class="ping-notice push-notice" title="The author pushed after your last review - no action implied, the diff below is the new head${pr.push_at ? " · " + escapeHTML(pr.push_at.slice(0, 10)) : ""}">
+            <div class="ping-notice push-notice" title="The author pushed after your last review - no action implied, the diff below is the new head${pr.push_at ? " · " + escapeHTML(localDate(pr.push_at)) : ""}">
               <span class="ping-tag">PUSH</span>
               <span class="ping-who">${escapeHTML((pr.push_sha || "").slice(0, 10))}</span>
               <span class="ping-snippet">pushed since your review</span>
@@ -1367,7 +1375,7 @@
           <h3>Action items <button class="detail-hide" type="button" data-key="a">${
             isAcked(s) ? "Un-acknowledge" : "Acknowledge (a)"}</button></h3>
           ${s.actions.map(a => `<div class="mine-reason">${escapeHTML(a.member)}: ${escapeHTML(a.text)}
-            <span class="mine-dim">since ${escapeHTML(a.since.slice(0, 10))}</span></div>`).join("")}
+            <span class="mine-dim">since ${escapeHTML(localDate(a.since))}</span></div>`).join("")}
         </section>` : ""}
 
         <section class="section">

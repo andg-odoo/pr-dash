@@ -1,3 +1,4 @@
+import time
 from datetime import timedelta
 
 import pytest
@@ -918,3 +919,18 @@ def test_get_pr_carries_each_halfs_commits_and_its_runbot_batch_tally(w, monkeyp
         db.claim_runbot_request(w.conn, w.clock(), runbot.REQUESTS_PER_HOUR,
                                 runbot.REQUESTS_PER_DAY)
     assert read("sid") == {"error": "runbot cap of 30/hour or 150/day reached"}
+
+
+def test_staging_hint_reads_in_local_time(monkeypatch):
+    monkeypatch.setenv("TZ", "America/Los_Angeles")
+    time.tzset()
+    try:
+        queue = {"fetched_at": "2026-10-30T23:09:00Z", "spots": {"odoo/odoo#1": {
+            "branch": "master", "staging_url": "https://runbot.odoo.com/runbot/batch/1",
+            "staged": "Staged at 2026-10-30 22:28:53Z for 2455s"}}}
+        spot = render._queue_spot({"id": "odoo/odoo#1", "staging": "staged"}, queue)
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+    assert spot["staging_hint"] == "master: Staged at 3:28pm for 40m55s (as of 4:09pm)"
+    assert [render._duration(s) for s in (42, 2455, 5322)] == ["42s", "40m55s", "1h28m42s"]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -13,6 +14,8 @@ from pr_dash import branch_set, db, derive, mergebot
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 BUCKET_RANK = {"S": 0, "M": 1, "L": 2, "XL": 3}
+
+_STAGED_RE = re.compile(r"Staged at (.+Z) for (\d+)s")
 
 
 def _env() -> Environment:
@@ -598,14 +601,36 @@ def build_mine_payload(
     return sets, seen_updates
 
 
+def _duration(seconds: int) -> str:
+    """2455 as 40m55s, 5322 as 1h28m42s, 42 as 42s."""
+    minutes, secs = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h{minutes:02}m{secs:02}s"
+    return f"{minutes}m{secs:02}s" if minutes else f"{secs}s"
+
+
+def _local_clock(iso_ts: str) -> str:
+    return derive.parse_iso(iso_ts).astimezone().strftime("%-I:%M%p").lower()
+
+
+def _staged_text(title: str | None) -> str:
+    """The Mergebot's staging title in local time, or as is when its format is unknown."""
+    if not title:
+        return "staged"
+    match = _STAGED_RE.fullmatch(title)
+    if not match:
+        return title
+    return f"Staged at {_local_clock(match[1])} for {_duration(int(match[2]))}"
+
+
 def _queue_spot(pr: dict, queue: dict) -> dict:
     """The staging link and hover text of a PR from the last dashboard read, when they agree."""
     spot = queue["spots"].get(pr["id"])
-    as_of = f" (as of {queue.get('fetched_at', '')[11:16]} UTC)"
     if not spot or not pr["staging"] or (pr["staging"] == "staged") != bool(spot["staging_url"]):
         return {"staging_url": None, "staging_hint": None}
     if spot["staging_url"]:
-        hint = f"{spot['branch']}: {spot['staged'] or 'staged'}"
+        hint = f"{spot['branch']}: {_staged_text(spot['staged'])}"
     elif spot["in_split"]:
         hint = f"{spot['branch']}: in a split ({spot['split_prs']} PRs), staged next"
     else:
@@ -614,7 +639,8 @@ def _queue_spot(pr: dict, queue: dict) -> dict:
             hint += f", after {spot['split_prs']} PRs in splits"
         if spot["running"]:
             hint += ", a staging is running"
-    return {"staging_url": spot["staging_url"], "staging_hint": hint + as_of}
+    as_of = _local_clock(queue["fetched_at"])
+    return {"staging_url": spot["staging_url"], "staging_hint": f"{hint} (as of {as_of})"}
 
 
 def commit_tab_seen_baseline(
