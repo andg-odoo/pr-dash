@@ -34,7 +34,8 @@
             <span class="kpi" id="kpi"></span>
             <span class="look-count" id="look-count"></span>
           </span>
-          <span class="last-refresh" id="last-refresh" data-at="{{ last_refresh }}"></span>
+          <span class="last-refresh" id="last-refresh" data-at="{{ last_refresh }}" data-queue-at="{{ last_queue_refresh }}"
+                data-every="{{ refresh_every.tabs }}" data-queue-every="{{ refresh_every.queue }}"></span>
           <button id="reset-filters" type="button">reset</button>
         </div>
       </header>

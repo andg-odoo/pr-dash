@@ -557,6 +557,16 @@ body {
   font-size: 11px;
   white-space: nowrap;
 }
+.last-refresh .refresh-cadence {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1px 4px 1px 5px;
+  margin-right: 5px;
+  font-size: 10px;
+  color: var(--fg-faint);
+}
+.last-refresh.is-queue .refresh-cadence { color: var(--accent); border-color: var(--accent); }
+.last-refresh.is-overdue { color: var(--yellow); }
 
 /* Muted: a review that never ran is a gap to know about, not a finding to act on. */
 .pr-row .ai-failed-tag {

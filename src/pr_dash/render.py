@@ -664,7 +664,8 @@ def commit_seen_baseline(
 
 
 def render(payload: list[dict], html_path: Path, *, offline: bool = False,
-           last_refresh: str | None = None, rendered_at: str, marks_port: int = 7391,
+           last_refresh: str | None = None, last_queue_refresh: str | None = None,
+           refresh_every: dict | None = None, rendered_at: str, marks_port: int = 7391,
            tracked: list[dict] | None = None, mine: list[dict] | None = None,
            runbot_expired: bool = False) -> None:
     env = _env()
@@ -691,6 +692,8 @@ def render(payload: list[dict], html_path: Path, *, offline: bool = False,
         offline=offline,
         runbot_expired=runbot_expired,
         last_refresh=last_refresh or "",
+        last_queue_refresh=last_queue_refresh or "",
+        refresh_every=refresh_every or {"queue": 60, "tabs": 15},
         rendered_at=rendered_at,
         marks_port=marks_port,
         app_js=(assets_dir / "app.js").read_text(),

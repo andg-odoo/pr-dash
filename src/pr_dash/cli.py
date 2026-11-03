@@ -134,6 +134,9 @@ def _render_from_cache(conn, cfg, *, offline=False):
     dismissed_mine, _ = render.build_mine_payload(conn, cfg.github_login, dismissed_only=True)
     render.render(payload, cfg.html_path, offline=offline,
                   last_refresh=db.get_meta(conn, "last_refresh"),
+                  last_queue_refresh=db.get_meta(conn, "last_queue_refresh"),
+                  refresh_every={"queue": cfg.thresholds.queue_interval_minutes,
+                                 "tabs": cfg.thresholds.staleness_minutes},
                   rendered_at=rendered_at, marks_port=cfg.hidden_sync_port,
                   tracked=tracked, mine=mine + dismissed_mine,
                   # The banner shows while a red check waits on the rejected session.

@@ -440,13 +440,24 @@
     return `${Math.floor(hours / 24)}d ago`;
   }
 
+  // The Review queue is searched on its own slower cadence, so its age is dated apart.
   function renderLastRefresh() {
-    const at = lastRefreshEl.dataset.at;
-    if (!at) return;
-    const when = new Date(at);
+    const isQueue = activeTab === "queue";
+    const ds = lastRefreshEl.dataset;
+    const when = new Date((isQueue ? ds.queueAt : ds.at) || NaN);
+    lastRefreshEl.replaceChildren();
     if (isNaN(when)) return;
-    lastRefreshEl.textContent = `updated ${ageLabel(Date.now() - when.getTime())}`;
-    lastRefreshEl.title = `Cache last refreshed from GitHub ${when.toLocaleString()}`;
+    const every = Number(isQueue ? ds.queueEvery : ds.every);
+    const age = Date.now() - when.getTime();
+    const cadence = document.createElement("span");
+    cadence.className = "refresh-cadence";
+    cadence.textContent = every % 60 ? `${every}m` : every === 60 ? "hourly" : `${every / 60}h`;
+    lastRefreshEl.append(cadence, `${isQueue ? "queue" : "updated"} ${ageLabel(age)}`);
+    lastRefreshEl.classList.toggle("is-queue", isQueue);
+    // Past one missed tick the timer is likely failing, not just between runs.
+    lastRefreshEl.classList.toggle("is-overdue", age > 2 * every * 60000);
+    const what = isQueue ? "Review queue searched" : "Tracked and Mine refreshed";
+    lastRefreshEl.title = `${what} from GitHub ${when.toLocaleString()}, every ${every} min`;
   }
 
   const VERDICT = {
@@ -1784,6 +1795,7 @@
     }
     const d = VIEWS[activeTab];
     searchEl.placeholder = d.search;
+    renderLastRefresh();
     renderView(d);
     select(d, d.selected ?? d.first?.() ?? d.visible[0]?.id ?? null);
   }
