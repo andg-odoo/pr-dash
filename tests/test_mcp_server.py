@@ -636,7 +636,7 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
 
     # A snapshot that is final is served from the cache, runbot is never reached.
     from pr_dash import runbot
-    monkeypatch.setattr(runbot.UrllibHttp, "post_json", lambda *a: pytest.fail("runbot RPC"))
+    monkeypatch.setattr(runbot.UrllibHttp, "get_json", lambda *a: pytest.fail("runbot API"))
     by_pr = mcp_server.get_runbot("odoo#291981")
     assert [(b["batch_id"], [(t["name"], t["prs"]) for t in b["triggers"]])
             for b in by_pr["batches"]] == [(7, [("ci/runbot", ["odoo/odoo#290109"])])]

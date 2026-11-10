@@ -666,8 +666,7 @@ def commit_seen_baseline(
 def render(payload: list[dict], html_path: Path, *, offline: bool = False,
            last_refresh: str | None = None, last_queue_refresh: str | None = None,
            refresh_every: dict | None = None, rendered_at: str, marks_port: int = 7391,
-           tracked: list[dict] | None = None, mine: list[dict] | None = None,
-           runbot_expired: bool = False) -> None:
+           tracked: list[dict] | None = None, mine: list[dict] | None = None) -> None:
     env = _env()
     template = env.get_template("index.html.j2")
     assets_dir = TEMPLATES_DIR / "assets"
@@ -690,7 +689,6 @@ def render(payload: list[dict], html_path: Path, *, offline: bool = False,
                         for s in mine or []),
         },
         offline=offline,
-        runbot_expired=runbot_expired,
         last_refresh=last_refresh or "",
         last_queue_refresh=last_queue_refresh or "",
         refresh_every=refresh_every or {"queue": 60, "tabs": 15},

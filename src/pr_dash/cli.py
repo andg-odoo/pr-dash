@@ -138,11 +138,7 @@ def _render_from_cache(conn, cfg, *, offline=False):
                   refresh_every={"queue": cfg.thresholds.queue_interval_minutes,
                                  "tabs": cfg.thresholds.staleness_minutes},
                   rendered_at=rendered_at, marks_port=cfg.hidden_sync_port,
-                  tracked=tracked, mine=mine + dismissed_mine,
-                  # The banner shows while a red check waits on the rejected session.
-                  runbot_expired=db.get_meta(conn, "runbot_session_expired") is not None
-                  and any(t["error"] == "expired"
-                          for s in mine for b in s["runbot"] for t in b["triggers"]))
+                  tracked=tracked, mine=mine + dismissed_mine)
     return payload, seen_updates, {"tracked": tracked_seen, "mine": mine_seen}
 
 

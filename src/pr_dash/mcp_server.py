@@ -466,13 +466,12 @@ def get_mine(ref: str, fresh: bool = False) -> dict:
 def get_runbot(ref: str) -> dict:
     """Runbot status and failures for one of your Authored PRs, or for a bundle by name.
 
-    ref accepts a PR ref as get_mine does, naming its whole Branch set, or a bundle name,
-    exact or partial (several matches return `candidates` and their `count`).
-    Returns {ref, requests, session_expired, error, batches: [{batch_id, prs, triggers}]},
+    ref accepts a PR ref as get_mine does, naming its whole Branch set, or an exact bundle
+    name (several matches return `candidates` and their `count`).
+    Returns {ref, requests, error, batches: [{batch_id, prs, triggers}]},
     a trigger being {name, build_id, url, verdict, children, previous, failures, error, prs}.
-    A trigger `error` of "deferred" (request cap) or "expired" (log in to runbot.odoo.com
-    in Firefox) clears on a later call. A failure {log: "gone"} or {log: "not fetched"}
-    still links its build.
+    A trigger `error` of "deferred" (request cap) clears on a later call. A test failure
+    carries its runbot `tag` and `known_error`, and a failure {log: "gone"} still links its build.
     """
     return runbot_cache.get_runbot(_get_cfg(), ref)
 

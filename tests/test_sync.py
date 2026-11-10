@@ -15,7 +15,7 @@ from tests.fakes import (
     FakeRunbotHttp,
     insert_pr,
 )
-from tests.test_runbot import FIXTURES, _seed_bundles
+from tests.test_runbot import PA_BUNDLE, _json, _seed_bundles
 
 ODOO, ENT = "odoo/odoo#1", "odoo/enterprise#2"
 # The call that shows each refresh phase ran, the Tracked one being its nodes view.
@@ -40,11 +40,9 @@ class World:
         self.mergebot = FakeMergebot()
         self.reviewer = FakeReviewer()
         self.runbot = FakeRunbotHttp()
-        self.session = "sid"
         self.sync = Sync(self.conn, self.cfg, self.gh, read_mergebot=self.mergebot,
                          read_queue=self.mergebot.read_queue,
-                         reviewer=self.reviewer, clock=self.clock, runbot_http=self.runbot,
-                         find_session=lambda: self.session)
+                         reviewer=self.reviewer, clock=self.clock, runbot_http=self.runbot)
 
     def refresh(self, *, force=False, cron=False):
         return self.sync.refresh(force=force, cron=cron)
@@ -705,8 +703,15 @@ def test_each_half_is_reviewed_against_the_others_and_the_sets_companion(w):
 # --- runbot snapshots ---------------------------------------------------------
 
 def _red(build_id: int) -> dict:
-    return {"id": build_id, "parent_id": False, "trigger_id": [1, "Enterprise Tests"],
-            "description": False, "log_list": False, "local_state": "done", "local_result": "ko"}
+    return {"id": build_id, "parent_id": False, "trigger": "Enterprise Tests",
+            "description": False, "log_files": [], "logs": [], "children": [], "build_time": 0,
+            "local_state": "done", "local_result": "ko", "global_state": "done",
+            "global_result": "ko"}
+
+
+def _child(build_id: int, **values) -> dict:
+    return {"id": build_id, "relation": "child", "orphan_result": False, "local_state": "done",
+            "children": [], "logs": [], "log_files": [], **values}
 
 
 def _runbot_check(pr, name: str, state: str, build_id: int) -> None:
@@ -736,14 +741,12 @@ def test_red_runbot_checks_are_snapshotted_once_per_build(w):
     w.mergebot.pages[odoo.id] = mergebot.MergebotState("blocked", checks=[
         mergebot.Check("ci/runbot", "fail", "", overridden=False, overridden_by=None),
         mergebot.Check("ci/style", "ok", "Overridden by @me", overridden=True, overridden_by="me")])
-    still_testing = {"id": 1031, "parent_id": [103, "p"], "local_state": "testing",
-                     "local_result": "ok"}
-    failed = _red(1032) | {"parent_id": [103, "p"], "log_list": "test_only", "host": "h",
-                           "dest": "d", "description": "Test at install"}
-    w.runbot.files["http://h/runbot/static/build/d/logs/test_only.txt"] = (
-        FIXTURES / "log_l10n_child_block.txt").read_text()
-    w.runbot.rows["runbot.build"] = [_red(100), _red(102), _red(103) | {"local_result": "ok"},
-                                     still_testing, failed]
+    still_testing = _child(1031, description="Test post install", local_state="testing",
+                           local_result="ok")
+    failed = _child(1032, description="Test at install", local_result="ko",
+                    logs=next(b["logs"] for b in _json("builds.json") if b["id"] == 128064843))
+    w.runbot.builds = {100: _red(100), 102: _red(102), 103: _red(103) | {
+        "local_result": "ok", "children": [still_testing, failed]}}
     # A snapshot no check names any more is dropped once it is a few days old.
     db.upsert_runbot_snapshot(w.conn, "build:555", "", "2026-06-20T00:00:00+00:00", [], None,
                               retry=False)
@@ -755,7 +758,7 @@ def test_red_runbot_checks_are_snapshotted_once_per_build(w):
     w.refresh(force=True)
 
     # Shared by both members and read once, the overridden, green and closed checks cost nothing.
-    assert w.runbot.calls == ["rpc runbot.build"] * 2
+    assert w.runbot.calls == ["api build/100", "api build/102"]
     assert [(t["name"], t["verdict"], t["previous"]) for t in _runbot(w)[odoo.id]] == [
         ("ci/runbot", "red", None)]
     # The Mine payload draws each build once per runbot batch, the overridden style check left out.
@@ -770,13 +773,13 @@ def test_red_runbot_checks_are_snapshotted_once_per_build(w):
     assert [(t["build_id"], t["previous"]) for t in _runbot(w)[odoo.id]] == [(103, "red")]
     assert [t["build_id"] for t in _runbot(w)[ent.id]] == [100, 102]
 
-    # A tree with a child still testing is read again each tick until it is done, its log once.
+    # A tree with a child still testing is read again each tick until it is done.
     w.runbot.calls = []
     w.refresh(force=True)
     still_testing["local_state"] = "done"
     w.refresh(force=True)
     w.refresh(force=True)
-    assert w.runbot.calls == ["rpc runbot.build"] * 2
+    assert w.runbot.calls == ["api build/103"] * 2
     [tests] = _runbot(w)[odoo.id][0]["failures"]
     assert tests["test"].startswith("l10n_account_edi_ubl_cii_tests: TestUBLBE")
 
@@ -784,7 +787,7 @@ def test_red_runbot_checks_are_snapshotted_once_per_build(w):
 def test_runbot_outcomes_are_recorded_and_never_abort_the_refresh(w):
     pr = w.gh.add("odoo/odoo", 1, author="me")
     _runbot_check(pr, "ci/runbot", "FAILURE", 100)
-    w.runbot.rows["runbot.build"] = [_red(100)]
+    w.runbot.builds = {100: _red(100)}
 
     def tick() -> tuple[list[str | None], list[str]]:
         w.runbot.calls = []
@@ -792,28 +795,19 @@ def test_runbot_outcomes_are_recorded_and_never_abort_the_refresh(w):
         assert report.mine_refreshed == 1
         return [t["error"] for t in _runbot(w)[pr.id]], w.runbot.calls
 
-    w.runbot.error = "odoo.http.SessionExpiredException"
-    assert tick() == (["expired"], ["rpc runbot.build"])
-    # The same rejected cookie is not sent again, and an unreadable cookie only warns.
-    assert tick() == (["expired"], [])
-    w.sync.find_session = lambda: open("/nonexistent/session_id").read()
-    assert "Runbot refresh failed" in w.refresh(force=True).warnings[0]
-    w.sync.find_session = lambda: w.session
-    w.runbot.error, w.session = None, "sid2"
     for _ in range(runbot.REQUESTS_PER_HOUR):
         db.claim_runbot_request(w.conn, w.clock(), runbot.REQUESTS_PER_HOUR,
                                 runbot.REQUESTS_PER_DAY)
-    # A different cookie ends the expired state before anything is fetched with it.
-    assert (tick(), db.get_meta(w.conn, "runbot_session_expired")) == ((["deferred"], []), None)
+    assert tick() == (["deferred"], [])
     w.clock.advance(hours=1)
-    assert tick() == ([None], ["rpc runbot.build"])
+    assert tick() == ([None], ["api build/100"])
 
     # A missing build and a payload the client cannot read are final, they are not fetched again.
     _runbot_check(pr, "ci/missing", "FAILURE", 999)
     _runbot_check(pr, "ci/broken", "FAILURE", 998)
-    w.runbot.rows["runbot.build"].append(_red(998) | {"trigger_id": False})
-    assert tick() == ([None, "build not found", "'bool' object is not subscriptable"],
-                      ["rpc runbot.build"] * 2)
+    w.runbot.builds[998] = _red(998) | {"trigger": False}
+    assert tick() == ([None, "build not found", "'bool' object has no attribute 'replace'"],
+                      ["api build/999", "api build/998"])
     assert tick()[1] == []
 
     # An unreachable runbot is tried again after 15, 30 then 60 minutes, and that try is final.
@@ -833,19 +827,19 @@ def test_get_runbot_serves_a_branch_set_and_a_bundle(w):
     for pr in (odoo, ent):
         _runbot_check(pr, "ci/runbot", "FAILURE", 100)
     _runbot_check(ent, "ci/l10n", "FAILURE", 102)
-    w.runbot.rows["runbot.build"] = [_red(100), _red(102)]
-    w.session = ""
+    w.runbot.builds = {100: _red(100), 102: _red(102)}
+    for _ in range(runbot.REQUESTS_PER_HOUR):
+        db.claim_runbot_request(w.conn, w.clock(), runbot.REQUESTS_PER_HOUR,
+                                runbot.REQUESTS_PER_DAY)
     w.refresh()
 
     def get(ref):
-        return runbot_cache.get_runbot(w.cfg, ref, http=w.runbot, find_session=lambda: w.session,
-                               clock=w.clock)
+        return runbot_cache.get_runbot(w.cfg, ref, http=w.runbot, clock=w.clock)
 
-    # The expired snapshots are fetched again once a cookie is found, the build shared once.
-    w.session = "sid"
+    # The deferred snapshots are fetched once the cap allows, the build shared once.
+    w.clock.advance(hours=1)
     by_pr = get("enterprise#2")
-    assert (by_pr["ref"], by_pr["requests"], by_pr["session_expired"]) == ("master-x-andg", 2,
-                                                                           False)
+    assert (by_pr["ref"], by_pr["requests"]) == ("master-x-andg", 2)
     [batch] = by_pr["batches"]
     assert (batch["batch_id"], batch["prs"]) == (7, [odoo.id, ent.id])
     assert [(t["name"], t["build_id"], t["prs"], t["error"]) for t in batch["triggers"]] == [
@@ -858,23 +852,22 @@ def test_get_runbot_serves_a_branch_set_and_a_bundle(w):
     assert w.runbot.calls == []
 
     _seed_bundles(w.runbot)
-    walk = get("master-l10n_pe")
-    assert (walk["requests"], [b["bundle"] for b in walk["batches"]]) == (
-        5, ["master-l10n_pe-withholding-6508826-andg"])
+    walk = get(PA_BUNDLE)
+    # The bundle, its batches, the tree, and the ruff output of the red style check.
+    assert (walk["requests"], [b["bundle"] for b in walk["batches"]]) == (4, [PA_BUNDLE])
     assert len(walk["batches"][0]["triggers"]) == 16
-    assert get("master-l10n_pe")["requests"] == 0
+    assert get(PA_BUNDLE)["requests"] == 0
     # Past the Mine staleness the batch is checked, and an unchanged one reads no tree.
     w.clock.advance(minutes=w.cfg.thresholds.mine_staleness_minutes)
-    assert get("master-l10n_pe")["requests"] == 4
-    assert get("l10n_pe-withholding")["candidates"] == [
-        "master-l10n_pe-withholding-6508826-andg", "saas-19.4-l10n_pe-withholding-6508826-andg"]
+    assert get(PA_BUNDLE)["requests"] == 2
+    assert (get("l10n_pa_edi")["count"], get("l10n_pa_edi")["candidates"]) == (0, [])
     w.clock.advance(minutes=w.cfg.thresholds.mine_staleness_minutes)
     # A walk starts only when the cap leaves room for all of its fixed requests.
     w.clock.advance(hours=1)
     for _ in range(runbot.REQUESTS_PER_HOUR - runbot.BUNDLE_WALK_REQUESTS + 1):
         db.claim_runbot_request(w.conn, w.clock(), runbot.REQUESTS_PER_HOUR,
                                 runbot.REQUESTS_PER_DAY)
-    deferred = get("master-l10n_pe")
+    deferred = get(PA_BUNDLE)
     assert (deferred["error"], deferred["requests"], len(deferred["batches"])) == ("deferred", 0, 1)
 
 
@@ -885,18 +878,14 @@ def test_get_pr_carries_each_halfs_commits_and_its_runbot_batch_tally(w, monkeyp
     ent = w.gh.add("odoo/enterprise", 2, requested=["me"],
                    commits=["[FIX] m: fix\n\nWhy it broke.", "fixup! [FIX] m: fix"])
     ent.checks["ci/runbot"] = "FAILURE"
-    ent.check_urls["ci/runbot"] = "https://runbot.odoo.com/runbot/batch/2799890/build/1"
+    ent.check_urls["ci/runbot"] = "https://runbot.odoo.com/runbot/batch/2869143/build/1"
     builds = _seed_bundles(w.runbot)
-    red = builds[2799890, "Enterprise Tests"]["id"]
-    w.runbot.rows["runbot.build"] += [
-        {"id": 9001, "parent_id": [red, ""], "trigger_id": [0, "Enterprise Tests"],
-         "description": "Test at install", "local_state": "done", "local_result": "ok"},
-        _red(9002) | {"parent_id": [red, ""], "description": "Test post install",
-                      "log_list": "test_only", "host": "h", "dest": "d"}]
+    builds[2869143, "Enterprise Tests"]["children"] = [
+        _child(9001, description="Test at install", local_result="ok"),
+        _child(9002, description="Test post install", local_result="ko")]
     w.refresh()
     monkeypatch.setattr(mcp_server, "_cfg", w.cfg)
     monkeypatch.setattr(runbot, "UrllibHttp", lambda: w.runbot)
-    monkeypatch.setenv("RUNBOT_SESSION_ID", "sid")
 
     odoo_half, ent_half = mcp_server.get_pr("enterprise#2")["members"]
     # Twenty commits of the 21, oldest first, with the fixup that needs squashing listed.
@@ -905,26 +894,22 @@ def test_get_pr_carries_each_halfs_commits_and_its_runbot_batch_tally(w, monkeyp
     assert [(c["headline"], c["body"]) for c in ent_half["commits"]] == [
         ("[FIX] m: fix", "Why it broke."), ("fixup! [FIX] m: fix", "")]
     assert odoo_half["runbot"] == {"error": "no runbot check on the PR's head"}
-    # One slot read and one tree read, the failing child named without reading its log.
-    assert w.runbot.calls == ["rpc runbot.batch.slot", "rpc runbot.build"]
+    # One batch read with its trees, the failing child named without reading its failures.
+    assert w.runbot.calls == ["api batch/2869143"]
     tally = {t["name"]: t for t in ent_half["runbot"]["triggers"]}
     assert (len(tally), tally["Enterprise Tests"]["result"], tally["Enterprise Tests"]["children"],
             tally["Enterprise Tests"]["failed"]) == (16, "red", "1/2 sub-builds ok",
                                                      ["Test post install"])
     mcp_server.get_pr("enterprise#2")
-    assert len(w.runbot.calls) == 2
+    assert len(w.runbot.calls) == 1
 
-    # Unread, a batch the cap or a missing cookie keeps from runbot is an explicit error.
-    def read(session):
-        return runbot_cache.batch_runbot(
-            w.conn, "https://runbot.odoo.com/runbot/batch/2795085/build/1", timedelta(minutes=15),
-            http=w.runbot, find_session=lambda: session, clock=w.clock)
-
-    assert read("") == {"error": "runbot session expired: log in to runbot.odoo.com in Firefox"}
+    # Unread, a batch the cap keeps from runbot is an explicit error.
     for _ in range(runbot.REQUESTS_PER_HOUR):
         db.claim_runbot_request(w.conn, w.clock(), runbot.REQUESTS_PER_HOUR,
                                 runbot.REQUESTS_PER_DAY)
-    assert read("sid") == {"error": "runbot cap of 30/hour or 150/day reached"}
+    assert runbot_cache.batch_runbot(
+        w.conn, "https://runbot.odoo.com/runbot/batch/2866696/build/1", timedelta(minutes=15),
+        http=w.runbot, clock=w.clock) == {"error": "runbot cap of 30/hour or 150/day reached"}
 
 
 def test_staging_hint_reads_in_local_time(monkeypatch):

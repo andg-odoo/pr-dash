@@ -1,0 +1,1110 @@
+[
+ {
+  "id": 2869143,
+  "bundle_id": 524835,
+  "bundle_name": "master-l10n_pa_edi-hka-6572580-andg",
+  "base_reference_batch_id": 2868794,
+  "category": "Default",
+  "create_date": "2026-11-05 17:32:28",
+  "state": "done",
+  "result": "ko",
+  "logs": [],
+  "slots": [
+   {
+    "trigger": "Minimal check",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131519583,
+     "description": "Minimal check before starting other tests",
+     "display_name": "Minimal check before starting other tests",
+     "host": "runbot139.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-05 17:35:22",
+     "build_end": "2026-11-05 17:35:39",
+     "build_time": 17,
+     "logs": [],
+     "log_files": [],
+     "children": [],
+     "config": "Minimal check",
+     "version": "master",
+     "create_batch_id": 2869143,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Odoo LS Check",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131519683,
+     "description": false,
+     "display_name": "Odoo LS Check",
+     "host": "runbot215.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-05 17:37:05",
+     "build_end": "2026-11-05 17:38:31",
+     "build_time": 86,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "odools_lint_diff",
+       "url": "https://runbot215.odoo.com/runbot/static/build/131519683-master/logs/odools_lint_diff.txt"
+      }
+     ],
+     "children": [],
+     "config": "Odoo LS Check",
+     "version": "master",
+     "create_batch_id": 2869143,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Community Run",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131519684,
+     "description": false,
+     "display_name": "Install and run",
+     "host": "runbot219.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-05 17:36:16",
+     "build_end": "2026-11-05 17:43:18",
+     "build_time": 422,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "install_run",
+       "url": "https://runbot219.odoo.com/runbot/static/build/131519684-master/logs/install_run.txt"
+      },
+      {
+       "name": "install_base",
+       "url": "https://runbot219.odoo.com/runbot/static/build/131519684-master/logs/install_base.txt"
+      },
+      {
+       "name": "pre_run_config",
+       "url": "https://runbot219.odoo.com/runbot/static/build/131519684-master/logs/pre_run_config.txt"
+      },
+      {
+       "name": "run",
+       "url": "https://runbot219.odoo.com/runbot/static/build/131519684-master/logs/run.txt"
+      }
+     ],
+     "children": [],
+     "config": "Install and run",
+     "version": "master",
+     "create_batch_id": 2869143,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Enterprise Run",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131519685,
+     "description": false,
+     "display_name": "Install and run",
+     "host": "runbot298.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-05 17:37:09",
+     "build_end": "2026-11-05 17:55:09",
+     "build_time": 1080,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "install_run",
+       "url": "https://runbot298.odoo.com/runbot/static/build/131519685-master/logs/install_run.txt"
+      },
+      {
+       "name": "install_base",
+       "url": "https://runbot298.odoo.com/runbot/static/build/131519685-master/logs/install_base.txt"
+      },
+      {
+       "name": "pre_run_config",
+       "url": "https://runbot298.odoo.com/runbot/static/build/131519685-master/logs/pre_run_config.txt"
+      },
+      {
+       "name": "run",
+       "url": "https://runbot298.odoo.com/runbot/static/build/131519685-master/logs/run.txt"
+      }
+     ],
+     "children": [],
+     "config": "Install and run",
+     "version": "master",
+     "create_batch_id": 2869143,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Enterprise Tests",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131519686,
+     "description": false,
+     "display_name": "Parallel testing",
+     "host": "runbot138.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-05 17:36:58",
+     "build_end": "2026-11-05 17:55:30",
+     "build_time": 1112,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "install_all",
+       "url": "https://runbot138.odoo.com/runbot/static/build/131519686-master/logs/install_all.txt"
+      }
+     ],
+     "children": [],
+     "config": "Parallel testing",
+     "version": "master",
+     "create_batch_id": 2869143,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Design-themes",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131520457,
+     "description": false,
+     "display_name": "Design Theme",
+     "host": "runbot133.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-05 17:44:07",
+     "build_end": "2026-11-05 18:26:23",
+     "build_time": 2536,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "design-theme",
+       "url": "https://runbot133.odoo.com/runbot/static/build/131520457-master/logs/design-theme.txt"
+      },
+      {
+       "name": "pre_run_config",
+       "url": "https://runbot133.odoo.com/runbot/static/build/131520457-master/logs/pre_run_config.txt"
+      },
+      {
+       "name": "run",
+       "url": "https://runbot133.odoo.com/runbot/static/build/131520457-master/logs/run.txt"
+      }
+     ],
+     "children": [],
+     "config": "Design Theme",
+     "version": "master",
+     "create_batch_id": 2869143,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Documentation",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131520456,
+     "description": false,
+     "display_name": "Documentation",
+     "host": "runbot133.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-05 17:44:42",
+     "build_end": "2026-11-05 18:08:27",
+     "build_time": 1425,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "documentation",
+       "url": "https://runbot133.odoo.com/runbot/static/build/131520456-master/logs/documentation.txt"
+      }
+     ],
+     "children": [],
+     "config": "Documentation",
+     "version": "master",
+     "create_batch_id": 2869143,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "L10n standalone test",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131519620,
+     "description": "L10n standalone test",
+     "display_name": "L10n standalone test",
+     "host": "runbot258.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-05 17:36:11",
+     "build_end": "2026-11-05 17:58:07",
+     "build_time": 1316,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "l10n_account",
+       "url": "https://runbot258.odoo.com/runbot/static/build/131519620-master/logs/l10n_account.txt"
+      },
+      {
+       "name": "l10n_standalone",
+       "url": "https://runbot258.odoo.com/runbot/static/build/131519620-master/logs/l10n_standalone.txt"
+      }
+     ],
+     "children": [],
+     "config": "L10n Standalone Split",
+     "version": "master",
+     "create_batch_id": 2869143,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Templates enterprise",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131519687,
+     "description": false,
+     "display_name": "Templates",
+     "host": "runbot138.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-05 17:36:22",
+     "build_end": "2026-11-05 18:03:16",
+     "build_time": 1614,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "install_upgrade_template",
+       "url": "https://runbot138.odoo.com/runbot/static/build/131519687-master/logs/install_upgrade_template.txt"
+      }
+     ],
+     "children": [],
+     "config": "Templates",
+     "version": "master",
+     "create_batch_id": 2869143,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Upgrade current",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131519702,
+     "description": false,
+     "display_name": "Upgrade current with test",
+     "host": "runbot133.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-05 17:36:51",
+     "build_end": "2026-11-05 17:37:08",
+     "build_time": 17,
+     "logs": [],
+     "log_files": [],
+     "children": [],
+     "config": "Upgrade current with test",
+     "version": "master",
+     "create_batch_id": 2869143,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Upgrade stable",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": false
+   },
+   {
+    "trigger": "Distro check",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131519688,
+     "description": false,
+     "display_name": "Light Distro check",
+     "host": "runbot298.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-05 17:36:42",
+     "build_end": "2026-11-05 17:37:19",
+     "build_time": 37,
+     "logs": [],
+     "log_files": [],
+     "children": [],
+     "config": "Light Distro check",
+     "version": "master",
+     "create_batch_id": 2869143,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Check Style",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131519689,
+     "description": false,
+     "display_name": "Check Style",
+     "host": "runbot298.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ko",
+     "global_result": "ko",
+     "build_start": "2026-11-05 17:36:22",
+     "build_end": "2026-11-05 17:39:57",
+     "build_time": 215,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "check_style_ruff",
+       "url": "https://runbot298.odoo.com/runbot/static/build/131519689-master/logs/check_style_ruff.txt"
+      },
+      {
+       "name": "check_semgrep_style",
+       "url": "https://runbot298.odoo.com/runbot/static/build/131519689-master/logs/check_semgrep_style.txt"
+      }
+     ],
+     "children": [],
+     "config": "Check Style",
+     "version": "master",
+     "create_batch_id": 2869143,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Check Security odoo",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131519690,
+     "description": false,
+     "display_name": "Check Security",
+     "host": "runbot185.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-05 17:36:25",
+     "build_end": "2026-11-05 17:39:21",
+     "build_time": 176,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "check_semgrep_security",
+       "url": "https://runbot185.odoo.com/runbot/static/build/131519690-master/logs/check_semgrep_security.txt"
+      }
+     ],
+     "children": [],
+     "config": "Check Security",
+     "version": "master",
+     "create_batch_id": 2869143,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Check Security enterprise",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131519691,
+     "description": false,
+     "display_name": "Check Security",
+     "host": "runbot185.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ko",
+     "global_result": "ko",
+     "build_start": "2026-11-05 17:36:18",
+     "build_end": "2026-11-05 17:38:50",
+     "build_time": 152,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "check_semgrep_security",
+       "url": "https://runbot185.odoo.com/runbot/static/build/131519691-master/logs/check_semgrep_security.txt"
+      }
+     ],
+     "children": [],
+     "config": "Check Security",
+     "version": "master",
+     "create_batch_id": 2869143,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Code Owner",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131519692,
+     "description": false,
+     "display_name": "Codeowner",
+     "host": "runbot215.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-05 17:36:15",
+     "build_end": "2026-11-05 17:37:24",
+     "build_time": 69,
+     "logs": [],
+     "log_files": [],
+     "children": [],
+     "config": "Codeowner",
+     "version": "master",
+     "create_batch_id": 2869143,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Documentation codeowner coverage",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": false
+   },
+   {
+    "trigger": "Documentation guidelines",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": false
+   },
+   {
+    "trigger": "CLA",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131519584,
+     "description": false,
+     "display_name": "Cla Check",
+     "host": "runbot204.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-05 17:35:23",
+     "build_end": "2026-11-05 17:36:26",
+     "build_time": 63,
+     "logs": [],
+     "log_files": [],
+     "children": [],
+     "config": "Cla Check",
+     "version": "master",
+     "create_batch_id": 2869143,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Upgrade updated modules",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": false
+   }
+  ]
+ },
+ {
+  "id": 2866696,
+  "bundle_id": 524835,
+  "bundle_name": "master-l10n_pa_edi-hka-6572580-andg",
+  "base_reference_batch_id": 2863882,
+  "category": "Default",
+  "create_date": "2026-11-04 23:04:00",
+  "state": "done",
+  "result": "ko",
+  "logs": [],
+  "slots": [
+   {
+    "trigger": "Minimal check",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131396125,
+     "description": "Minimal check before starting other tests",
+     "display_name": "Minimal check before starting other tests",
+     "host": "runbot314.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-04 23:08:12",
+     "build_end": "2026-11-04 23:08:17",
+     "build_time": 5,
+     "logs": [],
+     "log_files": [],
+     "children": [],
+     "config": "Minimal check",
+     "version": "master",
+     "create_batch_id": 2866696,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Odoo LS Check",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131396188,
+     "description": false,
+     "display_name": "Odoo LS Check",
+     "host": "runbot182.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-04 23:09:24",
+     "build_end": "2026-11-04 23:10:56",
+     "build_time": 92,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "odools_lint_diff",
+       "url": "https://runbot182.odoo.com/runbot/static/build/131396188-master/logs/odools_lint_diff.txt"
+      }
+     ],
+     "children": [],
+     "config": "Odoo LS Check",
+     "version": "master",
+     "create_batch_id": 2866696,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Community Run",
+    "manual": false,
+    "link_type": "matched",
+    "skipped": false,
+    "build": {
+     "id": 131266745,
+     "description": false,
+     "display_name": "Install and run",
+     "host": "runbot352.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-04 00:14:16",
+     "build_end": "2026-11-04 00:20:28",
+     "build_time": 372,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "install_run",
+       "url": "https://runbot352.odoo.com/runbot/static/build/131266745-master/logs/install_run.txt"
+      },
+      {
+       "name": "install_base",
+       "url": "https://runbot352.odoo.com/runbot/static/build/131266745-master/logs/install_base.txt"
+      },
+      {
+       "name": "pre_run_config",
+       "url": "https://runbot352.odoo.com/runbot/static/build/131266745-master/logs/pre_run_config.txt"
+      },
+      {
+       "name": "run",
+       "url": "https://runbot352.odoo.com/runbot/static/build/131266745-master/logs/run.txt"
+      }
+     ],
+     "children": [],
+     "config": "Install and run",
+     "version": "master",
+     "create_batch_id": 2863934,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Enterprise Run",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131396189,
+     "description": false,
+     "display_name": "Install and run",
+     "host": "runbot307.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-04 23:09:23",
+     "build_end": "2026-11-04 23:56:18",
+     "build_time": 2815,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "install_run",
+       "url": "https://runbot307.odoo.com/runbot/static/build/131396189-master/logs/install_run.txt"
+      },
+      {
+       "name": "install_base",
+       "url": "https://runbot307.odoo.com/runbot/static/build/131396189-master/logs/install_base.txt"
+      },
+      {
+       "name": "pre_run_config",
+       "url": "https://runbot307.odoo.com/runbot/static/build/131396189-master/logs/pre_run_config.txt"
+      },
+      {
+       "name": "run",
+       "url": "https://runbot307.odoo.com/runbot/static/build/131396189-master/logs/run.txt"
+      }
+     ],
+     "children": [],
+     "config": "Install and run",
+     "version": "master",
+     "create_batch_id": 2866696,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Enterprise Tests",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131396190,
+     "description": false,
+     "display_name": "Parallel testing",
+     "host": "runbot307.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-04 23:09:23",
+     "build_end": "2026-11-04 23:56:16",
+     "build_time": 2813,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "install_all",
+       "url": "https://runbot307.odoo.com/runbot/static/build/131396190-master/logs/install_all.txt"
+      }
+     ],
+     "children": [],
+     "config": "Parallel testing",
+     "version": "master",
+     "create_batch_id": 2866696,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Design-themes",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": false
+   },
+   {
+    "trigger": "Documentation",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": false
+   },
+   {
+    "trigger": "L10n standalone test",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131396183,
+     "description": "L10n standalone test",
+     "display_name": "L10n standalone test",
+     "host": "runbot300.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-04 23:08:48",
+     "build_end": "2026-11-04 23:46:06",
+     "build_time": 2238,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "l10n_account",
+       "url": "https://runbot300.odoo.com/runbot/static/build/131396183-master/logs/l10n_account.txt"
+      },
+      {
+       "name": "l10n_standalone",
+       "url": "https://runbot300.odoo.com/runbot/static/build/131396183-master/logs/l10n_standalone.txt"
+      }
+     ],
+     "children": [],
+     "config": "L10n Standalone Split",
+     "version": "master",
+     "create_batch_id": 2866696,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Templates enterprise",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131396191,
+     "description": false,
+     "display_name": "Templates",
+     "host": "runbot307.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-04 23:09:22",
+     "build_end": "2026-11-04 23:55:52",
+     "build_time": 2790,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "install_upgrade_template",
+       "url": "https://runbot307.odoo.com/runbot/static/build/131396191-master/logs/install_upgrade_template.txt"
+      }
+     ],
+     "children": [],
+     "config": "Templates",
+     "version": "master",
+     "create_batch_id": 2866696,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Upgrade current",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131396197,
+     "description": false,
+     "display_name": "Upgrade current with test",
+     "host": "runbot314.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-04 23:08:26",
+     "build_end": "2026-11-04 23:09:11",
+     "build_time": 45,
+     "logs": [],
+     "log_files": [],
+     "children": [],
+     "config": "Upgrade current with test",
+     "version": "master",
+     "create_batch_id": 2866696,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Upgrade stable",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": false
+   },
+   {
+    "trigger": "Distro check",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131396192,
+     "description": false,
+     "display_name": "Light Distro check",
+     "host": "runbot307.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-04 23:08:34",
+     "build_end": "2026-11-04 23:09:27",
+     "build_time": 53,
+     "logs": [],
+     "log_files": [],
+     "children": [],
+     "config": "Light Distro check",
+     "version": "master",
+     "create_batch_id": 2866696,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Check Style",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131396193,
+     "description": false,
+     "display_name": "Check Style",
+     "host": "runbot133.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ko",
+     "global_result": "ko",
+     "build_start": "2026-11-04 23:08:37",
+     "build_end": "2026-11-04 23:10:09",
+     "build_time": 92,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "check_style_ruff",
+       "url": "https://runbot133.odoo.com/runbot/static/build/131396193-master/logs/check_style_ruff.txt"
+      },
+      {
+       "name": "check_semgrep_style",
+       "url": "https://runbot133.odoo.com/runbot/static/build/131396193-master/logs/check_semgrep_style.txt"
+      }
+     ],
+     "children": [],
+     "config": "Check Style",
+     "version": "master",
+     "create_batch_id": 2866696,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Check Security odoo",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131396194,
+     "description": false,
+     "display_name": "Check Security",
+     "host": "runbot182.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-04 23:09:24",
+     "build_end": "2026-11-04 23:11:37",
+     "build_time": 133,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "check_semgrep_security",
+       "url": "https://runbot182.odoo.com/runbot/static/build/131396194-master/logs/check_semgrep_security.txt"
+      }
+     ],
+     "children": [],
+     "config": "Check Security",
+     "version": "master",
+     "create_batch_id": 2866696,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Check Security enterprise",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131396195,
+     "description": false,
+     "display_name": "Check Security",
+     "host": "runbot182.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ko",
+     "global_result": "ko",
+     "build_start": "2026-11-04 23:09:24",
+     "build_end": "2026-11-04 23:11:37",
+     "build_time": 133,
+     "logs": [],
+     "log_files": [
+      {
+       "name": "check_semgrep_security",
+       "url": "https://runbot182.odoo.com/runbot/static/build/131396195-master/logs/check_semgrep_security.txt"
+      }
+     ],
+     "children": [],
+     "config": "Check Security",
+     "version": "master",
+     "create_batch_id": 2866696,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Code Owner",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131396196,
+     "description": false,
+     "display_name": "Codeowner",
+     "host": "runbot182.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-04 23:08:29",
+     "build_end": "2026-11-04 23:10:04",
+     "build_time": 95,
+     "logs": [],
+     "log_files": [],
+     "children": [],
+     "config": "Codeowner",
+     "version": "master",
+     "create_batch_id": 2866696,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Documentation codeowner coverage",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": false
+   },
+   {
+    "trigger": "Documentation guidelines",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": false
+   },
+   {
+    "trigger": "CLA",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": {
+     "id": 131396126,
+     "description": false,
+     "display_name": "Cla Check",
+     "host": "runbot314.odoo.com",
+     "parent_id": false,
+     "orphan_result": false,
+     "local_state": "done",
+     "global_state": "done",
+     "local_result": "ok",
+     "global_result": "ok",
+     "build_start": "2026-11-04 23:07:44",
+     "build_end": "2026-11-04 23:08:17",
+     "build_time": 33,
+     "logs": [],
+     "log_files": [],
+     "children": [],
+     "config": "Cla Check",
+     "version": "master",
+     "create_batch_id": 2866696,
+     "reference_build_id": false
+    }
+   },
+   {
+    "trigger": "Upgrade updated modules",
+    "manual": false,
+    "link_type": "created",
+    "skipped": false,
+    "build": false
+   }
+  ]
+ }
+]

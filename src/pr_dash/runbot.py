@@ -1,21 +1,18 @@
-"""Read runbot build trees and the failures in their logs, under a request cap shared via the DB."""
+"""Read runbot build trees and their failures from runbot's API, under a request cap in the DB."""
 
 from __future__ import annotations
 
 import http.client
 import json
 import logging
-import os
 import re
-import shutil
 import sqlite3
-import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from pr_dash import db
@@ -26,52 +23,34 @@ if TYPE_CHECKING:
 log = logging.getLogger("pr_dash.runbot")
 
 BASE_URL = "https://runbot.odoo.com"
-RPC_TIMEOUT_SECONDS = 60
+API_TIMEOUT_SECONDS = 60
 GET_TIMEOUT_SECONDS = 30
 REQUESTS_PER_HOUR = 30
 REQUESTS_PER_DAY = 150
 BUNDLE_CANDIDATES = 20
-# Bundle, partial name, batches, slots, tree and previous trees: a walk starts only if they fit.
-BUNDLE_WALK_REQUESTS = 6
-# Failing builds of one tree whose logs a fetch reads, so a wide red tree fits in the caps.
-FAILING_LOGS_PER_TREE = 5
+# Bundle, batches and tree: a walk starts only if they fit.
+BUNDLE_WALK_REQUESTS = 3
+# The API answers HTTP 400 past this many ids in one call.
+MAX_RECORDS = 50
+TREE_DEPTH = 20
 # A build killed past this many seconds hit runbot's step time limit (seen at ~1812s).
 KILL_TIMEOUT_SECONDS = 1790
 TRACEBACK_LINES = 15
+ERROR_LINES = 3
 
 _CHECK_URL_RE = re.compile(r"https://runbot\.odoo\.com/runbot/batch/(\d+)/build/(\d+)")
-_LINE_START_RE = re.compile(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} \d+ ")
-_ERROR_LINE_RE = re.compile(
-    r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} \d+ (?:ERROR|CRITICAL) \S+ (\S+): (.+)")
-ERROR_LINES = 3
-# The test's own logger line, e.g. `odoo.addons.web_studio.tests.test_ui: FAIL: TestUi.test_x`
-_TEST_FAIL_RE = re.compile(
-    r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} \d+ \w+ \S+ (\S+): (?:FAIL|ERROR): "
-    r"(?:Subtest )?(\w+\.\w+)(?=[\s(]|$)",
-)
-_FINDINGS_RE = re.compile(r"Findings: (\d+)")
+# The first line of a test's failure row, e.g. `FAIL: TestUi.test_x`
+_TEST_ROW_RE = re.compile(r"(?:FAIL|ERROR): (?:Subtest )?(\w+\.\w+)(?=[\s(]|$)")
 _EXCEPTION_RE = re.compile(r"[\w.]*(?:Error|Exception|Warning|Failure)\b")
 _RUFF_PATH_RE = re.compile(r"^/data/build/(?:merge_base_)?")
+_MD_ESCAPE_RE = re.compile(r"\\([!-/:-@\[-`{-~])")
+_MD_LINE_LINK_RE = re.compile(r"\[(.+?):(\d+)\]\((\S+?)\)")
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\(\S+?\)")
 _FAILED = ("ko", "killed")
-# Fields of a build tree row, build_time joins them when runbot can compute it.
-_TREE_FIELDS = ["trigger_id", "description", "host", "dest", "log_list", "local_state",
-                "local_result", "global_result", "parent_id", "linked_children_build_ids",
-                "orphan_result"]
-# Rounds of linked builds followed, upgrade builds link migration builds one level deep.
-_LINK_ROUNDS = 3
-_TREE_LIMIT = 1000
-_FIREFOX_QUERY = (
-    "SELECT value, lastAccessed FROM moz_cookies WHERE host LIKE '%runbot.odoo.com' "
-    "AND name = 'session_id' ORDER BY lastAccessed DESC LIMIT 1"
-)
 
 
 class RunbotError(Exception):
     pass
-
-
-class SessionExpired(RunbotError):
-    """No session cookie was found, or runbot rejected it."""
 
 
 class CapReached(RunbotError):
@@ -92,23 +71,16 @@ class NoBundle(RunbotError):
     """A bundle name matched none or several bundles, the first `candidates` of `count`."""
 
     def __init__(self, name: str, candidates: list[str], count: int):
-        super().__init__(f"{count} runbot bundles match {name!r}: {candidates}"
-                         if count else f"no runbot bundle matches {name!r}")
+        super().__init__(
+            f"{count} runbot bundles match {name!r}: {candidates}" if count
+            else f"no runbot bundle is named {name!r}, the runbot API needs the exact name")
         self.candidates, self.count = candidates, count
 
 
-class RpcError(RunbotError):
-    """A JSON-RPC error other than a rejected session."""
-
-    def __init__(self, message: str, *, name: str):
-        super().__init__(message)
-        self.name = name
-
-
 class Http(Protocol):
-    """The two kinds of request runbot gets: JSON-RPC posts and static file reads."""
+    """The two kinds of request runbot gets: API reads and worker-host file reads."""
 
-    def post_json(self, url: str, body: dict, headers: dict[str, str]) -> dict: ...
+    def get_json(self, url: str) -> list[dict]: ...
 
     def get_text(self, url: str) -> str: ...
 
@@ -116,11 +88,8 @@ class Http(Protocol):
 class UrllibHttp:
     """`Http` over urllib."""
 
-    def post_json(self, url, body, headers):
-        req = urllib.request.Request(
-            url, json.dumps(body).encode(), {"Content-Type": "application/json", **headers},
-        )
-        text = _open(req, url, RPC_TIMEOUT_SECONDS)
+    def get_json(self, url):
+        text = _open(url, API_TIMEOUT_SECONDS)
         try:
             return json.loads(text)
         except ValueError as e:
@@ -128,16 +97,16 @@ class UrllibHttp:
 
     def get_text(self, url):
         try:
-            return _open(url, url, GET_TIMEOUT_SECONDS)
+            return _open(url, GET_TIMEOUT_SECONDS)
         except HttpError as e:
             if e.status == 404:
                 raise LogGone(f"{url} is gone", status=404) from e
             raise
 
 
-def _open(req: urllib.request.Request | str, url: str, timeout: int) -> str:
+def _open(url: str, timeout: int) -> str:
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
             return resp.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
         raise HttpError(f"HTTP {e.code} from {url}", status=e.code) from e
@@ -181,49 +150,12 @@ def parse_check_url(url: str) -> tuple[int, int] | None:
     return (int(m.group(1)), int(m.group(2))) if m else None
 
 
-def find_session_id() -> str:
-    """Return the runbot session cookie from the env, the runbot-status file or Firefox."""
-    if value := os.environ.get("RUNBOT_SESSION_ID"):
-        return value
-    path = Path.home() / ".config/runbot-status/session_id"
-    if path.exists() and (value := path.read_text().strip()):
-        return value
-    found = [
-        cookie for cookies_db in Path.home().glob(".mozilla/firefox/*/cookies.sqlite")
-        if (cookie := _firefox_cookie(cookies_db))
-    ]
-    if not found:
-        msg = "no runbot session cookie found: log in to runbot.odoo.com in Firefox"
-        raise SessionExpired(msg)
-    return max(found)[1]
-
-
-def _firefox_cookie(cookies_db: Path) -> tuple[int, str] | None:
-    """Return (lastAccessed, value) of the newest runbot cookie in one profile's cookie db."""
-    # Firefox holds the db open and keeps recent writes in the -wal, so read a copy of all three.
-    with tempfile.TemporaryDirectory() as tmp:
-        try:
-            for suffix in ("", "-wal", "-shm"):
-                src = cookies_db.with_name(cookies_db.name + suffix)
-                if not suffix or src.exists():
-                    shutil.copyfile(src, Path(tmp) / src.name)
-            conn = sqlite3.connect(Path(tmp) / cookies_db.name)
-            try:
-                row = conn.execute(_FIREFOX_QUERY).fetchone()
-            finally:
-                conn.close()
-        except (OSError, sqlite3.Error) as e:
-            log.warning("skipping Firefox cookies %s: %s", cookies_db, e)
-            return None
-    return (row[1], row[0]) if row else None
-
-
 class Runbot:
-    """Read-only runbot client: one search_read per build forest, then one GET per failing log."""
+    """Read-only runbot client: one API read per build forest, plus ruff outputs of red checks."""
 
-    def __init__(self, conn: sqlite3.Connection, http: Http, session_id: str,
+    def __init__(self, conn: sqlite3.Connection, http: Http,
                  clock: Callable[[], datetime] = lambda: datetime.now(UTC)):
-        self.conn, self.http, self.session_id, self.clock = conn, http, session_id, clock
+        self.conn, self.http, self.clock = conn, http, clock
         self.requests = 0
 
     def _claim(self) -> None:
@@ -236,27 +168,9 @@ class Runbot:
     def requests_left(self) -> int:
         return db.runbot_requests_left(self.conn, self.clock(), REQUESTS_PER_HOUR, REQUESTS_PER_DAY)
 
-    def search_read(self, model: str, domain: list, fields: list[str], *, limit: int,
-                    order: str = "id", newest: bool = False) -> list[dict]:
-        """Run one search_read, raising when it fills `limit` unless only the `newest` are asked."""
+    def _api(self, path: str) -> list[dict]:
         self._claim()
-        body = {"jsonrpc": "2.0", "method": "call", "params": {
-            "model": model, "method": "search_read", "args": [],
-            "kwargs": {"domain": domain, "fields": fields, "limit": limit, "order": order},
-        }}
-        data = self.http.post_json(f"{BASE_URL}/web/dataset/call_kw", body,
-                                   {"Cookie": f"session_id={self.session_id}"})
-        if error := data.get("error"):
-            name = (error.get("data") or {}).get("name") or ""
-            message = (error.get("data") or {}).get("message") or error.get("message")
-            if "SessionExpired" in name or "AccessDenied" in name:
-                msg = f"runbot rejected the session ({name}): log in to runbot.odoo.com in Firefox"
-                raise SessionExpired(msg)
-            raise RpcError(f"{model} search_read failed: {name}: {message}", name=name)
-        rows = data["result"]
-        if len(rows) >= limit and not newest:
-            raise RunbotError(f"{model} search_read hit its limit of {limit}, results truncated")
-        return rows
+        return self.http.get_json(f"{BASE_URL}/runbot/api/{path}")
 
     def _get(self, url: str) -> str:
         self._claim()
@@ -264,112 +178,74 @@ class Runbot:
 
     def triggers(self, build_ids: list[int], known: dict[int, list[dict]] | None = None,
                  ) -> list[Trigger]:
-        """Read the trees of `build_ids` in one search_read and the logs of new failing builds.
+        """Read the trees of `build_ids` with their failure rows in one API call.
 
         :param known: failures of failing builds a previous read settled, reused without a request
         """
-        return [self._trigger(root, tree, known or {}) for root, tree in self._trees(build_ids)]
+        ids = list(dict.fromkeys(build_ids))
+        if len(ids) > MAX_RECORDS:
+            raise RunbotError(f"{len(ids)} builds asked, runbot's API reads {MAX_RECORDS} at most")
+        if not ids:
+            return []
+        roots = self._api(f"build/{','.join(map(str, ids))}?depth={TREE_DEPTH}&logs=errors")
+        if missing := sorted(set(ids) - {root["id"] for root in roots}):
+            log.warning("runbot builds not found: %s", missing)
+        return [self._trigger(root, known or {}) for root in roots]
 
     def bundle(self, name: str, known: str | None = None) -> BundleBatch | None:
-        """Read the latest batch of the one bundle `name` matches, None while its key is `known`."""
+        """Read the latest batch of the bundle named `name`, None while its key is `known`."""
         if self.requests_left() < BUNDLE_WALK_REQUESTS:
             msg = f"a bundle walk needs {BUNDLE_WALK_REQUESTS} requests, the cap leaves fewer"
             raise CapReached(msg)
-        fields = ["name"]
-        rows = (self.search_read("runbot.bundle", [("name", "=", name)], fields, limit=10)
-                or self.search_read("runbot.bundle", [("name", "ilike", name)], fields,
-                                    limit=1000, order="name"))
+        # Project 1 is R&D, base bundle names like `master` also exist in other projects.
+        rows = self._api(f"bundle/{urllib.parse.quote(name, safe='')}?project_id=1")
         if len(rows) != 1:
             raise NoBundle(name, [r["name"] for r in rows[:BUNDLE_CANDIDATES]], len(rows))
-        batches = [
-            b["id"] for b in self.search_read(
-                "runbot.batch", [("bundle_id", "=", rows[0]["id"]), ("hidden", "=", False)],
-                ["category_id"], limit=10, order="id desc", newest=True)
-            # Nightly and weekly batches sit in other categories, the pushes are in Default.
-            if b["category_id"] and b["category_id"][1] == "Default"
-        ][:2]
+        bundle = rows[0]
+        # Nightly and weekly batches sit in other categories, the pushes are in Default.
+        batches = [b["id"] for b in bundle["batches"]
+                   if b["category"] == "Default" and b["state"] != "skipped"][:2]
         if not batches:
-            raise RunbotError(f"runbot bundle {rows[0]['name']!r} has no visible batch")
-        slots = [s for s in self.search_read(
-            "runbot.batch.slot", [("batch_id", "in", batches), ("active", "=", True)],
-            ["batch_id", "trigger_id", "build_id"], limit=1000) if s["build_id"]]
-        roots = {s["trigger_id"][1]: s["build_id"][0]
-                 for s in slots if s["batch_id"][0] != batches[0]}
-        latest = [s["build_id"][0] for s in slots if s["batch_id"][0] == batches[0]]
-        key = json.dumps({"bundle": rows[0]["name"], "batch_id": batches[0],
+            raise RunbotError(f"runbot bundle {bundle['name']!r} has no visible batch")
+        slots = {b["id"]: [s for s in b["slots"] if s["build"]]
+                 for b in self._api(f"batch/{','.join(map(str, batches))}?depth=0&logs=none")}
+        latest = [s["build"]["id"] for s in slots[batches[0]]]
+        previous = {s["trigger"]: s["build"] for b in batches[1:] for s in slots.get(b, [])}
+        key = json.dumps({"bundle": bundle["name"], "batch_id": batches[0],
                           "builds": sorted(latest)})
         if key == known:
             return None
-        triggers = [self._trigger(root, tree, {}) for root, tree in self._trees(latest)]
-        red = [t for t in triggers if t.verdict == "red" and t.name in roots]
-        if red:
-            verdicts = {root["id"]: _verdict(tree)
-                        for root, tree in self._trees(sorted({roots[t.name] for t in red}))}
-            for t in red:
-                if (verdict := verdicts.get(roots[t.name])) in ("red", "green"):
-                    t.previous = verdict
-        return BundleBatch(rows[0]["name"], batches[0], key, triggers)
+        triggers = self.triggers(latest)
+        for t in triggers:
+            if t.verdict != "red" or not (before := previous.get(t.name)):
+                continue
+            if before["global_result"] in _FAILED:
+                t.previous = "red"
+            elif before["global_state"] == "done" and before["global_result"] in ("ok", "warn"):
+                t.previous = "green"
+        return BundleBatch(bundle["name"], batches[0], key, triggers)
 
     def batch(self, batch_id: int) -> list[Trigger]:
-        """Read the slot builds of batch `batch_id` and their trees, reading no failing log."""
-        slots = self.search_read(
-            "runbot.batch.slot", [("batch_id", "=", batch_id), ("active", "=", True)], ["build_id"],
-            limit=1000)
-        roots = [s["build_id"][0] for s in slots if s["build_id"]]
-        if not roots:
-            return []
-        return [self._trigger(root, tree, {}, log_budget=0) for root, tree in self._trees(roots)]
+        """Read the slot builds of batch `batch_id` and their trees, reading no failure."""
+        batches = self._api(f"batch/{batch_id}?depth={TREE_DEPTH}&logs=none")
+        # A slot's build leaves out its trigger when it is the slot's.
+        return [self._trigger({"trigger": s["trigger"], **s["build"]}, {}, read=False)
+                for b in batches for s in b["slots"] if s["build"]]
 
-    def _trees(self, build_ids: list[int]) -> list[tuple[dict, list[dict]]]:
-        """Read `build_ids` with their descendants and linked builds, as (root, tree) pairs."""
-        by_id = {r["id"]: r for r in self._read_tree(build_ids)}
-        # A linked build (runbot.build.link) counts in its parent's result without being a child.
-        linker: dict[int, int] = {}
-        for _ in range(_LINK_ROUNDS):
-            links = {child: row["id"] for row in by_id.values()
-                     for child in row.get("linked_children_build_ids") or [] if child not in by_id}
-            if not links:
-                break
-            linker |= links
-            by_id |= {r["id"]: r for r in self._read_tree(list(links))}
-        trees: dict[int, list[dict]] = {i: [] for i in build_ids if i in by_id}
-        if missing := [i for i in build_ids if i not in by_id]:
-            log.warning("runbot builds not found: %s", missing)
-        for row in by_id.values():
-            node = row
-            while node["id"] not in trees:
-                up = linker.get(node["id"]) or node["parent_id"][0]
-                node = by_id[up]
-            if row is node or not row.get("orphan_result"):
-                trees[node["id"]].append(row)
-        return [(by_id[root_id], tree) for root_id, tree in trees.items()]
-
-    def _read_tree(self, build_ids: list[int]) -> list[dict]:
-        domain = [("id", "child_of", build_ids)]
-        try:
-            return self.search_read("runbot.build", domain, [*_TREE_FIELDS, "build_time"],
-                                    limit=_TREE_LIMIT)
-        except RpcError as e:
-            # runbot crashes comparing a datetime to False in build_time on some builds.
-            if "TypeError" not in e.name:
-                raise
-            log.info("retrying without build_time: %s", e)
-            return self.search_read("runbot.build", domain, _TREE_FIELDS, limit=_TREE_LIMIT)
-
-    def _trigger(self, root: dict, tree: list[dict], known: dict[int, list[dict]], *,
-                 log_budget: int = FAILING_LOGS_PER_TREE) -> Trigger:
-        kids = [b for b in tree if b is not root]
+    def _trigger(self, root: dict, known: dict[int, list[dict]], *, read: bool = True,
+                 ) -> Trigger:
+        tree = _tree(root)
+        kids = tree[1:]
         done = [b for b in kids if b["local_state"] == "done"]
-        failures, settled = self._tree_failures(tree, known, log_budget)
+        failures, settled = (self._tree_failures(tree, known) if read else
+                             ([_where(b) for b in tree if b["local_result"] in _FAILED], []))
         verdict = _verdict(tree)
         # runbot's own aggregate wins when the tree read missed the failing build.
-        if root.get("global_result") in _FAILED and verdict != "red":
+        if root["global_result"] in _FAILED and verdict != "red":
             verdict = "red"
-            failures = failures or [{"log": "unparsed", "build_id": root["id"],
-                                     "build_name": root["trigger_id"][1],
-                                     "url": build_url(root["id"])}]
+            failures = failures or [{"log": "unparsed", **_where(root)}]
         return Trigger(
-            name=root["trigger_id"][1],
+            name=root["trigger"],
             build_id=root["id"],
             url=build_url(root["id"]),
             verdict=verdict,
@@ -384,10 +260,10 @@ class Runbot:
             settled=settled,
         )
 
-    def _tree_failures(self, tree: list[dict], known: dict[int, list[dict]], log_budget: int,
+    def _tree_failures(self, tree: list[dict], known: dict[int, list[dict]],
                        ) -> tuple[list[dict], list[int]]:
         """Return the tree's failures and the failing builds settled, done and fully read."""
-        failures, settled, logged = [], [], 0
+        failures, settled = [], []
         for build in tree:
             if build["local_result"] not in _FAILED:
                 continue
@@ -396,11 +272,6 @@ class Runbot:
                 failures += known[build["id"]]
                 settled.append(build["id"])
                 continue
-            if build["local_result"] == "ko" and build["log_list"]:
-                logged += 1
-                if logged > log_budget:
-                    failures.append({"log": "not fetched", **_where(build)})
-                    continue
             found = self._failures(build)
             failures += found
             if done and not any(f.get("log") == "fetch failed" for f in found):
@@ -409,38 +280,52 @@ class Runbot:
 
     def _failures(self, build: dict) -> list[dict]:
         where = _where(build)
-        steps = build["log_list"].split(",") if build["log_list"] else []
+        files = {f["name"]: f["url"] for f in build["log_files"]}
+        steps = list(files)
         if build["local_result"] == "killed":
-            build_time = build.get("build_time")
-            timeout = (build_time or 0) >= KILL_TIMEOUT_SECONDS
+            timeout = build["build_time"] >= KILL_TIMEOUT_SECONDS
             return [{"killed": "timeout" if timeout else None, "step": steps[-1] if steps else None,
-                     "build_time": build_time, **where}]
+                     "build_time": build["build_time"], **where}]
         checks = [s for s in steps if s.startswith("check_") or s == "stable_policy_check"]
-        static = f"http://{build['host']}/runbot/static/build/{build['dest']}/logs"
+        if not checks:
+            found = _test_failures(build["logs"]) or _error_lines(build["logs"])
+            return [{**f, **where} for f in found] or [{"log": "unparsed", **where}]
         found: list[dict] = []
-        try:
-            if steps and not checks:
-                text = self._get(f"{static}/{steps[-1]}.txt")
-                found = _test_failures(text) or _error_lines(text)
-            for step in checks:
-                if step == "check_style_ruff":
-                    output = self._get(f"{static}/{step}-ruff-output.json")
-                    base = self._get(f"{static}/merge_base_{step}-ruff-output.json")
-                    found += _ruff_findings(output, base)
-                elif (m := _FINDINGS_RE.search(self._get(f"{static}/{step}.txt"))) is None:
-                    found.append({"check": step, "count": None})
-                elif m.group(1) != "0":
-                    found.append({"check": step, "count": int(m.group(1))})
-        except LogGone:
-            return [{"log": "gone", **where}]
-        except HttpError as e:
-            return [{"log": "fetch failed", "status": e.status, **where}]
+        if "check_style_ruff" in checks:
+            static = files["check_style_ruff"].rpartition("/")[0]
+            try:
+                output = self._get(f"{static}/check_style_ruff-ruff-output.json")
+                base = self._get(f"{static}/merge_base_check_style_ruff-ruff-output.json")
+            except LogGone:
+                return [{"log": "gone", **where}]
+            except HttpError as e:
+                return [{"log": "fetch failed", "status": e.status, **where}]
+            found += _ruff_findings(output, base)
+        # Only the findings on changed lines are logged, one row each.
+        others = [s for s in checks if s != "check_style_ruff"]
+        if others:
+            found += [_check_finding(", ".join(others), row) for row in build["logs"]]
+        if not found:
+            found = [{"check": step, "count": None} for step in others]
         return [{**f, **where} for f in found] or [{"log": "unparsed", **where}]
+
+
+def _tree(root: dict) -> list[dict]:
+    """Return `root` then the descendants counting in its result, each with the keys it inherits."""
+    tree, todo = [], [root]
+    while todo:
+        build = todo.pop()
+        tree.append(build)
+        # A child leaves out the keys equal to its parent's, a linked build has its own orphan flag.
+        todo += [{**build, **child} for child in reversed(build["children"])
+                 if not child["link_orphan_result" if child["relation"] != "child"
+                              else "orphan_result"]]
+    return tree
 
 
 def _where(build: dict) -> dict:
     # A child's description ("Test at install") tells it apart, shown without its markdown `**`.
-    name = (build["description"] or build["trigger_id"][1]).replace("**", "")
+    name = (build["description"] or build["trigger"]).replace("**", "")
     return {"build_id": build["id"], "build_name": name, "url": build_url(build["id"])}
 
 
@@ -452,46 +337,63 @@ def _verdict(tree: list[dict]) -> str:
     return "running"
 
 
-def _error_lines(text: str) -> list[dict]:
-    """Return the first distinct ERROR or CRITICAL lines of a build that failed outside a test."""
-    errors = dict.fromkeys(f"{m.group(1)}: {m.group(2).strip()}"
-                           for m in map(_ERROR_LINE_RE.match, text.splitlines()) if m)
+def _error_lines(logs: list[dict]) -> list[dict]:
+    """Return the first distinct ERROR or CRITICAL rows of a build that failed outside a test."""
+    errors = dict.fromkeys(first for row in logs if row["level"] in ("ERROR", "CRITICAL")
+                           if (first := row["message"].partition("\n")[0].strip()))
     return [{"error": e} for e in list(errors)[:ERROR_LINES]]
 
 
-def _test_failures(text: str) -> list[dict]:
-    """Return each failing test once with its summary and trimmed traceback, from a whole log."""
-    failures: dict[tuple[str, str], list[str]] = {}
-    current = None
-    for line in text.splitlines():
-        if m := _TEST_FAIL_RE.match(line):
-            logger, test = m.groups()
-            module = logger.split(".")[2] if logger.startswith("odoo.addons.") else logger
-            key = (module, test)
-            # A retried test or a second subtest repeats the marker, its first traceback is kept.
-            current = None if key in failures else failures.setdefault(key, [])
-        elif _LINE_START_RE.match(line):
-            current = None
-        elif current is not None:
-            current.append(line)
-    out = []
-    for (module, test), block in failures.items():
-        lines = [line for line in block if line.strip()]
-        frames = []
-        for i, line in enumerate(lines):
-            if line.startswith("  File ") and f"/{module}/tests/" in line:
-                frames.append(line)
-                if i + 1 < len(lines) and lines[i + 1].startswith("    "):
-                    frames.append(lines[i + 1])
-        end = len(lines)
-        while end and not lines[end - 1].startswith(" "):
-            end -= 1
-        kept = (frames + lines[end:])[:TRACEBACK_LINES] if frames else lines[-TRACEBACK_LINES:]
-        tour = next((line[line.index("FAILED: ["):] for line in lines if "FAILED: [" in line), None)
-        exceptions = [line for line in lines if _EXCEPTION_RE.match(line)]
-        summary = tour or next(reversed(exceptions), None)
-        out.append({"test": f"{module}: {test}", "summary": summary, "traceback": "\n".join(kept)})
-    return out
+def _test_failures(logs: list[dict]) -> list[dict]:
+    """Return each failing test once with its summary, trimmed traceback and known error."""
+    tours = {}
+    for row in logs:
+        if row["canonical_tag"] and row["message"].startswith("FAILED: ["):
+            tours.setdefault(row["canonical_tag"], row["message"].partition("\n")[0])
+    out = {}
+    for row in logs:
+        tag = row["canonical_tag"]
+        if not tag or not (m := _TEST_ROW_RE.match(row["message"])):
+            continue
+        module = tag.split("/")[1]
+        test = f"{module}: {m.group(1)}"
+        # A retried test or a second subtest logs a second row, its first traceback is kept.
+        if test in out:
+            continue
+        traceback, exception = _trim_traceback(module, row["message"].splitlines()[1:])
+        out[test] = {"test": test, "summary": tours.get(tag) or exception,
+                     "traceback": traceback, "tag": tag, "known_error": row["known_error"]}
+    return list(out.values())
+
+
+def _trim_traceback(module: str, block: list[str]) -> tuple[str, str | None]:
+    """Return the test's own frames with the exception tail, and the last exception line."""
+    lines = [line for line in block if line.strip()]
+    frames = []
+    for i, line in enumerate(lines):
+        if line.startswith("  File ") and f"/{module}/tests/" in line:
+            frames.append(line)
+            if i + 1 < len(lines) and lines[i + 1].startswith("    "):
+                frames.append(lines[i + 1])
+    end = len(lines)
+    while end and not lines[end - 1].startswith(" "):
+        end -= 1
+    kept = (frames + lines[end:])[:TRACEBACK_LINES] if frames else lines[-TRACEBACK_LINES:]
+    exceptions = [line for line in lines if _EXCEPTION_RE.match(line)]
+    return "\n".join(kept), next(reversed(exceptions), None)
+
+
+def _check_finding(step: str, row: dict) -> dict:
+    """Return one check row as a finding, its path, line and link from a markdown line link."""
+    text = _MD_ESCAPE_RE.sub(r"\1", row["message"]) if row["type"] == "markdown" else row["message"]
+    if m := _MD_LINE_LINK_RE.search(text):
+        path, line, link = m.group(1), int(m.group(2)), m.group(3)
+        text = text[:m.start()] + text[m.end():]
+    else:
+        path = line = link = None
+    text = _MD_LINK_RE.sub(r"\1", text)
+    return {"check": step, "path": path, "line": line, "message": " ".join(text.split()),
+            "source_url": link}
 
 
 def _ruff_findings(output: str, merge_base: str) -> list[dict]:

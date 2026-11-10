@@ -664,15 +664,17 @@
   const RB_ERROR = {
     "not fetched yet": "not fetched yet, the next refresh reads it",
     deferred: "fetch deferred, the request cap is reached",
-    expired: "runbot session expired",
   };
 
-  // Check counts first, then tests, killed and log notes, then ruff findings grouped by rule.
+  // Check counts, then tests, killed and log notes, then findings by check step and ruff rule.
   function rbItems(t) {
-    const byRule = {};
+    const byRule = {}, byCheck = {};
+    const found = f => "message" in f && !f.rule;
     for (const f of t.failures.filter(f => f.rule)) (byRule[f.rule] ??= []).push(f);
+    for (const f of t.failures.filter(found)) (byCheck[f.check] ??= []).push(f);
     const rank = f => "count" in f ? 0 : f.test || f.error ? 1 : 2;
-    return [...t.failures.filter(f => !f.rule).sort((a, b) => rank(a) - rank(b)),
+    return [...t.failures.filter(f => !f.rule && !found(f)).sort((a, b) => rank(a) - rank(b)),
+      ...Object.values(byCheck).map(fs => ({ findings: fs })),
       ...Object.values(byRule).map(fs => ({ ruff: fs }))];
   }
 
@@ -685,6 +687,7 @@
       return `<span class="rb-rule">${escapeHTML(f.ruff[0].rule)}</span> × ${f.ruff.length} `
         + `<span class="mine-dim">${escapeHTML(f.ruff[0].message)}</span>`;
     }
+    if (f.findings) return `${escapeHTML(f.findings[0].check)} · ${f.findings.length} findings`;
     if ("killed" in f) {
       return f.killed === "timeout" && f.step && f.build_time
         ? `<span class="tr-ci-failure">killed</span> timeout on ${escapeHTML(f.step)} after ${rbDuration(f.build_time)}`
@@ -698,20 +701,27 @@
   }
 
   const rbChild = f => `<span class="mine-dim">${escapeHTML(f.build_name)}</span> ${rbLink(f.url, `${f.build_id} ↗`)}`;
-  const rbTraceback = f => `<pre class="rb-tb">${escapeHTML(f.traceback)}</pre>`;
-  const rbPaths = fs => `<ul class="rb-paths">${fs.map(f =>
-    `<li>${escapeHTML(f.path)}:${escapeHTML(f.line)} <span class="mine-dim">${escapeHTML(f.message)}</span></li>`).join("")}</ul>`;
+  // Snapshots read before the runbot API carry no tag nor known error.
+  const rbKnown = k => k ? ` <span class="rb-ref">${rbLink(`https://runbot.odoo.com/runbot/build_error/${k.id}`,
+    `known${k.first_seen_date ? ` since ${k.first_seen_date.slice(0, 10)}` : ""}${k.random ? ", random" : ""}`)}</span>` : "";
+  const rbTraceback = f => (f.tag ? `<code class="rb-tag">${escapeHTML(f.tag)}</code>` : "")
+    + `<pre class="rb-tb">${escapeHTML(f.traceback)}</pre>`;
+  const rbPaths = fs => `<ul class="rb-paths">${fs.map(f => `<li>${!f.path ? ""
+    : f.source_url ? `${rbLink(f.source_url, `${f.path}:${f.line}`)} `
+    : `${escapeHTML(f.path)}:${escapeHTML(f.line)} `}<span class="mine-dim">${escapeHTML(f.message)}</span></li>`).join("")}</ul>`;
 
   // A lone failure opens straight onto its traceback or paths, only several fold one by one.
   function rbFailures(items) {
-    if (items.length === 1 && (items[0].test || items[0].ruff)) {
+    const paths = f => f.ruff || f.findings;
+    if (items.length === 1 && (items[0].test || paths(items[0]))) {
       const f = items[0];
-      return f.test ? `<div class="rb-fail">${rbChild(f)}${rbTraceback(f)}</div>` : rbPaths(f.ruff);
+      return f.test ? `<div class="rb-fail">${rbChild(f)}${rbKnown(f.known_error)}${rbTraceback(f)}</div>`
+        : rbPaths(paths(f));
     }
-    return items.map(f => f.test || f.ruff ? `
-      <details class="rb-fail"><summary>${rbHeadline(f)}${f.test ? ` ${rbChild(f)}` : ""}${
+    return items.map(f => f.test || paths(f) ? `
+      <details class="rb-fail"><summary>${rbHeadline(f)}${f.test ? ` ${rbChild(f)}${rbKnown(f.known_error)}` : ""}${
         f.summary ? `<div class="rb-summary">${escapeHTML(f.summary)}</div>` : ""}</summary>
-        ${f.test ? rbTraceback(f) : rbPaths(f.ruff)}</details>`
+        ${f.test ? rbTraceback(f) : rbPaths(paths(f))}</details>`
       : `<div class="rb-fail rb-flat">${rbHeadline(f)}</div>`).join("");
   }
 
@@ -751,12 +761,12 @@
     const refs = ids => ids.map(id => units[id].ref).join(", ");
     const fw = b.prs.every(id => units[id].fw) ? units[b.prs[0]].fw : null;
     const fetched = b.triggers.map(t => t.fetched_at).filter(Boolean).sort()[0];
-    const notices = [...new Set(b.triggers.map(t => t.error).filter(e => e === "deferred" || e === "expired"))];
+    const notices = [...new Set(b.triggers.map(t => t.error).filter(e => e === "deferred"))];
     return `<section class="section"><h3>${fw ? "↳ " : ""}${escapeHTML(refs(b.prs))}${
       fw ? ` <span class="mine-dim">fw to ${escapeHTML(fw)}</span>` : ""}
       <span class="rb-h3meta">batch ${escapeHTML(b.batch_id)}${
         fetched ? ` · fetched ${ageLabel(Date.now() - new Date(fetched))}` : ""}</span></h3>
-      ${notices.map(e => `<div class="rb-notice${e === "expired" ? " rb-notice-bad" : ""}">${RB_ERROR[e]}${
+      ${notices.map(e => `<div class="rb-notice">${RB_ERROR[e]}${
         b.triggers.some(t => t.stale) ? ", the greyed rows are the last snapshot" : ", the next refresh retries"}</div>`).join("")}
       ${b.triggers.map(t => rbTrigger(t, t.prs.length < b.prs.length ? refs(t.prs) : "")).join("")}</section>`;
   }

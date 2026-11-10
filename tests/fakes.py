@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import urllib.parse
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -390,50 +391,36 @@ class FakeGitHub:
         return next((pr.patch for pr in self._found([(repo, number)])), None)
 
 
-def _matches(have, op: str, value) -> bool:
-    """Evaluate one search_read domain leaf the way runbot does, a many2one by its id."""
-    have = have[0] if isinstance(have, list) else have
-    if op == "ilike":
-        return value.lower() in have.lower()
-    if op == "in":
-        return have in value
-    assert op in ("<", "="), op
-    return have < value if op == "<" else have == value
-
-
 class FakeRunbotHttp:
-    """`runbot.Http` answering search_read from seeded rows per model and GETs from seeded files."""
+    """`runbot.Http` answering the API from seeded payloads and GETs from seeded files."""
 
     def __init__(self):
-        self.rows: dict[str, list[dict]] = {}
+        self.builds: dict[int, dict] = {}
+        self.batches: dict[int, dict] = {}
+        self.bundles: dict[str, list[dict]] = {}
         self.files: dict[str, str] = {}
         self.calls: list[str] = []
-        self.error: str | None = None  # the JSON-RPC error name every read answers with
-        self.crash_on_build_time = False
         self.down = False
         self.failing: dict[str, int] = {}  # URL -> the HTTP status its GET answers
 
-    def post_json(self, url, body, headers):
-        model, kwargs = body["params"]["model"], body["params"]["kwargs"]
-        self.calls.append(f"rpc {model}")
+    def get_json(self, url):
+        path = url.removeprefix(f"{runbot.BASE_URL}/runbot/api/").partition("?")[0]
+        self.calls.append(f"api {path}")
         if self.down:
             raise runbot.HttpError("fetch failed: Connection refused")
-        if self.error or (self.crash_on_build_time and "build_time" in kwargs["fields"]):
-            name = self.error or "builtins.TypeError"
-            return {"error": {"message": "Odoo Server Error", "data": {"name": name}}}
-        by, _, direction = kwargs["order"].partition(" ")
-        rows = sorted(self.rows.get(model, []), key=lambda r: r[by], reverse=direction == "desc")
-        for fname, op, value in kwargs["domain"]:
-            if op == "child_of":
-                tree = set(value)
-                for r in sorted(self.rows[model], key=lambda r: r["id"]):
-                    if r["parent_id"] and r["parent_id"][0] in tree:
-                        tree.add(r["id"])
-                rows = [r for r in rows if r["id"] in tree]
-            else:
-                rows = [r for r in rows if _matches(r.get(fname, False), op, value)]
-        return {"result": [{"id": r["id"], **{f: r.get(f, False) for f in kwargs["fields"]}}
-                           for r in rows][:kwargs["limit"]]}
+        route, _, ids = path.partition("/")
+        if route == "bundle":
+            return self.bundles.get(urllib.parse.unquote(ids), [])
+        if len(ids.split(",")) > runbot.MAX_RECORDS:
+            raise runbot.HttpError(f"HTTP 400 from {url}", status=400)
+        if route == "build":
+            return [self.builds[int(i)] for i in ids.split(",") if int(i) in self.builds]
+        batches = [self.batches[int(i)] for i in ids.split(",") if int(i) in self.batches]
+        # A slot's build leaves out the trigger it shares with the slot, as runbot's does.
+        return [b | {"slots": [
+            s | {"build": s["build"] and {k: v for k, v in s["build"].items()
+                                          if (k, v) != ("trigger", s["trigger"])}}
+            for s in b["slots"]]} for b in batches]
 
     def get_text(self, url):
         self.calls.append(url)

@@ -88,12 +88,11 @@ class Sync:
                  reviewer: Callable[..., list[ai.ReviewOutcome]] = ai.review_batch,
                  clock: Callable[[], datetime] = lambda: datetime.now(UTC),
                  runbot_http: runbot.Http | None = None,
-                 find_session: Callable[[], str] = runbot.find_session_id,
                  on_phase: Callable[[str], None] | None = None):
         self.conn, self.cfg, self.gh = conn, cfg, gh
         self.read_mergebot, self.read_queue = read_mergebot, read_queue
         self.reviewer, self.clock = reviewer, clock
-        self.runbot_http, self.find_session = runbot_http, find_session
+        self.runbot_http = runbot_http
         self._phase = on_phase or (lambda text: None)
 
     def _stamp(self) -> str:
@@ -367,9 +366,9 @@ class Sync:
         """Snapshot each red runbot build of an open Authored PR, again while it is unfinished."""
         try:
             report.runbot_requests = runbot_cache.refresh(
-                self.conn, self.runbot_http, self.find_session, self.clock, report.warnings)
+                self.conn, self.runbot_http, self.clock, report.warnings)
         except Exception as e:
-            # Runbot never aborts the refresh, a cookie or cache failure included.
+            # Runbot never aborts the refresh, a cache failure included.
             log.exception("runbot refresh failed")
             report.warnings.append(f"Runbot refresh failed: {e}")
 

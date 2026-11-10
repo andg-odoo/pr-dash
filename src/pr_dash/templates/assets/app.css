@@ -43,10 +43,6 @@ body {
   text-align: center;
 }
 
-.banner-bad {
-  background: var(--red);
-}
-
 .layout {
   display: grid;
   grid-template-columns: minmax(420px, 35%) 1fr;
@@ -1802,6 +1798,15 @@ body {
   margin-left: 14px;
 }
 
+.rb-tag {
+  color: var(--fg-dim);
+  display: block;
+  font-size: 11.5px;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 .rb-tb {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -1830,11 +1835,6 @@ body {
   font-size: 13px;
   margin: 4px 0;
   padding: 4px 8px;
-}
-
-.rb-notice-bad {
-  background: rgba(224, 104, 104, 0.15);
-  color: var(--red);
 }
 
 .rb-stale > summary, .rb-stale .rb-body {

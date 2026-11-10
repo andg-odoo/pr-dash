@@ -285,7 +285,7 @@ Tools:
 - `get_tracked(ref)` - one watched PR in full, with its merged discussion stream (conversation comments, review submissions, inline threads).
 - `list_mine(band, include_dismissed)` - your Authored PRs as Branch sets (the `mine` tab); `band` is any band the tab shows (`needs`, `open`, `done`), all by default.
 - `get_mine(ref)` - the Branch set holding one Authored PR or one of its Forward-ports, every member with its body and merged discussion stream, each Forward-port with its own stream.
-- `get_runbot(ref)` - runbot status and failures for the Branch set holding an Authored PR, or for a bundle by (partial) name, grouped per runbot batch with each build once. Red builds are fetched under a shared cap of 30 requests an hour and 150 a day; a capped or expired fetch says so in its `error`.
+- `get_runbot(ref)` - runbot status and failures for the Branch set holding an Authored PR, or for a bundle by its exact name, grouped per runbot batch with each build once. Red builds are read from runbot's public API under a shared cap of 30 requests an hour and 150 a day; a capped fetch says so in its `error`.
 - `refresh(force)` - re-fetch from GitHub (slow; network + AI), same as `pr-dash refresh`.
 
 `ref` accepts `12345`, `odoo#12345`, `odoo/odoo#12345`, or a PR URL; an
