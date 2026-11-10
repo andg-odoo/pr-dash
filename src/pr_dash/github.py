@@ -22,12 +22,16 @@ class _Pages:
     files: str = ""
 
 
+_REACTIONS = ("reactionGroups { content reactors(first: 10) { totalCount nodes { "
+              "... on User { login } ... on Bot { login } ... on Mannequin { login } } } }")
+
 # One field set for the Discussion in every view, so a field is added in one place.
 _PAGES = _Pages(
-    reviews="id author { login } state submittedAt body url",
-    comments="author { login } createdAt body databaseId url",
+    reviews=f"id author {{ login }} state submittedAt body url {_REACTIONS}",
+    comments=f"author {{ login }} createdAt body databaseId url {_REACTIONS}",
     threads="id isResolved path",
-    thread_comments="author { login } createdAt body path databaseId url pullRequestReview { id }",
+    thread_comments=("author { login } createdAt body path databaseId url pullRequestReview { id } "
+                     + _REACTIONS),
     files="path",
 )
 

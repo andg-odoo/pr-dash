@@ -467,7 +467,19 @@
     COMMENTED: ["reviewed", "disc-verdict-dim"],
   };
 
-  function commentHTML(c, { badge = "" } = {}) {
+  const REACTION = {
+    THUMBS_UP: "👍", THUMBS_DOWN: "👎", LAUGH: "😄", HOORAY: "🎉",
+    CONFUSED: "😕", HEART: "❤️", ROCKET: "🚀", EYES: "👀",
+  };
+
+  function reactionsHTML(c, login) {
+    const pills = (c.reactions || []).map(r => `
+      <span class="disc-reaction${r.users.includes(login) ? " is-mine" : ""}"
+        title="${escapeHTML(r.users.join(", "))}">${REACTION[r.content] || escapeHTML(r.content)} ${r.users.length}</span>`);
+    return pills.length ? `<div class="disc-reactions">${pills.join("")}</div>` : "";
+  }
+
+  function commentHTML(c, { badge = "", login = "" } = {}) {
     const body = (c.body || "").trim();
     return `
       <div class="disc-msg">
@@ -478,14 +490,17 @@
           ${c.url ? `<a href="${escapeHTML(c.url)}" target="_blank" rel="noopener">link</a>` : ""}
         </header>
         ${body ? `<div class="disc-msg-body markdown-body">${md.render(body)}</div>` : ""}
+        ${reactionsHTML(c, login)}
       </div>`;
   }
 
-  // An unresolved thread I took part in that ends on someone else's comment.
+  const reactedBy = (c, login) => (c.reactions || []).some(r => r.users.includes(login));
+
+  // An unresolved thread I took part in that ends on someone else's comment I did not react to.
   function awaitsMe(t, login) {
     const last = t.comments[t.comments.length - 1];
-    return Boolean(login) && t.state === "UNRESOLVED" && last.author !== login
-      && t.comments.some(c => c.author === login);
+    return Boolean(login) && t.state === "UNRESOLVED" && last.author !== login && !reactedBy(last, login)
+      && t.comments.some(c => c.author === login || reactedBy(c, login));
   }
 
   function threadsHTML(threads, showMember, login) {
@@ -509,9 +524,9 @@
               ${t.state === "UNRESOLVED" ? '<span class="disc-unresolved">unresolved</span>' : ""}
               ${awaitsMe(t, login) ? '<span class="disc-awaits">your reply</span>' : ""}
             </div>
-            ${commentHTML(t.comments[0])}
+            ${commentHTML(t.comments[0], { login })}
             ${t.comments.length > 1 ? `<div class="disc-replies">${
-              t.comments.slice(1).map(c => commentHTML(c)).join("")}</div>` : ""}
+              t.comments.slice(1).map(c => commentHTML(c, { login })).join("")}</div>` : ""}
           </div>`).join("")}
       </details>`;
   }
@@ -543,7 +558,7 @@
         + (v ? `<span class="disc-verdict ${v[1]}">${v[0]}</span>` : "");
       return `
         <article class="disc-entry">
-          ${commentHTML(c, { badge })}
+          ${commentHTML(c, { badge, login })}
           ${threadsHTML(g.threads, showMember, login)}
         </article>`;
     }).join("");

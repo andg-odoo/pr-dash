@@ -183,7 +183,11 @@ def pr_node(pr: FakePR, view: str = "queue", **over) -> dict:
              {"author": {"login": c["author"]}, "createdAt": c["at"], "body": c["body"],
               "path": t["path"], "databaseId": 1000 * (j + 1) + k,
               "url": f"{pr.url}#discussion_r{1000 * (j + 1) + k}",
-              "pullRequestReview": {"id": c["review"]} if c.get("review") else None}
+              "pullRequestReview": {"id": c["review"]} if c.get("review") else None,
+              "reactionGroups": [
+                  {"content": content, "reactors": {"totalCount": len(users),
+                                                    "nodes": [{"login": u} for u in users]}}
+                  for content, users in c.get("reactions", {}).items()]}
              for k, c in enumerate(t["comments"])
          ]}}
         for j, t in enumerate(pr.threads)
@@ -297,6 +301,11 @@ class FakeGitHub:
         pr = self._touch(pr_id)
         [thread] = [t for j, t in enumerate(pr.threads) if t.get("id", f"T{j}") == thread_id]
         thread["comments"].append({"author": login, "at": pr.updated_at, "body": body})
+
+    def react(self, pr_id: str, thread_id: str, login: str, content: str = "THUMBS_UP") -> None:
+        pr = self._touch(pr_id)
+        [thread] = [t for j, t in enumerate(pr.threads) if t.get("id", f"T{j}") == thread_id]
+        thread["comments"][-1].setdefault("reactions", {}).setdefault(content, []).append(login)
 
     def resolve(self, pr_id: str, thread_id: str) -> None:
         pr = self._touch(pr_id)

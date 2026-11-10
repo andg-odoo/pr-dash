@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Iterator
 
 
-SCHEMA_VERSION = 33
+SCHEMA_VERSION = 34
 # A fetched_at no fetch ever wrote, so the row is fetched in full, its Discussion with it.
 UNFETCHED = "1970-01-01T00:00:00+00:00"
 
@@ -177,6 +177,7 @@ CREATE TABLE comment (
   path       TEXT,
   state      TEXT,
   url        TEXT,
+  reactions  TEXT,
   PRIMARY KEY (pr_id, comment_id)
 );
 """
@@ -629,6 +630,10 @@ def _migrate(conn: sqlite3.Connection, db_path: Path) -> None:
         # Queue rows refetch on the next refresh, the hourly gate lifted, to fill their commits.
         conn.execute("UPDATE pr SET fetched_at = ?", (UNFETCHED,))
         conn.execute("DELETE FROM meta WHERE key = 'last_queue_refresh'")
+    if current < 34:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(comment)").fetchall()}
+        if "reactions" not in cols:
+            conn.execute("ALTER TABLE comment ADD COLUMN reactions TEXT")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -1151,7 +1156,7 @@ def list_tracked(conn: sqlite3.Connection, *,
 
 
 _DISCUSSION_COLS = ["comment_id", "kind", "thread_id", "parent_id", "author",
-                    "created_at", "body", "path", "state", "url"]
+                    "created_at", "body", "path", "state", "url", "reactions"]
 
 
 def replace_discussion(conn: sqlite3.Connection, pr_id: str, stream: list[dict]) -> None:
@@ -1159,7 +1164,8 @@ def replace_discussion(conn: sqlite3.Connection, pr_id: str, stream: list[dict])
     conn.executemany(
         f"INSERT INTO comment (pr_id, {', '.join(_DISCUSSION_COLS)}) "
         f"VALUES (?, {', '.join('?' for _ in _DISCUSSION_COLS)})",
-        [(pr_id, *(c.get(col) for col in _DISCUSSION_COLS)) for c in stream],
+        [(pr_id, *(json.dumps(c.get(col) or []) if col == "reactions" else c.get(col)
+                   for col in _DISCUSSION_COLS)) for c in stream],
     )
 
 
@@ -1171,7 +1177,7 @@ def list_discussions(conn: sqlite3.Connection, tab: str) -> dict[str, list[dict]
     ).fetchall()
     out: dict[str, list[dict]] = {}
     for r in rows:
-        out.setdefault(r["pr_id"], []).append(dict(r))
+        out.setdefault(r["pr_id"], []).append({**dict(r), "reactions": json.loads(r["reactions"] or "[]")})
     return out
 
 

@@ -301,6 +301,7 @@ def discussion_stream(node: dict) -> list[dict]:
             "path": path,
             "state": state,
             "url": c.get("url"),
+            "reactions": reactions(c),
         }
 
     comments = [
@@ -334,6 +335,18 @@ def discussion_stream(node: dict) -> list[dict]:
                                    parent_id=parent))
     comments.sort(key=lambda c: c["created_at"] or "")
     return comments
+
+
+def reactions(node: dict) -> list[dict]:
+    """A comment's non-empty reaction groups as [{content, users}]."""
+    return [{"content": g["content"],
+             "users": [u["login"] for u in (g.get("reactors") or {}).get("nodes") or [] if u.get("login")]}
+            for g in node.get("reactionGroups") or [] if (g.get("reactors") or {}).get("totalCount")]
+
+
+def reacted_by(comment: dict, login: str) -> bool:
+    """True when `login` put any reaction on the comment."""
+    return any(login in r["users"] for r in comment.get("reactions") or [])
 
 
 def group_discussion(stream: list[dict]) -> list[dict]:
@@ -446,9 +459,10 @@ def thread_facts(stream: list[dict], login: str) -> list[dict]:
     return [{
         "thread_id": thread_id,
         "is_resolved": comments[0]["state"] == "RESOLVED",
-        "i_participated": any(c["author"] == login for c in comments),
+        "i_participated": any(c["author"] == login or reacted_by(c, login) for c in comments),
         "last_reply_at": comments[-1]["created_at"] or "",
         "last_reply_author": comments[-1]["author"] or "",
+        "last_reacted_by_me": reacted_by(comments[-1], login),
     } for thread_id, comments in threads.items()]
 
 
@@ -458,8 +472,8 @@ def unresolved_threads(stream: list[dict]) -> int:
 
 
 def awaiting_my_reply(facts: list[dict], login: str) -> bool:
-    """True when an unresolved thread I took part in ends on someone else's comment."""
-    return any(not t["is_resolved"] and t["i_participated"]
+    """True when an unresolved thread I joined ends on someone else's comment I did not react to."""
+    return any(not t["is_resolved"] and t["i_participated"] and not t.get("last_reacted_by_me")
                and t["last_reply_author"] not in ("", login) for t in facts)
 
 
@@ -909,7 +923,7 @@ def _member_attention(
     if m["state"] == "OPEN" and not m["draft"] and row["fetched_at"]:
         threads = {c["thread_id"]: c for c in stream if c["kind"] == "thread"}
         for c in threads.values():
-            if c["state"] == "UNRESOLVED" and c["author"] != login:
+            if c["state"] == "UNRESOLVED" and c["author"] != login and not reacted_by(c, login):
                 where = f" on {c['path']}" if c["path"] else ""
                 act("thread", f"{c['author']} is waiting in a thread{where}", c["created_at"],
                     author=c["author"], path=c["path"])

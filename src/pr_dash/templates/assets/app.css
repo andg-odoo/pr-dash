@@ -1545,6 +1545,18 @@ body {
 /* Screenshots pasted into review comments are frequently huge. */
 .disc-msg-body img { max-width: 100%; height: auto; }
 
+.disc-reactions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; margin-top: 4px; }
+.disc-reaction {
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--fg-dim);
+  cursor: default;
+  font-size: 11px;
+  padding: 0 6px;
+}
+.disc-reaction.is-mine { border-color: var(--accent); color: var(--fg); }
+
 .disc-threads { margin-top: 8px; }
 
 .disc-threads > summary {

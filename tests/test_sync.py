@@ -256,6 +256,12 @@ def test_a_queue_rows_thread_signals_follow_its_discussion(w):
     assert look() == (1, 0, 1, [])
     w.gh.reply(ODOO, "T1", "jov", "still why?")
     assert look() == (1, 1, 1, ["reply"])
+    w.gh.react(ODOO, "T1", "me")
+    assert look()[:2] == (1, 0)
+    assert tab.get_comments(w.cfg, "odoo#1")["discussion"][-1]["threads"][0]["comments"][-1][
+        "reactions"] == [{"content": "THUMBS_UP", "users": ["me"]}]
+    w.gh.reply(ODOO, "T1", "jov", "and now?")
+    assert look()[:2] == (1, 1)
     w.gh.reply(ODOO, "T1", "me", "fixed")
     assert look()[:2] == (1, 0)
     w.gh.resolve(ODOO, "T1")

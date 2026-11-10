@@ -614,6 +614,8 @@ def test_thread_lifts_when_someone_else_spoke_last_and_a_draft_never_lifts():
             _entry("thread", "odoo-pda", "2026-09-13T00:00:00Z", state="UNRESOLVED",
                    thread="t2", path="x.py"),
             _entry("thread", "odoo-pda", "2026-09-14T00:00:00Z", state="RESOLVED", thread="t3"),
+            {**_entry("thread", "jbw-odoo", "2026-09-15T00:00:00Z", state="UNRESOLVED", thread="t5"),
+             "reactions": [{"content": "THUMBS_UP", "users": ["andg"]}]},
         ],
         "odoo/odoo#2": [
             _entry("thread", "odoo-pda", "2026-09-13T00:00:00Z", state="UNRESOLVED", thread="t4"),
