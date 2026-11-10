@@ -226,13 +226,15 @@ def _fresh(pr_id: str) -> dict:
 
 
 @mcp.tool()
-def list_prs(status: str = "pending", include_hidden: bool = False) -> dict:
+def list_prs(status: str = "pending", include_hidden: bool = False, include_drafts: bool = False) -> dict:
     """List PRs as compact triage rows, in dashboard order (worst bucket / oldest
     request first).
 
     status: 'pending' (default, not yet reviewed) | 'archived' | 'all'.
     include_hidden: PRs you've hidden on the dashboard are excluded from pending
     results by default; set True to include them (each is marked "hidden": true).
+    include_drafts: draft PRs not yet reviewed are excluded too, as on the
+    dashboard's default view; set True to include them.
     Returns {cache_fetched_at, count, prs}.
 
     Flags: RE=re-review requested, MSG=awaiting my reply, CI!=failing CI,
@@ -263,6 +265,8 @@ def list_prs(status: str = "pending", include_hidden: bool = False) -> dict:
     if not include_hidden:
         # Hiding only applies to the active queue; archived rows are never filtered.
         sel = [it for it in sel if it.get("is_archived") or it["id"] not in hidden_ids]
+    if not include_drafts:
+        sel = [it for it in sel if it.get("is_archived") or not it.get("is_draft")]
     prs = []
     for it in sel:
         row = tab.QUEUE.summarize(it)

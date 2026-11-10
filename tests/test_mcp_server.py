@@ -122,6 +122,16 @@ def test_list_prs_ignores_a_hide_made_before_a_push(tmp_path, monkeypatch):
     assert _hides(cfg) == {"odoo/odoo#1": "old"}
 
 
+def test_list_prs_skips_drafts_unless_asked(tmp_path, monkeypatch):
+    cfg = _cfg(tmp_path)
+    items = [_item("odoo/odoo#1", "a", is_draft=True), _item("odoo/odoo#2", "b"),
+             _item("odoo/odoo#3", "c", is_draft=True, is_archived=True)]
+    mcp_server = _patch_cfg_and_items(monkeypatch, cfg, items)
+
+    assert [p["id"] for p in mcp_server.list_prs(status="all")["prs"]] == ["odoo/odoo#2", "odoo/odoo#3"]
+    assert mcp_server.list_prs(include_drafts=True)["count"] == 2
+
+
 # --- listener ---------------------------------------------------------------
 
 
