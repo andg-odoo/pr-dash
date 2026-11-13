@@ -81,7 +81,12 @@ def test_timer_ticks_search_the_queue_hourly_and_each_tab_when_stale(w):
     # Each gate keeps a minute of slack but the tracked one, a tick lands seconds short.
     w.clock.advance(minutes=14)
     assert tick() == {MINE}
-    w.clock.advance(minutes=45)
+    # A one-PR refresh stamps the row without searching, so it leaves the Mine gate alone.
+    w.clock.advance(minutes=10)
+    w.sync.refresh_prs([("odoo/odoo", 1)])
+    w.clock.advance(minutes=5)
+    assert tick() == {MINE}
+    w.clock.advance(minutes=30)
     assert tick() == {QUEUE, MINE}
     w.clock.advance(hours=6)
     assert tick() == {QUEUE, TRACKED, MINE}

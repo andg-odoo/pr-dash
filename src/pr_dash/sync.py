@@ -263,7 +263,8 @@ class Sync:
         """Refresh the open and the undismissed Authored PRs, and their Mergebot pages."""
         conn = self.conn
         known = db.list_mine(conn)
-        last = max((r["fetched_at"] for r in known if r["fetched_at"]), default=None)
+        # Not the rows' fetched_at, which a one-set refresh bumps without searching for new PRs.
+        last = db.get_meta(conn, "last_mine_search")
         # A timer tick lands seconds short of the threshold, hence the minute of slack.
         due = self.clock() - timedelta(minutes=self.cfg.thresholds.mine_staleness_minutes - 1)
         if not force and last and derive.parse_iso(last) > due:
@@ -280,6 +281,7 @@ class Sync:
             return
         with db.transaction(conn):
             report.mine_added = self._store_authored(nodes, links, self._stamp())
+            db.set_meta(conn, "last_mine_search", self._stamp())
         report.mine_refreshed = len(nodes)
         report.mergebot_read = self._refresh_mergebot(db.list_mine(conn))
         if self.runbot_http is not None:
