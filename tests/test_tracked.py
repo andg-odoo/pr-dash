@@ -416,29 +416,30 @@ def test_tracked_and_mine_payloads_ship_one_discussion_tree(tmp_path):
 def test_acknowledge_through_the_listener_and_fyi_clearing_on_a_look(tmp_path, monkeypatch):
     monkeypatch.setattr(mcp_server, "_schedule_rerender", lambda cfg: None)
     conn = _conn(tmp_path)
+    now = "2026-10-05T09:00:00Z"
     ec, _, _ = _mine_sets(conn)
     cfg = SimpleNamespace(db_path=tmp_path / "t.db")
-    sets, seen_updates = render.build_mine_payload(conn, "andg")
+    sets, seen_updates = render.build_mine_payload(conn, "andg", now=now)
     render.commit_tab_seen_baseline(conn, "mine", seen_updates, "2026-10-05T00:00:00Z")
     reply = {"nodes": [{"author": {"login": "clbr-odoo"}, "body": "ping",
                         "createdAt": "2026-10-05T06:00:00Z"}]}
     _mine(conn, "odoo/enterprise#132695", ec, "2026-10-05T06:00:00Z", comments=reply)
 
-    sets, seen_updates = render.build_mine_payload(conn, "andg")
+    sets, seen_updates = render.build_mine_payload(conn, "andg", now=now)
     assert mcp_server._apply_mark_ops(cfg, [
         {"kind": "ack", "op": "set", "key": ec, "guard": sets[0]["fingerprint"]}]) == 1
-    sets, _ = render.build_mine_payload(conn, "andg")
+    sets, _ = render.build_mine_payload(conn, "andg", now=now)
     ec_set = next(s for s in sets if s["key"] == ec)
     # Acknowledged, it sits in Open with its Action items, and the reply shows until a look.
     assert (ec_set["band"], ec_set["acknowledged"], len(ec_set["actions"]), ec_set["fyi"]) == (
         "open", True, 2, ["new reply"])
     render.commit_tab_seen_baseline(conn, "mine", seen_updates, "2026-10-05T07:00:00Z")
-    assert next(s for s in render.build_mine_payload(conn, "andg")[0] if s["key"] == ec)[
+    assert next(s for s in render.build_mine_payload(conn, "andg", now=now)[0] if s["key"] == ec)[
         "fyi"] == []
 
     # A push changes the fingerprint, the refresh drops the Acknowledge and the set lifts again.
     _mine(conn, "odoo/enterprise#132695", ec, "2026-10-05T08:00:00Z", headRefOid="s2")
-    sets, _ = render.build_mine_payload(conn, "andg")
+    sets, _ = render.build_mine_payload(conn, "andg", now=now)
     db.clear_marks(conn, "ack", [s["key"] for s in sets if not s["acknowledged"]])
     assert (sets[0]["key"], sets[0]["band"], db.marks(conn, "ack")) == (ec, "needs", {})
 
