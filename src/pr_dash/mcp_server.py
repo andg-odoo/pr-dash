@@ -226,9 +226,14 @@ def _fresh(pr_id: str) -> dict:
 
 
 @mcp.tool()
-def list_prs(status: str = "pending", include_hidden: bool = False, include_drafts: bool = False) -> dict:
-    """List PRs as compact triage rows, in dashboard order (worst bucket / oldest
-    request first).
+def list_prs(
+    status: str = "pending", include_hidden: bool = False, include_drafts: bool = False, sort: str = "dashboard"
+) -> dict:
+    """List PRs as compact triage rows.
+
+    sort: 'dashboard' (default, smallest bucket first, oldest request first within
+    a bucket) | 'requested' (oldest review request first across all buckets, rows
+    without a request date last).
 
     status: 'pending' (default, not yet reviewed) | 'archived' | 'all'.
     include_hidden: PRs you've hidden on the dashboard are excluded from pending
@@ -262,6 +267,10 @@ def list_prs(status: str = "pending", include_hidden: bool = False, include_draf
         sel = list(items)
     else:
         raise ValueError(f"status must be 'pending', 'archived', or 'all', got {status!r}")
+    if sort == "requested":
+        sel.sort(key=lambda it: (it.get("review_requested_at") is None, it.get("review_requested_at") or ""))
+    elif sort != "dashboard":
+        raise ValueError(f"sort must be 'dashboard' or 'requested', got {sort!r}")
     if not include_hidden:
         # Hiding only applies to the active queue; archived rows are never filtered.
         sel = [it for it in sel if it.get("is_archived") or it["id"] not in hidden_ids]
