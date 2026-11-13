@@ -386,7 +386,7 @@ def _make_item(bset: branch_set.BranchSet, my_login: str) -> dict:
                      if linked_task else None),
         "created_at": primary["created_at"],
         "updated_at": primary["updated_at"],
-        "review_requested_at": primary["review_requested_at"],
+        "review_requested_at": min(m["review_requested_at"] for m in members),
         "age_days": age_days,
         "req_age_days": req_age_days,
         "previously_reviewed": previously_reviewed,
@@ -468,10 +468,7 @@ def build_payload(
     sets = branch_set.group(records.values(), db.list_companion_rows(conn, records))
     items = [_make_item(s, my_login) for s in sets]
 
-    items.sort(key=lambda p: (
-        BUCKET_RANK.get(p["bucket"], 1),
-        -p["req_age_days"],
-    ))
+    items.sort(key=lambda p: (BUCKET_RANK.get(p["bucket"], 1), p["review_requested_at"]))
 
     return items, seen_updates
 

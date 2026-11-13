@@ -784,6 +784,7 @@
   const hasMoved = t => ((t.since_last_look || []).length ? 1 : 0);
   const byActivity = (a, b) => (b.updated_at || "").localeCompare(a.updated_at || "");
   const by = key => (a, b) => key(a) - key(b);
+  const byRequest = (a, b) => a.review_requested_at.localeCompare(b.review_requested_at);
   const bucketRank = pr => ({ S: 0, M: 1, L: 2, XL: 3 }[pr.bucket] ?? 1);
 
   const VIEWS = {
@@ -827,9 +828,9 @@
         && pr.is_draft === filters.state.has("drafts"),
       lookChip: ["state", "updated"],
       sorts: {
-        default: { label: "default", by: by(pr => bucketRank(pr) * 10000 - pr.req_age_days) },
-        req_age_desc: { label: "requested oldest", by: by(pr => -pr.req_age_days) },
-        req_age_asc: { label: "requested newest", by: by(pr => pr.req_age_days) },
+        default: { label: "default", by: (a, b) => bucketRank(a) - bucketRank(b) || byRequest(a, b) },
+        req_age_desc: { label: "requested oldest", by: byRequest },
+        req_age_asc: { label: "requested newest", by: (a, b) => byRequest(b, a) },
         bucket: { label: "bucket size", by: by(bucketRank) },
         size: { label: "size desc", by: by(pr => -(pr.additions + pr.deletions)) },
       },

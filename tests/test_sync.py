@@ -235,6 +235,19 @@ def test_a_half_the_migration_left_unfetched_is_primed_once(w):
     assert w.refresh().primed == 0
 
 
+def test_the_queue_orders_requests_by_time_and_a_pair_by_its_earliest_half(w):
+    insert_pr(w.conn, "odoo/odoo#1", head_branch="a", requested="2026-07-01T20:00:00Z")
+    insert_pr(w.conn, "odoo/odoo#2", head_branch="b", requested="2026-07-01T08:00:00Z")
+    insert_pr(w.conn, "odoo/odoo#3", head_branch="p", requested="2026-07-01T22:00:00Z")
+    insert_pr(w.conn, "odoo/enterprise#4", head_branch="p", requested="2026-07-01T06:00:00Z")
+    items, _seen = render.build_payload(w.conn, "me", 30)
+    assert [(i["id"], i["review_requested_at"]) for i in items] == [
+        ("odoo/odoo#3", "2026-07-01T06:00:00Z"),
+        ("odoo/odoo#2", "2026-07-01T08:00:00Z"),
+        ("odoo/odoo#1", "2026-07-01T20:00:00Z"),
+    ]
+
+
 def test_a_queue_rows_thread_signals_follow_its_discussion(w):
     w.gh.add("odoo/odoo", 1, requested=["me"],
              comments=[{"author": "robodoo", "at": T0, "body": "staged"}],
