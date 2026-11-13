@@ -254,6 +254,8 @@ def test_latest_review_requested_at_picks_latest_for_me():
          "requestedReviewer": {"__typename": "User", "login": "me"}},
     ]
     assert derive.latest_review_requested_at(timeline, "me", "fallback") == "2026-05-10T00:00:00Z"
+    assert derive.first_review_requested_at(timeline, "me", "fallback") == "2026-05-01T00:00:00Z"
+    assert derive.first_review_requested_at(timeline[1:2], "me", "fallback") == "fallback"
 
 
 def test_previously_reviewed():

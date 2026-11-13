@@ -442,7 +442,8 @@ class Sync:
                     report.updated += 1
                 else:
                     pr_row = self._node_to_rows(node)[0]
-                    pr_row.update(review_requested_at=latest["submittedAt"], previously_reviewed=1,
+                    pr_row.update(review_requested_at=latest["submittedAt"],
+                                  first_review_requested_at=latest["submittedAt"], previously_reviewed=1,
                                   archived_at=latest["submittedAt"], fetched_at=db.UNFETCHED)
                     db.upsert_pr(self.conn, pr_row)
                     report.added += 1
@@ -896,6 +897,10 @@ class Sync:
         review_requested_at = derive.latest_review_requested_at(
             timeline, login, fallback=node["updatedAt"],
         )
+        first_requested_at = derive.first_review_requested_at(
+            ((node.get("firstRequests") or {}).get("nodes") or []) + timeline, login,
+            fallback=review_requested_at,
+        )
         prev_reviewed = derive.previously_reviewed(timeline, login)
 
         stream = derive.discussion_stream(node)
@@ -927,6 +932,7 @@ class Sync:
             "created_at": node["createdAt"],
             "updated_at": node["updatedAt"],
             "review_requested_at": review_requested_at,
+            "first_review_requested_at": first_requested_at,
             "previously_reviewed": int(prev_reviewed),
             "mergeable": node.get("mergeable"),
             "ci_state": ci_state,

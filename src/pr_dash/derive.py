@@ -675,6 +675,17 @@ def latest_review_requested_at(timeline: list[dict], my_login: str, fallback: st
     return latest or fallback
 
 
+def first_review_requested_at(timeline: list[dict], my_login: str, fallback: str) -> str:
+    """Find the earliest ReviewRequestedEvent where I was the target."""
+    stamps = [
+        ev.get("createdAt") or "" for ev in timeline
+        if ev.get("__typename") == "ReviewRequestedEvent"
+        and (ev.get("requestedReviewer") or {}).get("__typename") == "User"
+        and ev["requestedReviewer"].get("login") == my_login
+    ]
+    return min((s for s in stamps if s), default=fallback)
+
+
 def previously_reviewed(timeline: list[dict], my_login: str) -> bool:
     for ev in timeline:
         if ev.get("__typename") != "PullRequestReview":

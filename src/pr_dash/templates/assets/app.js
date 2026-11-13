@@ -784,7 +784,8 @@
   const hasMoved = t => ((t.since_last_look || []).length ? 1 : 0);
   const byActivity = (a, b) => (b.updated_at || "").localeCompare(a.updated_at || "");
   const by = key => (a, b) => key(a) - key(b);
-  const byRequest = (a, b) => a.review_requested_at.localeCompare(b.review_requested_at);
+  const byRequest = (a, b) => a.first_review_requested_at.localeCompare(b.first_review_requested_at);
+  const firstAge = pr => (pr.first_req_age_days > pr.req_age_days ? ` (first ${pr.first_req_age_days}d)` : "");
   const bucketRank = pr => ({ S: 0, M: 1, L: 2, XL: 3 }[pr.bucket] ?? 1);
 
   const VIEWS = {
@@ -909,7 +910,7 @@
             <span class="pr-flags">${pr.flags.map(f => `<span class="pr-flag ${cssClass(f)}">${escapeHTML(f)}</span>`).join("")}</span>
             <span>+${pr.additions}/−${pr.deletions} · ${pr.changed_files}f</span>
             <span class="pr-modules">${pr.modules.slice(0, 3).map(escapeHTML).join(" ")}${pr.modules.length > 3 ? ` (+${pr.modules.length - 3})` : ""}</span>
-            <span>req ${pr.req_age_days}d / open ${pr.age_days}d</span>
+            <span>req ${pr.req_age_days}d${firstAge(pr)} / open ${pr.age_days}d</span>
           </span>
         </li>`;
       },
@@ -1032,7 +1033,7 @@
                   ${pr.bucket_score ? `<span class="bucket-note">score ${pr.bucket_score.toFixed(1)}</span>` : ""}</dd>
                 <dt>Size</dt><dd>+${pr.additions} / −${pr.deletions} across ${pr.changed_files} files</dd>
                 <dt>Modules</dt><dd>${pr.modules.length ? pr.modules.map(escapeHTML).join(", ") : "<em>(none)</em>"}</dd>
-                <dt>Open / requested</dt><dd>${pr.age_days}d open, ${pr.req_age_days}d since you were requested</dd>
+                <dt>Open / requested</dt><dd>${pr.age_days}d open, ${pr.req_age_days}d since you were requested${firstAge(pr)}</dd>
                 <dt>CI</dt><dd>${escapeHTML(pr.ci_state || "-")} · ${escapeHTML(pr.mergeable || "-")}</dd>
                 ${(pr.ci_failures && pr.ci_failures.length) ? `
                 <dt>Failed</dt><dd class="ci-failures">

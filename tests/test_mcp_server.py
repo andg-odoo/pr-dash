@@ -134,9 +134,9 @@ def test_list_prs_skips_drafts_unless_asked(tmp_path, monkeypatch):
 
 def test_list_prs_sort_requested_puts_oldest_request_first(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path)
-    items = [_item("odoo/odoo#1", "a", review_requested_at="2026-11-10T00:00:00Z"),
-             _item("odoo/odoo#2", "b", review_requested_at=None),
-             _item("odoo/odoo#3", "c", review_requested_at="2026-11-03T00:00:00Z")]
+    items = [_item("odoo/odoo#1", "a", first_review_requested_at="2026-11-10T00:00:00Z"),
+             _item("odoo/odoo#2", "b", first_review_requested_at=None),
+             _item("odoo/odoo#3", "c", first_review_requested_at="2026-11-03T00:00:00Z")]
     mcp_server = _patch_cfg_and_items(monkeypatch, cfg, items)
 
     assert [p["id"] for p in mcp_server.list_prs()["prs"]] == ["odoo/odoo#1", "odoo/odoo#2", "odoo/odoo#3"]

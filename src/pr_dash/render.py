@@ -107,6 +107,7 @@ def _build_pr_record(
 
     age_days = derive.days_since(pr["created_at"])
     req_age_days = derive.days_since(pr["review_requested_at"])
+    first_requested_at = pr["first_review_requested_at"] or pr["review_requested_at"]
     is_stale = req_age_days > stale_review_days
 
     flags = []
@@ -152,8 +153,10 @@ def _build_pr_record(
         "created_at": pr["created_at"],
         "updated_at": pr["updated_at"],
         "review_requested_at": pr["review_requested_at"],
+        "first_review_requested_at": first_requested_at,
         "age_days": age_days,
         "req_age_days": req_age_days,
+        "first_req_age_days": derive.days_since(first_requested_at),
         "previously_reviewed": bool(pr["previously_reviewed"]),
         "awaiting_my_reply": bool(pr["awaiting_my_reply"]),
         "my_pending_review": bool(pr.get("my_pending_review")),
@@ -238,6 +241,7 @@ def _make_item(bset: branch_set.BranchSet, my_login: str) -> dict:
     unresolved_threads = sum(m["unresolved_threads"] for m in members)
     age_days = max(m["age_days"] for m in members)
     req_age_days = max(m["req_age_days"] for m in members)
+    first_req_age_days = max(m["first_req_age_days"] for m in members)
 
     # Archive state: pair is archived only when both halves are archived;
     # if one half is still active, you're still being requested somewhere.
@@ -387,8 +391,10 @@ def _make_item(bset: branch_set.BranchSet, my_login: str) -> dict:
         "created_at": primary["created_at"],
         "updated_at": primary["updated_at"],
         "review_requested_at": min(m["review_requested_at"] for m in members),
+        "first_review_requested_at": min(m["first_review_requested_at"] for m in members),
         "age_days": age_days,
         "req_age_days": req_age_days,
+        "first_req_age_days": first_req_age_days,
         "previously_reviewed": previously_reviewed,
         "awaiting_my_reply": awaiting_my_reply,
         "my_pending_review": my_pending_review,
@@ -468,7 +474,7 @@ def build_payload(
     sets = branch_set.group(records.values(), db.list_companion_rows(conn, records))
     items = [_make_item(s, my_login) for s in sets]
 
-    items.sort(key=lambda p: (BUCKET_RANK.get(p["bucket"], 1), p["review_requested_at"]))
+    items.sort(key=lambda p: (BUCKET_RANK.get(p["bucket"], 1), p["first_review_requested_at"]))
 
     return items, seen_updates
 

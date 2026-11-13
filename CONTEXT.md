@@ -10,6 +10,10 @@ A personal dashboard over the Odoo pull requests one developer reviews, watches,
 PRs the user was directly requested to review, as an obligation to act on.
 _Avoid_: inbox, review list
 
+**First request**:
+The earliest time the user was requested on a Review queue PR, which orders it; a re-request moves only the latest request, which the stale flag counts from.
+_Avoid_: original request, request date
+
 **Tracked PR**:
 A PR the user has no obligation on but wants to see land.
 _Avoid_: subscription, watched PR

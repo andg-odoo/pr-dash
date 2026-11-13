@@ -221,6 +221,7 @@ def pr_node(pr: FakePR, view: str = "queue", **over) -> dict:
             for i, msg in enumerate(pr.commits)
         ]),
         "timelineItems": {"nodes": timeline},
+        "firstRequests": {"nodes": [e for e in timeline if e["__typename"] == "ReviewRequestedEvent"][:10]},
         "files": _page([{"path": path} for path in pr.files]),
         "crossReferences": {"nodes": [
             {"__typename": "CrossReferencedEvent", "source": {"number": n, "author": {"login": a}, "repository": {"nameWithOwner": r}}}

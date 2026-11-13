@@ -141,7 +141,7 @@ _SUMMARY_KEYS = (
     "id", "url", "title", "author", "is_draft", "is_pair", "members", "target_branch", "modules",
     "additions", "deletions", "changed_files", "bucket", "flags", "ci_state", "mergeable",
     "unresolved_threads", "awaiting_my_reply", "my_pending_review", "my_review_state",
-    "previously_reviewed", "req_age_days", "since_last_look", "ai_review_verdict",
+    "previously_reviewed", "req_age_days", "first_req_age_days", "since_last_look", "ai_review_verdict",
     "linked_task_label", "is_archived", "state", "ping_at", "ping_author", "ping_snippet",
     "push_at", "push_sha",
     # On the compact row so "does this data move have a migration" needs no get_pr call.

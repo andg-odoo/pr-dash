@@ -113,6 +113,23 @@ def test_a_tab_failure_is_a_warning_and_a_queue_failure_skips_the_tabs(w):
 
 # --- archived rows -----------------------------------------------------------
 
+def test_a_re_request_keeps_the_first_request_for_ordering(w):
+    w.gh.add("odoo/odoo", 1)
+    w.gh.request(ODOO, "me")
+    first = w.gh.prs[ODOO].updated_at
+    w.refresh()
+    w.clock.advance(days=2)
+    w.gh.review(ODOO, "me", state="CHANGES_REQUESTED")
+    w.clock.advance(days=1)
+    w.gh.request(ODOO, "me")
+    w.refresh()
+    row = w.row(ODOO)
+    assert (row["first_review_requested_at"], row["review_requested_at"]) == (
+        first, w.gh.prs[ODOO].updated_at)
+    [item], _seen = render.build_payload(w.conn, "me", 30)
+    assert (item["first_req_age_days"] - item["req_age_days"], item["first_review_requested_at"]) == (3, first)
+
+
 def test_an_archived_row_follows_its_pr_on_github(w):
     w.gh.add("odoo/odoo", 1, requested=["me"])
     w.refresh()

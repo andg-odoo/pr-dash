@@ -159,6 +159,19 @@ fragment PRFields on PullRequest {
       }
     }
   }
+  firstRequests: timelineItems(first: 10, itemTypes: [REVIEW_REQUESTED_EVENT]) {
+    nodes {
+      __typename
+      ... on ReviewRequestedEvent {
+        createdAt
+        requestedReviewer {
+          __typename
+          ... on User { login }
+          ... on Team { slug }
+        }
+      }
+    }
+  }
   """ + _connection("files", "first: 100", _PAGES.files) + """
 }
 """
