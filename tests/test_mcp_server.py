@@ -638,10 +638,12 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
 
     # The default is the compact set, discussion=True adds bodies and Discussion trees.
     compact = mcp_server.get_mine("odoo#290109")
-    assert [(m["ref"], m["base"], "body" in m) for m in compact["members"]] == [
-        ("odoo#290109", "master", False), ("enterprise#132695", "", False),
-        ("upgrade#11389", "", False)]
-    assert set(compact["members"][0]["fw"][0]) == {"base", *query._COMPACT_PR_KEYS}
+    assert [(m["ref"], m.get("base"), "body" in m) for m in compact["members"]] == [
+        ("odoo#290109", "master", False), ("enterprise#132695", None, False),
+        ("upgrade#11389", None, False)]
+    open_fw, done_fw = compact["members"][0]["fw"]
+    assert (open_fw["ref"], "ci_failing" in open_fw) == ("odoo#291981", False)
+    assert set(done_fw) <= set(query._DONE_FW_KEYS) and done_fw["state"] == "CLOSED"
     detail = mcp_server.get_mine("odoo#290109", discussion=True)
     assert detail["task"] == "6396725"
     odoo = next(m for m in detail["members"] if m["num"] == 290109)
@@ -664,13 +666,12 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
             for b in by_pr["batches"]] == [(7, [("ci/runbot", ["odoo/odoo#290109"])])]
 
     assert mcp_server.get_pr("odoo/odoo#291981") == compact
-    assert mcp_server.get_comments("132695")["members"][0]["discussion"] == odoo["discussion"]
-    # A Done Forward-port's tree is left out unless the ref names it.
-    def fw_trees(ref):
-        return {f["ref"]: "discussion" in f for m in mcp_server.get_comments(ref)["members"]
-                for f in m["fw"]}
-    assert fw_trees("odoo#290109") == {"odoo#291981": True, "odoo#291500": False}
-    assert fw_trees("odoo#291500") == {"odoo#291981": True, "odoo#291500": True}
+    def trees(ref):
+        return {p["ref"]: p["discussion"] for p in mcp_server.get_comments(ref)["prs"]}
+    assert trees("132695")["odoo#291981"] == fw["discussion"]
+    # Only PRs with a discussion left, a Done Forward-port's only when the ref names it.
+    assert set(trees("odoo#290109")) == {"odoo#290109", "odoo#291981"}
+    assert set(trees("odoo#291500")) == {"odoo#290109", "odoo#291981", "odoo#291500"}
     # A bare number in the review queue still resolves there, the Authored PR needs its repo.
     assert mcp_server.get_pr("1")["id"] == "odoo/odoo#1"
     assert mcp_server.get_comments("1")["id"] == "odoo/odoo#1"

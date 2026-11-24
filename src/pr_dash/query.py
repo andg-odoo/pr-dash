@@ -318,14 +318,22 @@ _COMPACT_PR_KEYS = (
 )
 
 
+_DONE_FW_KEYS = ("ref", "state", "base", "head_sha")
+
+
 def mine_compact(branch_set: dict) -> dict:
-    """A Branch set as its attention and each member's and Forward-port's state, no Discussion."""
+    """A Branch set as its attention and each PR's state, empty values and Discussion left out."""
     def pr(p: dict, base: str) -> dict:
-        return {**{k: p[k] for k in _COMPACT_PR_KEYS}, "base": base}
+        return _present({**{k: p[k] for k in _COMPACT_PR_KEYS}, "base": base})
+
+    def fw(f: dict) -> dict:
+        if f["state"] in ("MERGED", "CLOSED"):
+            return {k: f[k] for k in _DONE_FW_KEYS}
+        return pr(f, f["base"])
 
     keys = ("key", "task", "title", "url", "band", "actions", "fyi", "acknowledged")
     return {**{k: branch_set[k] for k in keys},
-            "members": [{**pr(m, m["target_branch"]), "fw": [pr(f, f["base"]) for f in m["fw"]]}
+            "members": [{**pr(m, m["target_branch"]), "fw": [fw(f) for f in m["fw"]]}
                         for m in branch_set["members"]]}
 
 

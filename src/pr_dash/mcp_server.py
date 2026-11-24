@@ -337,8 +337,8 @@ def get_comments(ref: str, include_bots: bool = False, unresolved_only: bool = F
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
     A Review queue PR returns {id, discussion}, both halves of a pair merged. An Authored
-    PR returns get_mine(discussion=True), a merged or closed Forward-port's discussion
-    only when ref names it. A Tracked PR returns its summary, body and discussion.
+    PR returns {key, prs: [{ref, discussion}]} for its set's PRs with a discussion left, a
+    merged or closed Forward-port only when ref names it. A Tracked PR returns its summary, body and discussion.
 
     A discussion is a list of groups, newest first, {kind ('review' / 'issue' / 'orphan'),
     entry, threads}. threads hold {thread_id, path, state (RESOLVED / UNRESOLVED), comments}

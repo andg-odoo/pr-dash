@@ -179,11 +179,9 @@ def get_comments(cfg: Config, ref: str | int, **filters) -> dict:
         out = tab.detail(row)
         return {**out, "discussion": query.filter_discussion(out["discussion"], **filters)}
     named = {f"{pr['repo']}#{pr['number']}" for _, pr in hits([row], ref, mine_prs)}
-    out = query.mine_detail(cfg, row)
-    for m in out["members"]:
-        m["discussion"] = query.filter_discussion(m["discussion"], **filters)
-        m["fw"] = [{**f, "discussion": query.filter_discussion(f["discussion"], **filters)}
-                   if f["state"] not in ("MERGED", "CLOSED") or f["id"] in named
-                   else {k: v for k, v in f.items() if k != "discussion"}
-                   for f in m["fw"]]
-    return out
+    prs = [pr for m in query.mine_detail(cfg, row)["members"]
+           for pr in [m, *(f for f in m["fw"]
+                           if f["state"] not in ("MERGED", "CLOSED") or f["id"] in named)]]
+    return {"key": row["key"], "prs": [
+        {"ref": pr["ref"], "discussion": d} for pr in prs
+        if (d := query.filter_discussion(pr["discussion"], **filters))]}

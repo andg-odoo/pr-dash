@@ -292,7 +292,7 @@ Tracked PRs have no tool of their own: `get_comments` reads one, `pr-dash query 
 `ref` accepts `12345`, `odoo#12345`, `odoo/odoo#12345`, or a PR URL; an
 enterprise number resolves to its odoo+enterprise pair. `get_pr` and
 `get_comments` fall back to your Authored PRs when no review-queue PR matches,
-returning what `get_mine` returns (`get_comments` with the discussion). The same queries are
+`get_pr` returning what `get_mine` returns, `get_comments` each PR's discussion. The same queries are
 available as JSON from the shell for debugging: `pr-dash query list|show|diff|history|stats|tracked|mine|runbot`,
 `query mine REF` printing the compact `get_mine` answer.
 
