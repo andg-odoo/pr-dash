@@ -584,10 +584,6 @@ def build_mine_payload(
             seen_updates.append({**_tab_seen_row(row), "fetched_at": row["fetched_at"],
                                  "r_plus": m["r_plus"]})
             m["target_branch"] = row["target_branch"]
-            approval = {"APPROVED": "approved", "CHANGES_REQUESTED": "changes requested"}.get(
-                m["decision"])
-            r_plus = {True: "r+", False: "r+ missing"}.get(m["r_plus"])
-            m["review"] = " · ".join(filter(None, [approval, r_plus]))
             runbot = {c["name"]: c["url"] for c in row["checks"]
                       if "runbot.odoo.com" in (c.get("url") or "")}
             m["runbot_url"] = runbot.get("ci/runbot") or next(iter(runbot.values()), None)
@@ -595,6 +591,10 @@ def build_mine_payload(
             m["mergebot_url"] = mergebot.page_url(m["repo"], m["num"]) if managed else None
             for pr in [m, *m["fw"]]:
                 pr.update(_queue_spot(pr, queue))
+                approval = {"APPROVED": "approved", "CHANGES_REQUESTED": "changes requested"}.get(
+                    pr["decision"])
+                r_plus = {True: "r+", False: "r+ missing"}.get(pr["r_plus"])
+                pr["review"] = " · ".join(filter(None, [approval, r_plus]))
         s["runbot"] = derive.runbot_batches(
             [by_id[pr["id"]] for m in s["members"] for pr in [m, *m["fw"]]], pages, snapshots)
         s["discussion"] = derive.group_discussion([

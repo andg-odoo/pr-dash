@@ -34,7 +34,7 @@ class Tab:
     load: Callable[..., list[dict]]
     resolve: Callable[[list[dict], str | int], dict]
     summarize: Callable[[dict], dict]
-    detail: Callable[[Config, dict], dict]
+    detail: Callable[[dict], dict]
 
     def find(self, cfg: Config, ref: str | int) -> dict:
         """The row `ref` names among every row, dismissed ones included."""
@@ -92,7 +92,7 @@ def _resolve_queue(items: list[dict], ref: str | int) -> dict:
 def _resolve_tracked(items: list[dict], ref: str | int) -> dict:
     found = hits(items, ref)
     if not found:
-        raise NoMatch(f"No tracked PR matches {ref!r} among {len(items)}, see list_tracked.")
+        raise NoMatch(f"No tracked PR matches {ref!r} among {len(items)}.")
     return _single(ref, found)
 
 
@@ -118,15 +118,15 @@ QUEUE = Tab(
     load=lambda cfg, include_dismissed=False: query.load_items(cfg),
     resolve=_resolve_queue,
     summarize=query.summarize,
-    detail=lambda _cfg, item: query.detail(item),
+    detail=query.detail,
 )
 TRACKED = Tab(
     label="Tracked tab",
-    reader="get_tracked",
+    reader="get_comments",
     load=query.load_tracked,
     resolve=_resolve_tracked,
     summarize=query.summarize_tracked,
-    detail=lambda _cfg, t: query.tracked_detail(t),
+    detail=query.tracked_detail,
 )
 MINE = Tab(
     label="Mine tab",
@@ -134,7 +134,7 @@ MINE = Tab(
     load=query.load_mine,
     resolve=_resolve_mine,
     summarize=query.summarize_mine,
-    detail=query.mine_detail,
+    detail=query.mine_compact,
 )
 
 # The order get_comments and only walk the views in.
@@ -169,9 +169,21 @@ def only(cfg: Config, ref: str | int, tool: str, home: Tab = QUEUE) -> dict:
         raise
 
 
-def get_comments(cfg: Config, ref: str | int) -> dict:
-    """The Discussion of the cached PR `ref` names, in the Review queue, Mine or Tracked."""
+def get_comments(cfg: Config, ref: str | int, **filters) -> dict:
+    """The Discussion `ref` names cut by `filters`, a Done Forward-port's tree only when named."""
     tab, row = first(cfg, ref, *TABS)
     if tab is QUEUE:
-        return {"id": row["id"], "discussion": row["discussion"]}
-    return tab.detail(cfg, row)
+        return {"id": row["id"],
+                "discussion": query.filter_discussion(row["discussion"], **filters)}
+    if tab is TRACKED:
+        out = tab.detail(row)
+        return {**out, "discussion": query.filter_discussion(out["discussion"], **filters)}
+    named = {f"{pr['repo']}#{pr['number']}" for _, pr in hits([row], ref, mine_prs)}
+    out = query.mine_detail(cfg, row)
+    for m in out["members"]:
+        m["discussion"] = query.filter_discussion(m["discussion"], **filters)
+        m["fw"] = [{**f, "discussion": query.filter_discussion(f["discussion"], **filters)}
+                   if f["state"] not in ("MERGED", "CLOSED") or f["id"] in named
+                   else {k: v for k, v in f.items() if k != "discussion"}
+                   for f in m["fw"]]
+    return out

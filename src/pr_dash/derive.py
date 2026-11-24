@@ -855,6 +855,11 @@ def branch_sets(
             chain = sorted(forward_ports.get(m["id"], []),
                            key=lambda r: branch_order(r["target_branch"]))
             m["fw"] = [_forward_port(r, mergebot_states.get(r["id"])) for r in chain]
+            # A Forward-port has no seen row of its own, so its Source PR's last look counts.
+            for pr in [m, *m["fw"]]:
+                stream = streams.get(pr["id"], [])
+                pr["new_comments"] = _new_comments(stream, seen.get(m["id"]), login)
+                pr["unresolved_threads"] = unresolved_threads(stream)
             for r, f in zip(chain, m["fw"], strict=True):
                 actions += _forward_port_attention(
                     r, f, streams.get(f["id"], []), mergebot_states.get(r["id"]), login)
@@ -899,6 +904,15 @@ def branch_sets(
         parse_iso(s["actions"][0]["since"]).timestamp() if s["band"] == "needs" else 0,
     ))
     return sets
+
+
+def _new_comments(stream: list[dict], prev: dict | None, login: str) -> int:
+    """How many human Discussion entries by others came after the last look, none without one."""
+    if prev is None or not prev["fetched_at"]:
+        return 0
+    mark = parse_iso(prev["fetched_at"])
+    return sum(c["author"] != login and not is_bot(c["author"])
+               and bool(c["created_at"]) and parse_iso(c["created_at"]) > mark for c in stream)
 
 
 def _action_lines(actions: list[dict]) -> list[dict]:
@@ -1013,8 +1027,9 @@ def _forward_port(row: dict, mergebot: dict | None) -> dict:
     flag = None
     if m["state"] == "OPEN":
         flag = "conflict" if m["conflict"] else "red" if m["ci"] == "red" else None
-    keep = ("id", "ref", "num", "repo", "url", "state", "ci", "ci_failing", "override",
-            "conflict", "mergebot_unknown", "staging")
+    keep = ("id", "ref", "num", "repo", "url", "state", "draft", "ci", "ci_failing", "override",
+            "decision", "r_plus", "requested_people", "requested_teams", "conflict",
+            "mergebot_unknown", "staging", "head_sha", "branch")
     return {**{k: m[k] for k in keep}, "base": row["target_branch"], "flag": flag}
 
 
@@ -1264,6 +1279,8 @@ def _mine_member(row: dict, mergebot: dict | None) -> dict:
         "requested_people": row["requested_people"],
         "requested_teams": row["requested_teams"],
         "conflict": row["mergeable"] == "CONFLICTING",
+        "head_sha": row["head_sha"],
+        "branch": row["head_branch"],
         "updated_at": row["updated_at"],
         "mergebot_unknown": mergebot is None or mergebot["state"] == "unknown",
         # r+'d and green: queued for the next staging, or already in one.

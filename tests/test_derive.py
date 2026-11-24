@@ -750,6 +750,8 @@ def test_fyi_labels_are_movement_since_the_last_look():
                                "reviewer added: jbw-odoo", "reviewer removed: svs-odoo"]
     # Nothing to compare against before the first interactive look.
     assert fyi(True, {}) == []
+    # The two human entries by others after the look, the user's own and the bot's left out.
+    assert _sets(rows, {}, streams=streams, seen=seen)[0]["members"][0]["new_comments"] == 2
 
 
 def test_a_review_since_the_last_push_stands_in_for_a_dropped_request():
@@ -780,12 +782,14 @@ _SOURCE = _mine_row("odoo/odoo", 290657, "saas-19.1-arca-6470810-andg", state="C
 def test_chain_runs_in_odoo_branch_order_and_is_done_only_when_every_forward_port_is():
     merged = _page("odoo_odoo_290657_merged")
     pages = {pr: merged for pr in ("odoo/odoo#290657", "odoo/odoo#291580", "odoo/odoo#291857")}
-    chain = [_fw(291981, "master"), _fw(291857, "20.0", state="CLOSED"),
+    chain = [_fw(291981, "master", headRefOid="f1"), _fw(291857, "20.0", state="CLOSED"),
              _fw(291580, "saas-19.2", state="CLOSED")]
     [s] = _sets([_SOURCE, *chain], pages)
     assert [(f["base"], f["ref"], f["state"], f["flag"]) for f in s["members"][0]["fw"]] == [
         ("saas-19.2", "odoo#291580", "MERGED", None), ("20.0", "odoo#291857", "MERGED", None),
         ("master", "odoo#291981", "OPEN", None)]
+    assert (s["members"][0]["fw"][2]["head_sha"], s["members"][0]["fw"][2]["branch"]) == (
+        "f1", "master-saas-19.1-arca-6470810-andg-5729-fw")
     # A healthy open Forward-port keeps the row Open and raises nothing.
     assert (s["band"], s["actions"], s["fyi"]) == ("open", [], ["source merged", "fw 2/3 merged"])
     pages["odoo/odoo#291981"] = merged

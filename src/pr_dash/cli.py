@@ -498,7 +498,7 @@ def query_list(status, config_path):
 def query_show(ref, config_path):
     """Full detail for one PR (no diff text)."""
     cfg = _load_config_or_exit(config_path)
-    _emit(tab.QUEUE.detail(cfg, _resolve_or_exit(tab.QUEUE, tab.QUEUE.load(cfg), ref)))
+    _emit(tab.QUEUE.detail(_resolve_or_exit(tab.QUEUE, tab.QUEUE.load(cfg), ref)))
 
 
 @query.command("diff")
@@ -554,7 +554,7 @@ def query_tracked(ref, state, include_dismissed, config_path):
     cfg = _load_config_or_exit(config_path)
     items = tab.TRACKED.load(cfg, include_dismissed=include_dismissed)
     if ref:
-        _emit(tab.TRACKED.detail(cfg, _resolve_or_exit(tab.TRACKED, items, ref)))
+        _emit(tab.TRACKED.detail(_resolve_or_exit(tab.TRACKED, items, ref)))
         return
     if state == "open":
         items = [t for t in items if t["state"] not in ("MERGED", "CLOSED")]
@@ -565,12 +565,16 @@ def query_tracked(ref, state, include_dismissed, config_path):
 
 
 @query.command("mine")
+@click.argument("ref", required=False)
 @click.option("--include-dismissed", is_flag=True)
 @click.option("--config", "config_path", type=click.Path(path_type=Path))
-def query_mine(include_dismissed, config_path):
-    """List Authored PRs as Branch sets."""
+def query_mine(ref, include_dismissed, config_path):
+    """List Authored PRs as Branch sets, or show the compact one holding REF."""
     cfg = _load_config_or_exit(config_path)
-    sets = tab.MINE.load(cfg, include_dismissed=include_dismissed)
+    sets = tab.MINE.load(cfg, include_dismissed=include_dismissed or bool(ref))
+    if ref:
+        _emit(tab.MINE.detail(_resolve_or_exit(tab.MINE, sets, ref)))
+        return
     sets = [tab.MINE.summarize(s) for s in sets]
     _emit({"count": len(sets), "branch_sets": sets})
 

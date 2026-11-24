@@ -269,23 +269,54 @@ def test_get_diff_text_truncated_member():
 
 # --- summarize / detail ------------------------------------------------------
 
-def test_summarize_omits_heavy_fields():
-    item = _item("odoo/odoo#100")
-    s = query.summarize(item)
-    for absent in ("body", "discussion", "diffs", "reviewers"):
-        assert absent not in s
-    assert s["id"] == "odoo/odoo#100"
-    assert s["members"] == [
-        {"repo_short": "odoo", "number": 100, "closed": False, "reviewed": False},
-    ]
-    assert s["state"] == "OPEN"
-    assert s["bucket"] == "M"
+def test_summarize_omits_heavy_fields_and_empty_values():
+    s = query.summarize(_item("odoo/odoo#100"))
+    assert set(s) == {"id", "url", "title", "author", "target_branch", "modules", "additions",
+                      "deletions", "changed_files", "bucket", "ci_state", "unresolved_threads",
+                      "my_review_state", "req_age_days", "state"}
+    pair = query.summarize(_item("odoo/odoo#100", is_pair=True, members=[
+        _member("odoo/odoo", 100), _member("odoo/enterprise", 200, reviewed=True)]))
+    assert pair["members"] == [{"repo_short": "odoo", "number": 100},
+                               {"repo_short": "enterprise", "number": 200, "reviewed": True}]
+
+
+def _e(cid, at="2026-10-02T00:00:00Z", author="jov"):
+    return {"comment_id": cid, "author": author, "created_at": at, "is_bot": author == "robodoo"}
+
+
+_TREE = [
+    {"kind": "issue", "entry": _e("bot", author="robodoo"), "threads": []},
+    {"kind": "review", "entry": _e("rev", "2026-10-01T00:00:00Z"), "threads": [
+        {"thread_id": "T1", "state": "UNRESOLVED",
+         "comments": [_e("t1a", "2026-10-01T00:00:00Z"), _e("t1b", "2026-10-03T00:00:00Z")]},
+        {"thread_id": "T2", "state": "RESOLVED", "comments": [_e("t2a", "2026-10-01T00:00:00Z")]},
+    ]},
+    {"kind": "issue", "entry": _e("old", "2026-09-01T00:00:00Z"), "threads": []},
+]
+
+
+def _ids(groups):
+    return [e["comment_id"] for e in query._entries(groups)]
+
+
+def test_filter_discussion_drops_bots_unless_asked():
+    assert _ids(query.filter_discussion(_TREE)) == ["rev", "t1a", "t1b", "t2a", "old"]
+    assert _ids(query.filter_discussion(_TREE, include_bots=True)) == [
+        "bot", "rev", "t1a", "t1b", "t2a", "old"]
+
+
+def test_filter_discussion_unresolved_only_keeps_those_threads_and_their_review():
+    assert _ids(query.filter_discussion(_TREE, unresolved_only=True)) == ["rev", "t1a", "t1b"]
+
+
+def test_filter_discussion_since_keeps_later_entries_and_the_review_holding_them():
+    assert _ids(query.filter_discussion(_TREE, since="2026-10-02")) == ["rev", "t1b"]
 
 
 def test_detail_has_files_but_no_diff_text():
-    item = _item("odoo/odoo#100")
+    item = _item("odoo/odoo#100", discussion=_TREE)
     d = query.detail(item)
-    assert d["body"] == "the body text"
+    assert (d["body"], d["human_comments"], "discussion" in d) == ("the body text", 5, False)
     entry = d["diffs"][0]
     assert entry["files"] == ["sale/models/a.py", "sale/models/b.py"]
     assert "diff" not in entry

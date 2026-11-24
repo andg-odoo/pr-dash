@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from pr_dash import db, derive
+from pr_dash import db, derive, query
 from pr_dash.config import Config
 from tests.fakes import FakeGitHub
 
@@ -250,7 +250,8 @@ def test_hide_pr_records_live_sha(tmp_path, monkeypatch):
     monkeypatch.setattr(mcp_server, "_github", gh)
     assert mcp_server.hide_pr("odoo/odoo#1")["hidden_count"] == 1
     assert _hides(cfg) == {"odoo/odoo#1": "live1+live2"}
-    assert mcp_server.unhide_pr("odoo/odoo#1") == {"id": "odoo/odoo#1", "hidden": False, "hidden_count": 0}
+    assert mcp_server.hide_pr("odoo/odoo#1", hidden=False) == {
+        "id": "odoo/odoo#1", "hidden": False, "hidden_count": 0}
 
 
 def test_hide_pr_falls_back_to_cached_sha(tmp_path, monkeypatch):
@@ -292,7 +293,7 @@ def test_an_agent_unhide_shows_on_a_page_rendered_after_the_browser_hide(tmp_pat
     # The browser keeps the op until a page rendered after this confirmation loads.
     sent = derive.now_utc("milliseconds")
     assert _wait_for(lambda: len(pages) == 1) and pages[0][1] is True
-    mcp_server.unhide_pr("odoo/odoo#1")
+    mcp_server.hide_pr("odoo/odoo#1", hidden=False)
     assert _wait_for(lambda: len(pages) == 2)
     assert pages[1][1] is False and derive.parse_iso(pages[1][0]) > derive.parse_iso(sent)
 
@@ -372,7 +373,7 @@ def test_set_ai_review_writes_and_reads_back(tmp_path, monkeypatch):
     assert (out["head_sha"], out["context_heads"]) == ("sha1", "")
     assert (out["verdict"], out["concern_count"], out["replaced"]) == ("minor", 1, False)
 
-    back = mcp_server.get_ai_review("odoo/odoo#1")
+    back = mcp_server.get_pr("odoo/odoo#1")
     assert back["ai_review_verdict"] == "minor"
     assert back["ai_reviews"][0]["summary"] == "Adds a tax hook."
     # Unknown severity is clamped rather than rejected, same as model output.
@@ -430,7 +431,7 @@ def test_set_ai_review_records_sibling_pair_context(tmp_path, monkeypatch):
 
     # Both rows survive the renderer's pair-context check, so the pair reads as
     # fully reviewed and the item pill takes the worse of the two verdicts.
-    back = mcp_server.get_ai_review("odoo/odoo#1")
+    back = mcp_server.get_pr("odoo/odoo#1")
     assert sorted(r["number"] for r in back["ai_reviews"]) == [1, 2]
     assert back["ai_review_verdict"] == "minor"
 
@@ -443,7 +444,7 @@ def test_set_ai_review_records_sibling_pair_context(tmp_path, monkeypatch):
             db.upsert_diff(conn, "sha2", "diff --git a/b b/b\n", False, "t")
     finally:
         conn.close()
-    back = mcp_server.get_ai_review("odoo/odoo#1")
+    back = mcp_server.get_pr("odoo/odoo#1")
     assert sorted(r["number"] for r in back["ai_reviews"]) == [1, 2]
 
 
@@ -619,6 +620,8 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
         _seed_mine(conn, "odoo/enterprise#1", "master-other-andg", state="CLOSED")
         _seed_mine(conn, "odoo/odoo#291981", "master-fw", comments=[("me", "Rebased.")])
         db.link_mine_forward_port(conn, "odoo/odoo#291981", "odoo/odoo#290109")
+        _seed_mine(conn, "odoo/odoo#291500", "fw-done", state="CLOSED", comments=[("jov", "Ok.")])
+        db.link_mine_forward_port(conn, "odoo/odoo#291500", "odoo/odoo#290109")
         db.add_tracked(conn, "odoo/odoo#40", "odoo/odoo", 40, "u", "notif", "t")
 
     cfg, mcp_server = _seeded_cfg(tmp_path, monkeypatch, seed)
@@ -633,7 +636,13 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
     assert [s["key"] for s in mcp_server.list_mine(band="done")["branch_sets"]] == [
         "master-other-andg"]
 
-    detail = mcp_server.get_mine("odoo#290109")
+    # The default is the compact set, discussion=True adds bodies and Discussion trees.
+    compact = mcp_server.get_mine("odoo#290109")
+    assert [(m["ref"], m["base"], "body" in m) for m in compact["members"]] == [
+        ("odoo#290109", "master", False), ("enterprise#132695", "", False),
+        ("upgrade#11389", "", False)]
+    assert set(compact["members"][0]["fw"][0]) == {"base", *query._COMPACT_PR_KEYS}
+    detail = mcp_server.get_mine("odoo#290109", discussion=True)
     assert detail["task"] == "6396725"
     odoo = next(m for m in detail["members"] if m["num"] == 290109)
     assert odoo["body"] == "body 290109"
@@ -642,8 +651,8 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
     assert mcp_server.get_mine("https://github.com/odoo/upgrade/pull/11389")["key"] == ec
 
     # A Forward-port ref resolves to its Source PR's set, carrying its own discussion.
-    by_fw = mcp_server.get_mine("odoo#291981")
-    [fw] = next(m for m in by_fw["members"] if m["num"] == 290109)["fw"]
+    by_fw = mcp_server.get_mine("odoo#291981", discussion=True)
+    fw = next(f for m in by_fw["members"] for f in m["fw"] if f["ref"] == "odoo#291981")
     assert (by_fw["key"], fw["ref"], [g["entry"]["body"] for g in fw["discussion"]]) == (
         ec, "odoo#291981", ["Rebased."])
 
@@ -654,10 +663,14 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
     assert [(b["batch_id"], [(t["name"], t["prs"]) for t in b["triggers"]])
             for b in by_pr["batches"]] == [(7, [("ci/runbot", ["odoo/odoo#290109"])])]
 
-    pr = mcp_server.get_pr("odoo/odoo#291981")
-    assert (pr["key"], ["discussion" in m for m in pr["members"]]) == (ec, [False] * 3)
-    assert "discussion" not in pr["members"][0]["fw"][0]
+    assert mcp_server.get_pr("odoo/odoo#291981") == compact
     assert mcp_server.get_comments("132695")["members"][0]["discussion"] == odoo["discussion"]
+    # A Done Forward-port's tree is left out unless the ref names it.
+    def fw_trees(ref):
+        return {f["ref"]: "discussion" in f for m in mcp_server.get_comments(ref)["members"]
+                for f in m["fw"]}
+    assert fw_trees("odoo#290109") == {"odoo#291981": True, "odoo#291500": False}
+    assert fw_trees("odoo#291500") == {"odoo#291981": True, "odoo#291500": True}
     # A bare number in the review queue still resolves there, the Authored PR needs its repo.
     assert mcp_server.get_pr("1")["id"] == "odoo/odoo#1"
     assert mcp_server.get_comments("1")["id"] == "odoo/odoo#1"
@@ -682,7 +695,8 @@ def test_authored_prs_list_and_resolve_without_moving_the_baseline(tmp_path, mon
         mcp_server.get_diff("enterprise#132695")
     with pytest.raises(ValueError, match="Forward-port with no local branch"):
         mcp_server.get_diff("odoo#291981")
-    with pytest.raises(ValueError, match="in the Tracked tab, hide_pr covers the Review queue only. get_tracked"):
+    with pytest.raises(ValueError, match="Tracked tab, hide_pr covers the Review queue only. "
+                                         "get_comments reads it"):
         mcp_server.hide_pr("40")
 
     conn = db.connect(cfg.db_path)
@@ -697,23 +711,23 @@ def test_a_fresh_read_refetches_through_the_cli_first_and_flags_a_failure(tmp_pa
 
     from pr_dash import db
 
-    cfg, mcp_server = _seeded_cfg(tmp_path, monkeypatch, lambda conn: db.add_tracked(
-        conn, "odoo/odoo#40", "odoo/odoo", 40, "u", "notif", "t"))
+    cfg, mcp_server = _seeded_cfg(tmp_path, monkeypatch, lambda conn: _seed_mine(
+        conn, "odoo/odoo#40", "master-x-andg"))
     runs = []
 
     def cli(cmd, **kwargs):
         runs.append(cmd[cmd.index("refresh"):])
         conn = db.connect(cfg.db_path)
-        db.update_tab_state(conn, "tracked", "odoo/odoo#40", {"title": f"run {len(runs)}"})
+        db.update_tab_state(conn, "mine", "odoo/odoo#40", {"title": f"run {len(runs)}"})
         conn.commit()
         conn.close()
         return subprocess.CompletedProcess(cmd, len(runs) - 1, "Tracked refresh failed: x\n", "")
 
     monkeypatch.setattr(subprocess, "run", cli)
-    assert mcp_server.get_tracked("40")["title"] == ""
-    out = mcp_server.get_tracked("40", fresh=True)
+    assert mcp_server.get_mine("odoo#40")["title"] == "PR 40"
+    out = mcp_server.get_mine("odoo#40", fresh=True)
     assert (runs, out["title"], "warning" in out) == (
         [["refresh", "--no-open", "--pr=odoo/odoo#40"]], "run 1", False)
-    out = mcp_server.get_tracked("40", fresh=True)
+    out = mcp_server.get_mine("odoo#40", fresh=True)
     assert (out["title"], out["warning"]) == (
         "run 2", "Refresh failed, so this answer may be stale: Tracked refresh failed: x")

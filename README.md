@@ -268,31 +268,33 @@ claude mcp add pr-dash -- pr-dash mcp          # add --scope user for all projec
 The client spawns `pr-dash mcp` per session over stdio - there's no daemon. It
 reads the same cache the dashboard renders; the only tools that write are
 `refresh` (which does exactly what `pr-dash refresh` does), `set_ai_review`, and
-`hide_pr` / `unhide_pr`. Each call rebuilds the view from the cache, so a
+`hide_pr`. Each call rebuilds the view from the cache, so a
 parallel `pr-dash refresh` is picked up immediately. Point it at an alternate
 config with `pr-dash mcp --config PATH` or the `PR_DASH_CONFIG` env var.
 
 Tools:
 
-- `list_prs(status)` - compact triage rows; `status` is `pending` / `archived` / `all`.
-- `get_pr(ref)` - full detail for one PR (body, threads, reviewers, CI, companion migration PR, per-file diff metadata).
+- `list_prs(status, include_hidden, include_drafts, sort)` - compact triage rows, empty and false keys left out; `status` is `pending` / `archived` / `all`.
+- `get_pr(ref)` - review detail for one PR (body, reviewers, CI, cached AI first pass, companion migration PR, per-file diff metadata), its Discussion as counts only.
+- `get_comments(ref, include_bots, unresolved_only, since)` - the Discussion tree of any cached PR, bots left out unless asked; on an Authored PR a merged or closed Forward-port's tree only when the ref names it.
 - `get_diff(ref, files, changed_since_review_only, max_chars)` - diff text, whole files only, under a char budget. Review queue only: on an Authored PR it errors with the local checkout to diff, found through `[paths] checkouts` globs, else a `gh pr diff` command.
-- `get_ai_review(ref)` - the cached AI first-pass sanity check, if any.
 - `set_ai_review(ref, summary, verdict, concerns)` - record a review by hand, in the slot the automatic pass writes to (it skips PRs whose diff is too big to cache). Re-renders the dashboard shortly after, so the row shows up on the next browser reload; several calls in a row coalesce into one render, and concurrent sessions take turns.
+- `hide_pr(ref, hidden)` - hide a Review queue PR until its next push, or unhide it with `hidden=False`.
 - `review_history(author, module, verdict, limit)` - your archived reviews as triage rows.
 - `stats()` - pending-queue and archived-history counts.
-- `list_tracked(state, include_dismissed)` - watched PRs (the `tracked` tab, not the review queue); `state` is `all` / `open` / `resolved`.
-- `get_tracked(ref)` - one watched PR in full, with its merged discussion stream (conversation comments, review submissions, inline threads).
 - `list_mine(band, include_dismissed)` - your Authored PRs as Branch sets (the `mine` tab); `band` is any band the tab shows (`needs`, `open`, `done`), all by default.
-- `get_mine(ref)` - the Branch set holding one Authored PR or one of its Forward-ports, every member with its body and merged discussion stream, each Forward-port with its own stream.
+- `get_mine(ref, discussion)` - the Branch set holding one Authored PR or one of its Forward-ports, each member and Forward-port as its state, head and comment counts; `discussion=True` adds every body and Discussion tree.
 - `get_runbot(ref)` - runbot status and failures for the Branch set holding an Authored PR, or for a bundle by its exact name, grouped per runbot batch with each build once. Red builds are read from runbot's public API under a shared cap of 30 requests an hour and 150 a day; a capped fetch says so in its `error`.
 - `refresh(force)` - re-fetch from GitHub (slow; network + AI), same as `pr-dash refresh`.
+
+Tracked PRs have no tool of their own: `get_comments` reads one, `pr-dash query tracked [REF]` lists them.
 
 `ref` accepts `12345`, `odoo#12345`, `odoo/odoo#12345`, or a PR URL; an
 enterprise number resolves to its odoo+enterprise pair. `get_pr` and
 `get_comments` fall back to your Authored PRs when no review-queue PR matches,
-returning what `get_mine` returns (`get_pr` without the discussion). The same queries are
-available as JSON from the shell for debugging: `pr-dash query list|show|diff|history|stats|tracked|mine|runbot`.
+returning what `get_mine` returns (`get_comments` with the discussion). The same queries are
+available as JSON from the shell for debugging: `pr-dash query list|show|diff|history|stats|tracked|mine|runbot`,
+`query mine REF` printing the compact `get_mine` answer.
 
 ## Notes
 

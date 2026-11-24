@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from pr_dash import db, derive, render
 from pr_dash.config import Config
@@ -138,8 +138,8 @@ def get_diff_text(
 # --- projections -------------------------------------------------------------
 
 _SUMMARY_KEYS = (
-    "id", "url", "title", "author", "is_draft", "is_pair", "members", "target_branch", "modules",
-    "additions", "deletions", "changed_files", "bucket", "flags", "ci_state", "mergeable",
+    "id", "url", "title", "author", "is_draft", "is_pair", "target_branch", "modules",
+    "additions", "deletions", "changed_files", "bucket", "flags", "ci_state",
     "unresolved_threads", "awaiting_my_reply", "my_pending_review", "my_review_state",
     "previously_reviewed", "req_age_days", "first_req_age_days", "since_last_look", "ai_review_verdict",
     "linked_task_label", "is_archived", "state", "ping_at", "ping_author", "ping_snippet",
@@ -149,15 +149,19 @@ _SUMMARY_KEYS = (
 )
 
 
+def _present(row: dict) -> dict:
+    """`row` without its None, False and empty values."""
+    return {k: v for k, v in row.items()
+            if v is not None and v is not False and v not in ("", [], {})}
+
+
 def summarize(item: dict) -> dict:
-    """Compact triage row: no body, Discussion or diffs."""
+    """Compact triage row without empty values, members listed for a pair only."""
     row = {k: item.get(k) for k in _SUMMARY_KEYS}
-    row["members"] = [
-        {"repo_short": m.get("repo_short"), "number": m.get("number"),
-         "closed": m.get("closed"), "reviewed": m.get("reviewed")}
-        for m in item.get("members") or [item]
-    ]
-    return row
+    if item.get("is_pair"):
+        keys = ("repo_short", "number", "closed", "reviewed")
+        row["members"] = [_present({k: m.get(k) for k in keys}) for m in item["members"]]
+    return _present(row)
 
 
 def _diff_meta(d: dict) -> dict:
@@ -176,11 +180,39 @@ def _diff_meta(d: dict) -> dict:
 
 
 def detail(item: dict) -> dict:
-    """Full item minus diff text: each diff entry is replaced by metadata plus a
-    parsed `files` list. Body, Discussion, reviewers, ci_failures, ai_reviews
-    and task links are kept."""
-    out = copy.deepcopy(item)
+    """Full item with its Discussion as a human comment count and each diff as metadata."""
+    out = copy.deepcopy({k: v for k, v in item.items() if k != "discussion"})
+    out["human_comments"] = sum(not e["is_bot"] for e in _entries(item.get("discussion") or []))
     out["diffs"] = [_diff_meta(d) for d in item.get("diffs", [])]
+    return out
+
+
+def _entries(groups: list[dict]):
+    for g in groups:
+        if g["entry"]:
+            yield g["entry"]
+        for t in g["threads"]:
+            yield from t["comments"]
+
+
+def filter_discussion(groups: list[dict], *, include_bots: bool = False,
+                      unresolved_only: bool = False, since: str | None = None) -> list[dict]:
+    """Discussion groups cut to the entries the filters keep, a group kept for any thread left."""
+    after = since and derive.parse_iso(since)
+    if after and after.tzinfo is None:
+        after = after.replace(tzinfo=UTC)
+
+    def keep(e: dict) -> bool:
+        return (include_bots or not e["is_bot"]) and not (
+            after and e["created_at"] and derive.parse_iso(e["created_at"]) <= after)
+
+    out = []
+    for g in groups:
+        threads = [{**t, "comments": comments} for t in g["threads"]
+                   if not unresolved_only or t["state"] == "UNRESOLVED"
+                   if (comments := [c for c in t["comments"] if keep(c)])]
+        if threads or (g["entry"] and keep(g["entry"]) and not unresolved_only):
+            out.append({**g, "threads": threads})
     return out
 
 
@@ -273,8 +305,28 @@ def load_mine(cfg: Config, *, include_dismissed: bool = False) -> list[dict]:
 
 
 def summarize_mine(branch_set: dict) -> dict:
-    """A Branch set without its Discussion, which mine_detail serves per member."""
-    return {k: v for k, v in branch_set.items() if k != "discussion"}
+    """A Branch set without its Discussion, action_lines, fingerprint or empty member values."""
+    members = [{**_present(m), "fw": [_present(f) for f in m["fw"]]} for m in branch_set["members"]]
+    return {**{k: v for k, v in branch_set.items()
+               if k not in ("discussion", "action_lines", "fingerprint")}, "members": members}
+
+
+_COMPACT_PR_KEYS = (
+    "ref", "url", "state", "draft", "ci", "ci_failing", "override", "staging", "staging_url",
+    "conflict", "head_sha", "branch", "review", "decision", "r_plus", "requested_people",
+    "requested_teams", "mergebot_unknown", "new_comments", "unresolved_threads",
+)
+
+
+def mine_compact(branch_set: dict) -> dict:
+    """A Branch set as its attention and each member's and Forward-port's state, no Discussion."""
+    def pr(p: dict, base: str) -> dict:
+        return {**{k: p[k] for k in _COMPACT_PR_KEYS}, "base": base}
+
+    keys = ("key", "task", "title", "url", "band", "actions", "fyi", "acknowledged")
+    return {**{k: branch_set[k] for k in keys},
+            "members": [{**pr(m, m["target_branch"]), "fw": [pr(f, f["base"]) for f in m["fw"]]}
+                        for m in branch_set["members"]]}
 
 
 def mine_detail(cfg: Config, branch_set: dict) -> dict:
@@ -292,7 +344,7 @@ def mine_detail(cfg: Config, branch_set: dict) -> dict:
               for f in m["fw"]]
         members.append({**m, "fw": fw, "body": bodies.get(pr_id),
                         "discussion": derive.group_discussion(comments.get(pr_id, []))})
-    return {**summarize_mine(branch_set), "members": members}
+    return {**{k: v for k, v in branch_set.items() if k != "discussion"}, "members": members}
 
 
 # --- tracked PRs -------------------------------------------------------------

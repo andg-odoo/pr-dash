@@ -229,32 +229,26 @@ def _fresh(pr_id: str) -> dict:
 def list_prs(
     status: str = "pending", include_hidden: bool = False, include_drafts: bool = False, sort: str = "dashboard"
 ) -> dict:
-    """List PRs as compact triage rows.
+    """List PRs as compact triage rows, an absent key meaning empty or false.
 
     sort: 'dashboard' (default, smallest bucket first, oldest request first within
     a bucket) | 'requested' (oldest first review request first across all buckets,
     rows without a request date last). Both order a re-review by its first request.
 
     status: 'pending' (default, not yet reviewed) | 'archived' | 'all'.
-    include_hidden: PRs you've hidden on the dashboard are excluded from pending
-    results by default; set True to include them (each is marked "hidden": true).
-    include_drafts: draft PRs not yet reviewed are excluded too, as on the
-    dashboard's default view; set True to include them.
-    Returns {cache_fetched_at, count, prs}.
+    include_hidden: PRs you've hidden are excluded from pending results by default,
+    True includes them marked "hidden": true.
+    include_drafts: unreviewed drafts are excluded too, True includes them.
+    Returns {cache_fetched_at, count, prs}; a pair's row lists its members.
 
     Flags: RE=re-review requested, MSG=awaiting my reply, CI!=failing CI,
-    CFL=merge conflict, OLD=stale request, PEND!=you have an unsent (PENDING)
-    review draft, PING=an archived-but-open PR where the author informally asked
-    for a re-review after your last review (no formal re-request), PUSH=an
-    archived-but-open PR whose head moved after your review (no action implied -
-    it marks that the cached diff is no longer what you reviewed). Buckets
-    S/M/L/XL = rough complexity. Rows also carry my_pending_review, pinged rows
-    carry ping_at/ping_author/ping_snippet, and pushed rows push_at/push_sha.
+    CFL=merge conflict, OLD=stale request, PEND!=you have an unsent review draft,
+    PING=an archived-but-open PR whose author asked for a re-review informally
+    (ping_at/ping_author/ping_snippet), PUSH=an archived-but-open PR whose head moved
+    after your review (push_at/push_sha). Buckets S/M/L/XL = rough complexity.
 
-    `companion` is the bundle's migration PR in odoo/upgrade, matched by head
-    branch - it never shows up in the diff, so a null companion is the evidence
-    that a data move has no upgrade script, and a non-null one is why a "missing
-    migration" concern would be wrong.
+    `companion` is the bundle's migration PR in odoo/upgrade, matched by head branch.
+    It never shows up in the diff, so its absence means a data move has no upgrade script.
     """
     cfg = _get_cfg()
     items = query.load_items(cfg)
@@ -291,9 +285,10 @@ def list_prs(
 
 @mcp.tool()
 def get_pr(ref: str, fresh: bool = False) -> dict:
-    """Full detail for one PR: body, threads, reviewers, ci_failures, ai_reviews,
-    task links, companion migration PR, and per-file diff metadata (no
-    diff text - use get_diff for that).
+    """Review detail for one PR: body, reviewers, ci_failures, ai_reviews (the cached
+    first pass), task links, companion migration PR and per-file diff metadata. No
+    comment bodies: human_comments and unresolved_threads count them, get_comments
+    reads them, get_diff serves the diff text.
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
     An enterprise number resolves to its odoo+enterprise pair.
@@ -303,17 +298,10 @@ def get_pr(ref: str, fresh: bool = False) -> dict:
     PR touches, so before flagging a data move as unmigrated, check it: null
     means there genuinely is no upgrade script.
 
-    Flags: RE=re-review requested, MSG=awaiting my reply, CI!=failing CI,
-    CFL=merge conflict, OLD=stale request. Buckets S/M/L/XL = rough complexity.
-    my_pending_review is true when you have an unsent review draft (get_comments
-    shows its body). Output stays slim - no comment bodies here.
-
     Each review-queue member carries `commits` (oldest first, at most 20 of `commit_count`) and
     `runbot`, its latest runbot batch's trigger builds with their sub-build tally, or {error}.
 
-    A ref naming no review-queue PR but one of your Authored PRs returns its
-    Branch set instead, as get_mine does but without the discussion.
-
+    A ref naming one of your Authored PRs instead returns its Branch set as get_mine does.
     Use fresh=True when activity from the last few minutes matters.
     """
     cfg = _get_cfg()
@@ -322,15 +310,9 @@ def get_pr(ref: str, fresh: bool = False) -> dict:
     if fresh:
         stale = _fresh(row["id"] if view is tab.QUEUE else row["members"][0]["id"])
         view, row = tab.first(cfg, ref, tab.QUEUE, tab.MINE)
-    out = {**view.detail(cfg, row), **stale}
+    out = {**view.detail(row), **stale}
     if view is tab.QUEUE:
         out["members"] = _review_members(cfg, out["members"])
-    if view is tab.MINE:
-        out["members"] = [
-            {**{k: v for k, v in m.items() if k != "discussion"},
-             "fw": [{k: v for k, v in f.items() if k != "discussion"} for f in m["fw"]]}
-            for m in out["members"]
-        ]
     return out
 
 
@@ -349,100 +331,45 @@ def _review_members(cfg: config.Config, members: list[dict]) -> list[dict]:
 
 
 @mcp.tool()
-def get_comments(ref: str) -> dict:
+def get_comments(ref: str, include_bots: bool = False, unresolved_only: bool = False,
+                 since: str | None = None) -> dict:
     """The Discussion of any cached PR, whichever tab holds it.
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
-    A Review queue PR returns {id, discussion}, both halves of a pair merged with each
-    entry's member set. An Authored PR returns its Branch set as get_mine does, a
-    Tracked PR its detail as get_tracked does. Every discussion has the get_tracked
-    Discussion tree shape, bots included with is_bot: true, unsent review drafts
-    (visible only to their author) with is_pending: true.
+    A Review queue PR returns {id, discussion}, both halves of a pair merged. An Authored
+    PR returns get_mine(discussion=True), a merged or closed Forward-port's discussion
+    only when ref names it. A Tracked PR returns its summary, body and discussion.
+
+    A discussion is a list of groups, newest first, {kind ('review' / 'issue' / 'orphan'),
+    entry, threads}. threads hold {thread_id, path, state (RESOLVED / UNRESOLVED), comments}
+    oldest first. Entries carry author, created_at, body, url, is_bot, is_pending (an
+    unsent draft) and, for reviews, state.
+
+    include_bots: keep robodoo, fw-bot and *[bot] entries. unresolved_only: only
+    UNRESOLVED threads with the groups holding them. since: ISO time, only entries after it.
     """
-    return tab.get_comments(_get_cfg(), ref)
-
-
-@mcp.tool()
-def list_tracked(state: str = "all", include_dismissed: bool = False) -> dict:
-    """List tracked PRs - ones being *watched*, not reviewed.
-
-    These are separate from the review queue: nobody asked you to review them,
-    they were subscribed to on GitHub or added with `pr-dash track`. Use this to
-    answer "what am I keeping an eye on" and "did any of it land".
-
-    state: 'all' (default) | 'open' | 'resolved' (merged or closed).
-    include_dismissed: dismissed rows are excluded by default; True adds them
-    back carrying dismissed_at.
-
-    Rows are active-first, newest activity first. since_last_look holds what
-    moved since the dashboard was last rendered: 'resolved' (merged/closed),
-    'reopened', 'pushed', 'reply', 'new'. Returns {cache_fetched_at, count,
-    tracked}.
-    """
-    cfg = _get_cfg()
-    items = tab.TRACKED.load(cfg, include_dismissed=include_dismissed)
-    if state == "open":
-        sel = [t for t in items if t["state"] not in ("MERGED", "CLOSED")]
-    elif state == "resolved":
-        sel = [t for t in items if t["state"] in ("MERGED", "CLOSED")]
-    elif state == "all":
-        sel = items
-    else:
-        raise ValueError(
-            f"state must be 'all', 'open', or 'resolved', got {state!r}"
-        )
-    return {
-        "cache_fetched_at": query.cache_fetched_at(cfg),
-        "count": len(sel),
-        "tracked": [tab.TRACKED.summarize(t) for t in sel],
-    }
-
-
-@mcp.tool()
-def get_tracked(ref: str, fresh: bool = False) -> dict:
-    """Full detail for one tracked PR: body plus its Discussion tree.
-
-    ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
-
-    The Discussion is a list of groups, newest first, each {kind, entry, threads}:
-    kind 'review' or 'issue' (a conversation comment) with its entry, or 'orphan'
-    (entry null) for a thread whose opening review is not shown. threads hold
-    {thread_id, path, state (RESOLVED / UNRESOLVED), comments}, oldest first, nested
-    under the review that opened them. Entries carry author, created_at, body, url,
-    is_bot (robodoo, fw-bot, *[bot]) and, for reviews, state (APPROVED /
-    CHANGES_REQUESTED / COMMENTED / DISMISSED). A bot review's threads are orphans.
-
-    Use fresh=True when activity from the last few minutes matters.
-    """
-    cfg = _get_cfg()
-    stale = _fresh(tab.TRACKED.find(cfg, ref)["id"]) if fresh else {}
-    return {**tab.TRACKED.detail(cfg, tab.TRACKED.find(cfg, ref)), **stale}
+    return tab.get_comments(_get_cfg(), ref, include_bots=include_bots,
+                            unresolved_only=unresolved_only, since=since)
 
 
 @mcp.tool()
 def list_mine(band: str | None = None, include_dismissed: bool = False) -> dict:
-    """List your Authored PRs as Branch sets - PRs sharing one head branch across
-    repos, one row per set, Needs you first (oldest Action item first), then Open by
-    most recent activity, then Done.
-
-    Use this to answer "what needs doing on my PRs" instead of shelling out to gh.
+    """List your Authored PRs as Branch sets, PRs sharing one head branch across repos:
+    Needs you first (oldest Action item first), then Open by most recent activity, then Done.
 
     band: only sets in this band ('needs', 'open' or 'done'), every band by default.
     include_dismissed: dismissed members are excluded by default; True adds them
     back carrying dismissed_at.
 
-    Each set carries key (the head branch), task, title and url (the primary's), band
-    ('needs', 'open' or 'done'), actions [{member, kind, text, since}] (what waits on you: thread, ci,
-    conflict, changes, reviewers, linked, fw), fyi labels (movement since the last
-    look, plus 'idle Nd', 'waiting on re-review', 'source merged' and 'fw k/n merged'),
-    acknowledged, and members. Members
-    carry repo, num, state, ci (green / red / pending) with ci_failing and
-    override (Mergebot Overrides), decision (GitHub review), r_plus, requested
-    people and teams, conflict, and mergebot_unknown when the Mergebot page could
-    not be read, plus fw: the member's Forward-ports in target branch order, each with
-    ref, base (target branch), state, ci and flag (conflict / red / null). A set is
-    Done only once every member and Forward-port is. Returns {cache_fetched_at, count,
-    branch_sets}.
+    Each set carries key (the head branch), task, title and url (the primary's), band,
+    actions [{member, kind, text, since}] (what waits on you: thread, ci, conflict,
+    changes, reviewers, linked, fw), fyi labels (movement since the last look, 'idle Nd',
+    'waiting on re-review', 'source merged', 'fw k/n merged'), acknowledged, runbot and
+    members. Members, empty or false keys left out, carry state, ci (green / red / pending)
+    with ci_failing and override, decision, r_plus, requested people and teams, conflict,
+    head_sha, branch, new_comments, unresolved_threads and fw, the Forward-ports in target
+    branch order with base and flag (conflict / red / null). Returns {cache_fetched_at,
+    count, branch_sets}.
     """
     cfg = _get_cfg()
     sets = [tab.MINE.summarize(s) for s in tab.MINE.load(cfg, include_dismissed=include_dismissed)
@@ -455,20 +382,21 @@ def list_mine(band: str | None = None, include_dismissed: bool = False) -> dict:
 
 
 @mcp.tool()
-def get_mine(ref: str, fresh: bool = False) -> dict:
-    """Full detail for the Branch set holding one of your Authored PRs: every
-    member with its body and Discussion tree, each Forward-port with its own tree.
+def get_mine(ref: str, discussion: bool = False, fresh: bool = False) -> dict:
+    """The Branch set holding one of your Authored PRs, ref naming any member or Forward-port.
 
-    ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL,
-    naming any member of the set or one of their Forward-ports.
-
-    Each discussion has the get_tracked Discussion tree shape.
-
+    Each member and Forward-port carries ref, url, state, draft, ci, ci_failing, override,
+    staging, staging_url, conflict, base, head_sha, branch, review, decision, r_plus,
+    requested people and teams, mergebot_unknown, new_comments (human, since your last
+    look) and unresolved_threads. discussion=True returns every member with its body and
+    Discussion tree (get_comments shape) and each Forward-port with its own.
     Use fresh=True when activity from the last few minutes matters.
     """
     cfg = _get_cfg()
     stale = _fresh(tab.MINE.find(cfg, ref)["members"][0]["id"]) if fresh else {}
-    return {**tab.MINE.detail(cfg, tab.MINE.find(cfg, ref)), **stale}
+    branch_set = tab.MINE.find(cfg, ref)
+    out = query.mine_detail(cfg, branch_set) if discussion else tab.MINE.detail(branch_set)
+    return {**out, **stale}
 
 
 @mcp.tool()
@@ -486,16 +414,18 @@ def get_runbot(ref: str) -> dict:
 
 
 @mcp.tool()
-def hide_pr(ref: str) -> dict:
-    """Hide a PR from the pending queue (same as the dashboard's × button). It
-    stays hidden until a head commit changes - a push to any code half of its
-    Branch set auto-unhides it.
+def hide_pr(ref: str, hidden: bool = True) -> dict:
+    """Hide a PR from the pending queue (the dashboard's × button) until a push to any
+    code half of its Branch set, or unhide it with hidden=False.
 
     ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
-    Returns {id, hidden: true, hidden_count}.
+    Returns {id, hidden, hidden_count}.
     """
     cfg = _get_cfg()
     item = tab.only(cfg, ref, "hide_pr")
+    if not hidden:
+        _apply_mark_ops(cfg, [{"kind": "hide", "op": "clear", "key": item["id"]}])
+        return {"id": item["id"], "hidden": False, "hidden_count": _hidden_count(cfg)}
     # An archived row's cached sha can be long stale; a hide recorded at it
     # would auto-unhide against the live sha immediately. Best-effort live
     # lookup per member, cached shas as the offline fallback.
@@ -516,19 +446,6 @@ def hide_pr(ref: str) -> dict:
         "at": derive.now_utc(),
     }])
     return {"id": item["id"], "hidden": True, "hidden_count": _hidden_count(cfg)}
-
-
-@mcp.tool()
-def unhide_pr(ref: str) -> dict:
-    """Unhide a previously hidden PR, returning it to the pending queue.
-
-    ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
-    Returns {id, hidden: false, hidden_count}.
-    """
-    cfg = _get_cfg()
-    item = tab.only(cfg, ref, "unhide_pr")
-    _apply_mark_ops(cfg, [{"kind": "hide", "op": "clear", "key": item["id"]}])
-    return {"id": item["id"], "hidden": False, "hidden_count": _hidden_count(cfg)}
 
 
 @mcp.tool()
@@ -555,60 +472,16 @@ def get_diff(
 
 
 @mcp.tool()
-def get_ai_review(ref: str) -> dict:
-    """The cached AI first-pass sanity check for one PR (may be empty - not every
-    PR gets one). Returns {id, title, ai_review_verdict, ai_reviews}.
-
-    ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
-    """
-    item = tab.only(_get_cfg(), ref, "get_ai_review")
-    ai_reviews = item.get("ai_reviews") or []
-    out = {
-        "id": item["id"],
-        "title": item.get("title"),
-        "ai_review_verdict": item.get("ai_review_verdict"),
-        "ai_reviews": ai_reviews,
-    }
-    if not ai_reviews:
-        out["note"] = (
-            "No AI review cached for this PR (too large, AI disabled, or not yet "
-            "computed on the last refresh)."
-        )
-    return out
-
-
-@mcp.tool()
 def set_ai_review(ref: str, summary: str, verdict: str,
                   concerns: list[dict] | None = None) -> dict:
-    """Store a first-pass triage review for one PR, in the same slot the
-    automatic pass writes to.
+    """Store a first-pass review for one PR in the slot the automatic pass writes to,
+    replacing any row there, and re-render the dashboard.
 
-    This is a manual backfill. The refresh only reviews PRs whose diff is cached
-    and small, so the big ones - often the ones most worth a second opinion - come
-    back empty from get_ai_review forever. Review such a PR yourself (get_pr,
-    get_diff), then record the verdict here so it shows on the dashboard.
-
-    ref accepts: '12345', 'odoo#12345', 'odoo/odoo#12345', or a github PR URL.
-    On a pair the ref picks which half to record, with the other half kept as its
-    pair context - the same shape a paired automatic review has. Each half holds
-    its own review, so call this once per half; a pair with only one recorded is
-    shown on the dashboard as partially reviewed.
-
-    summary: 1-2 sentences on what the PR actually does.
-    verdict: 'looks-good' (nothing concerning) | 'minor' (small things to ask
-    about) | 'major' (should block merge). Anything else is rejected.
-    concerns: most important first, each {"severity": "high"|"med"|"low",
-    "message": "one specific line", "where": "file path"}. where is optional,
-    entries without a message are dropped, and only the first 5 are kept.
-
-    Calling again for the same PR updates the row in place (replaced: true),
-    including over an automatic review. Returns {id, head_sha, context_heads,
-    verdict, concern_count, replaced, computed_at}, plus replaced_source and
-    replaced_at describing the row that was overwritten - a 'manual' one stamped
-    moments ago means another session was reviewing the same PR.
-
-    The dashboard HTML is re-rendered shortly after the write, so the row shows
-    up on the next browser reload without a `pr-dash refresh`.
+    summary: 1-2 sentences on what the PR does. verdict: 'looks-good' | 'minor' | 'major'.
+    concerns: most important first, each {severity: high|med|low, message, where (optional
+    file path)}, at most 5 kept. On a pair, ref picks the half, so call once per half.
+    Returns {id, head_sha, context_heads, verdict, concern_count, replaced, computed_at},
+    plus replaced_source and replaced_at for the row overwritten.
     """
     cfg = _get_cfg()
     item = tab.only(cfg, ref, "set_ai_review")

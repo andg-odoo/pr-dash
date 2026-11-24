@@ -301,7 +301,7 @@ def test_a_queue_rows_thread_signals_follow_its_discussion(w):
     assert look()[:2] == (0, 0)
 
     # The envelope review is dropped, the bodiless approval kept, the bot flagged.
-    discussion = tab.get_comments(w.cfg, "odoo#1")["discussion"]
+    discussion = tab.get_comments(w.cfg, "odoo#1", include_bots=True)["discussion"]
     assert discussion == items[0]["discussion"]
     assert discussion[0]["entry"]["member"] == "odoo"
     assert [(g["kind"], g["entry"] and (g["entry"]["author"], g["entry"]["is_bot"],
