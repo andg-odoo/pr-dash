@@ -314,7 +314,7 @@ def summarize_mine(branch_set: dict) -> dict:
 _COMPACT_PR_KEYS = (
     "ref", "url", "state", "draft", "ci", "ci_failing", "override", "staging", "staging_url",
     "conflict", "head_sha", "branch", "review", "decision", "r_plus", "requested_people",
-    "requested_teams", "mergebot_unknown", "new_comments", "unresolved_threads",
+    "requested_teams", "mergebot_unknown", "new_comments", "unresolved_threads", "behind",
 )
 
 

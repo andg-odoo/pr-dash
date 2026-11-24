@@ -607,6 +607,7 @@
     if (m.ci === "red") bits.push("ci✕");
     if (m.conflict) bits.push("conflict");
     if (m.decision === "APPROVED") bits.push("✓");
+    if (m.behind > 0) bits.push(`↓${m.behind}`);
     const tone = memberTone(m);
     return `<span class="mine-chip mine-chip-${tone}${m.draft ? " mine-chip-draft" : ""}" title="${escapeHTML(m.title)}">`
       + `<span class="mine-dot mine-dot-${tone}"></span>${escapeHTML(m.ref)}${bits.length ? " " + bits.join(" ") : ""}</span>`;
@@ -617,8 +618,11 @@
     ? `<span class="tr-ci-failure">${FW_FLAG[f.flag]}</span>`
     : `<span class="${f.state === "MERGED" ? "mine-fw-merged" : "mine-dim"}">${escapeHTML(f.state.toLowerCase())}</span>`;
 
+  const behindNote = p => p.behind > 0
+    ? ` <span class="mine-dim" title="commits on the base branch the head lacks">↓${p.behind}</span>` : "";
+
   const fwLines = s => s.members.flatMap(m => m.fw.map(f =>
-    `<span class="pr-sub mine-fw">${escapeHTML(f.base)} ${escapeHTML(f.ref)} ${fwLabel(f)}</span>`)).join("");
+    `<span class="pr-sub mine-fw">${escapeHTML(f.base)}${behindNote(f)} ${escapeHTML(f.ref)} ${fwLabel(f)}</span>`)).join("");
 
   function mineLabels(s) {
     return s.fyi.map(t => `<span class="mine-fyi">${escapeHTML(t)}</span>`).join("")
@@ -1376,7 +1380,7 @@
         const rows = s.members.map(m => `
       <tr>
         <td title="${escapeHTML(m.title)}">${escapeHTML(m.ref)}</td>
-        <td>${escapeHTML(m.state.toLowerCase())}${m.draft ? " · draft" : ""}${memberStaging(m)}${
+        <td>${escapeHTML(m.state.toLowerCase())}${m.draft ? " · draft" : ""}${behindNote(m)}${memberStaging(m)}${
           m.conflict ? ' · <span class="tr-ci-failure">conflict</span>' : ""}${
           m.mergebot_unknown ? ' · <span class="mine-unknown">mergebot?</span>' : ""}</td>
         <td>${memberCI(m)}</td>
@@ -1390,7 +1394,7 @@
         <td>${escapeHTML(f.state.toLowerCase())}${f.flag ? " · " + fwLabel(f) : ""}${memberStaging(f)}${
           f.mergebot_unknown ? ' · <span class="mine-unknown">mergebot?</span>' : ""}</td>
         <td>${memberCI(f)}</td>
-        <td class="mine-dim">fw to ${escapeHTML(f.base)}</td>
+        <td class="mine-dim">fw to ${escapeHTML(f.base)}${behindNote(f)}</td>
         <td></td>
         <td><a href="${escapeHTML(f.url)}" target="_blank" rel="noopener">GitHub ↗</a></td>
       </tr>`).join("")}`).join("");

@@ -547,6 +547,8 @@ class GitHub(Protocol):
 
     def pr_states(self, repo: str, numbers: list[int]) -> dict[int, str]: ...
 
+    def behind_by(self, prs: list[tuple[str, str, str]]) -> dict[tuple[str, str, str], int]: ...
+
     def nodes(self, refs: list[tuple[str, int]], view: View) -> dict[str, dict]: ...
 
     def authored_open(self, login: str) -> list[tuple[str, int]]: ...
@@ -628,6 +630,24 @@ class GhGitHub:
         prs = _pull_requests([(repo, n) for n in numbers], "state", partial=True)
         return {int(pr_id.rpartition("#")[2]): pr["state"]
                 for pr_id, pr in prs.items() if pr.get("state")}
+
+    def behind_by(self, prs, chunk_size=25):
+        # A fork head resolves in its base repo, which shares the fork's object network.
+        out: dict[tuple[str, str, str], int] = {}
+        for start in range(0, len(prs), chunk_size):
+            chunk = prs[start:start + chunk_size]
+            parts = []
+            for i, (repo, base, sha) in enumerate(chunk):
+                owner, name = repo.split("/", 1)
+                parts.append(f'c{i}: repository(owner: "{owner}", name: "{name}") {{ '
+                             f'ref(qualifiedName: {json.dumps("refs/heads/" + base)}) {{ '
+                             f'compare(headRef: "{sha}") {{ behindBy }} }} }}')
+            data = _graphql_partial("query {\n" + "\n".join(parts) + "\n}", {})
+            for i, key in enumerate(chunk):
+                compare = ((data.get(f"c{i}") or {}).get("ref") or {}).get("compare") or {}
+                if compare.get("behindBy") is not None:
+                    out[key] = compare["behindBy"]
+        return out
 
     def nodes(self, refs, view):
         fragment, spread, chunk_size = _NODE_QUERIES[view]

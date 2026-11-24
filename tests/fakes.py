@@ -135,6 +135,7 @@ class FakePR:
     cross_refs: list[tuple[str, int, str]] = field(default_factory=list)
     commits: list[str] = field(default_factory=list)
     subscribed: bool = False
+    behind: int | None = None
 
     @property
     def id(self) -> str:
@@ -366,6 +367,12 @@ class FakeGitHub:
     def pr_states(self, repo, numbers):
         self._call("pr_states", repo, numbers)
         return {pr.number: pr.state for pr in self._found([(repo, n) for n in numbers])}
+
+    def behind_by(self, prs):
+        self._call("behind_by", prs)
+        # A PR left at behind=None stands for a compare GitHub could not answer.
+        return {(pr.repo, pr.base, pr.head_sha): pr.behind for pr in self.prs.values()
+                if (pr.repo, pr.base, pr.head_sha) in prs and pr.behind is not None}
 
     def nodes(self, refs, view):
         self._call("nodes", refs, view)

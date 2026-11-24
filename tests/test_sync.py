@@ -3,7 +3,7 @@ from datetime import timedelta
 
 import pytest
 
-from pr_dash import db, derive, github, mergebot, render, runbot, runbot_cache, sync, tab
+from pr_dash import db, derive, github, mergebot, query, render, runbot, runbot_cache, sync, tab
 from pr_dash.config import Config
 from pr_dash.sync import Sync
 from tests.fakes import (
@@ -382,6 +382,21 @@ def test_mine_keeps_resolved_members_and_stops_reading_their_final_page(w):
         ("master-x-6396725-andg", "done", [(10, "MERGED"), (20, "CLOSED")])]
 
 
+def test_mine_stores_each_open_prs_commits_behind_base(w):
+    for repo, number, behind in (("odoo/odoo", 10, 12), ("odoo/enterprise", 20, None)):
+        w.gh.add(repo, number, author="me", head_branch="master-x-andg", behind=behind)
+    w.gh.add("odoo/upgrade", 30, author="me", head_branch="master-x-andg", behind=5)
+    w.refresh()
+    w.gh.close("odoo/upgrade#30", "MERGED")
+    w.refresh(force=True)
+    # The merged PR is not compared, and the failed compare stores no count.
+    assert w.gh.calls[-1] == ("behind_by", [("odoo/odoo", "18.0", "sha1"),
+                                            ("odoo/enterprise", "18.0", "sha1")])
+    assert dict(w.conn.execute("SELECT id, behind FROM mine").fetchall()) == {
+        "odoo/odoo#10": 12, "odoo/enterprise#20": None, "odoo/upgrade#30": None}
+    assert [m.get("behind") for m in query.mine_compact(w.mine()[0])["members"]] == [12, None, None]
+
+
 def test_queued_members_get_their_dashboard_spot_and_a_mergebot_link(w):
     for repo, number in (("odoo/odoo", 10), ("odoo/enterprise", 20), ("odoo/upgrade", 30)):
         w.gh.add(repo, number, author="me", head_branch="master-x-6396725-andg")
@@ -613,7 +628,9 @@ def test_refreshing_one_pr_refetches_its_branch_set_in_each_tab_holding_it(w):
         {"queue": [ODOO, ENT], "mine": ["odoo/odoo#10", "odoo/upgrade#20"]}, ["odoo/odoo#9"], [])
     # No search or sweep, and the unchanged heads keep their cached diffs.
     assert w.gh.calls == [("nodes", [("odoo/odoo", 1), ("odoo/enterprise", 2)], "queue"),
-                          ("nodes", [("odoo/odoo", 10), ("odoo/upgrade", 20)], "mine")]
+                          ("nodes", [("odoo/odoo", 10), ("odoo/upgrade", 20)], "mine"),
+                          ("behind_by", [("odoo/odoo", "18.0", "sha1"),
+                                         ("odoo/upgrade", "18.0", "sha1")])]
     assert sorted(w.mergebot.reads) == ["odoo/odoo#10", "odoo/upgrade#20"]
     assert [(c["author"], c["body"]) for c in db.list_discussions(w.conn, "pr")[ENT]] == [
         ("clbr", "Why here?")]

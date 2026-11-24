@@ -279,8 +279,9 @@ class Sync:
         except github.GithubError as e:
             report.warnings.append(f"Authored PR refresh failed: {e}")
             return
+        behind = self._behind(nodes, report.warnings)
         with db.transaction(conn):
-            report.mine_added = self._store_authored(nodes, links, self._stamp())
+            report.mine_added = self._store_authored(nodes, links, behind, self._stamp())
             db.set_meta(conn, "last_mine_search", self._stamp())
         report.mine_refreshed = len(nodes)
         report.mergebot_read = self._refresh_mergebot(db.list_mine(conn))
@@ -340,8 +341,9 @@ class Sync:
 
         def fetch_mine(rows: list[dict]) -> list[str]:
             nodes, links = self._fetch_authored(_refs(rows), known, "mine")
+            behind = self._behind(nodes, report.warnings)
             with db.transaction(conn):
-                self._store_authored(nodes, links, self._stamp())
+                self._store_authored(nodes, links, behind, self._stamp())
             self._refresh_mergebot([r for r in db.list_mine(conn, include_dismissed=True)
                                     if r["id"] in nodes])
             return list(nodes)
@@ -393,7 +395,7 @@ class Sync:
 
         now = self._stamp()
         with db.transaction(conn):
-            self._store_authored(nodes, links, now)
+            self._store_authored(nodes, links, {}, now)
             for pr_id, state in reads.items():
                 db.upsert_mine_mergebot(conn, pr_id, asdict(state), now)
             sets, _ = render.build_mine_payload(conn, self.cfg.github_login, now=now)
@@ -473,14 +475,26 @@ class Sync:
                 nodes[fw_id] = node
         return nodes, links
 
-    def _store_authored(self, nodes: dict[str, dict], links: dict[str, str], now: str) -> int:
-        """Write fetched Authored PRs and their Forward-port links, returning how many are new."""
+    def _behind(self, nodes: dict[str, dict], warnings: list[str]) -> dict[str, int | None]:
+        """How many commits each open PR's base has that its head lacks, None when unknown."""
+        keys = {pr_id: (pr_id.rpartition("#")[0], node["baseRefName"], node["headRefOid"])
+                for pr_id, node in nodes.items() if node["state"] == "OPEN"}
+        try:
+            counts = self.gh.behind_by(list(dict.fromkeys(keys.values())))
+        except github.GithubError as e:
+            warnings.append(f"Commits behind base not read: {e}")
+            counts = {}
+        return {pr_id: counts.get(key) for pr_id, key in keys.items()}
+
+    def _store_authored(self, nodes: dict[str, dict], links: dict[str, str],
+                        behind: dict[str, int | None], now: str) -> int:
+        """Write fetched Authored PRs with `behind` and Forward-port links, return the new count."""
         added = 0
         for pr_id, node in nodes.items():
             repo, _, number = pr_id.rpartition("#")
             added += db.add_mine(self.conn, pr_id, repo, int(number), node["url"], now)
             row, comments = derive.mine_row_from_node(node, now)
-            db.update_tab_state(self.conn, "mine", pr_id, row)
+            db.update_tab_state(self.conn, "mine", pr_id, {**row, "behind": behind.get(pr_id)})
             db.replace_discussion(self.conn, pr_id, comments)
         for fw_id, source in links.items():
             db.link_mine_forward_port(self.conn, fw_id, source)

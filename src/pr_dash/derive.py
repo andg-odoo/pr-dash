@@ -1029,7 +1029,7 @@ def _forward_port(row: dict, mergebot: dict | None) -> dict:
         flag = "conflict" if m["conflict"] else "red" if m["ci"] == "red" else None
     keep = ("id", "ref", "num", "repo", "url", "state", "draft", "ci", "ci_failing", "override",
             "decision", "r_plus", "requested_people", "requested_teams", "conflict",
-            "mergebot_unknown", "staging", "head_sha", "branch")
+            "mergebot_unknown", "staging", "head_sha", "branch", "behind")
     return {**{k: m[k] for k in keep}, "base": row["target_branch"], "flag": flag}
 
 
@@ -1281,6 +1281,7 @@ def _mine_member(row: dict, mergebot: dict | None) -> dict:
         "conflict": row["mergeable"] == "CONFLICTING",
         "head_sha": row["head_sha"],
         "branch": row["head_branch"],
+        "behind": row["behind"],
         "updated_at": row["updated_at"],
         "mergebot_unknown": mergebot is None or mergebot["state"] == "unknown",
         # r+'d and green: queued for the next staging, or already in one.

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Iterator
 
 
-SCHEMA_VERSION = 35
+SCHEMA_VERSION = 36
 # A fetched_at no fetch ever wrote, so the row is fetched in full, its Discussion with it.
 UNFETCHED = "1970-01-01T00:00:00+00:00"
 
@@ -125,6 +125,7 @@ CREATE TABLE mine (
   review_decision  TEXT,
   mergeable        TEXT,
   head_committed_at TEXT,
+  behind           INTEGER,
   requested_people TEXT NOT NULL DEFAULT '[]',
   requested_teams  TEXT NOT NULL DEFAULT '[]',
   review_request_events TEXT NOT NULL DEFAULT '[]',
@@ -642,6 +643,10 @@ def _migrate(conn: sqlite3.Connection, db_path: Path) -> None:
         # Queue rows refetch on the next refresh to read their first request.
         conn.execute("UPDATE pr SET fetched_at = ? WHERE archived_at IS NULL", (UNFETCHED,))
         conn.execute("DELETE FROM meta WHERE key = 'last_queue_refresh'")
+    if current < 36:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(mine)").fetchall()}
+        if "behind" not in cols:
+            conn.execute("ALTER TABLE mine ADD COLUMN behind INTEGER")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -1096,7 +1101,7 @@ _MINE_JSON_COLS = ["checks", "requested_people", "requested_teams", "review_requ
 _TAB_STATE_COLS = {
     "tracked": TRACKED_STATE_COLS,
     "mine": [*TRACKED_STATE_COLS, "head_branch", "review_decision", "mergeable",
-             "head_committed_at", *_MINE_JSON_COLS],
+             "head_committed_at", "behind", *_MINE_JSON_COLS],
 }
 
 

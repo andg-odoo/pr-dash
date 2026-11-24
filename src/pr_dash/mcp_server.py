@@ -367,9 +367,9 @@ def list_mine(band: str | None = None, include_dismissed: bool = False) -> dict:
     'waiting on re-review', 'source merged', 'fw k/n merged'), acknowledged, runbot and
     members. Members, empty or false keys left out, carry state, ci (green / red / pending)
     with ci_failing and override, decision, r_plus, requested people and teams, conflict,
-    head_sha, branch, new_comments, unresolved_threads and fw, the Forward-ports in target
-    branch order with base and flag (conflict / red / null). Returns {cache_fetched_at,
-    count, branch_sets}.
+    head_sha, branch, behind (commits on the base the head lacks), new_comments,
+    unresolved_threads and fw, the Forward-ports in target branch order with base and flag
+    (conflict / red / null). Returns {cache_fetched_at, count, branch_sets}.
     """
     cfg = _get_cfg()
     sets = [tab.MINE.summarize(s) for s in tab.MINE.load(cfg, include_dismissed=include_dismissed)
@@ -388,8 +388,9 @@ def get_mine(ref: str, discussion: bool = False, fresh: bool = False) -> dict:
     Each member and Forward-port carries ref, url, state, draft, ci, ci_failing, override,
     staging, staging_url, conflict, base, head_sha, branch, review, decision, r_plus,
     requested people and teams, mergebot_unknown, new_comments (human, since your last
-    look) and unresolved_threads. discussion=True returns every member with its body and
-    Discussion tree (get_comments shape) and each Forward-port with its own.
+    look), unresolved_threads and behind (commits on the base the head lacks).
+    discussion=True returns every member with its body and Discussion tree (get_comments
+    shape) and each Forward-port with its own.
     Use fresh=True when activity from the last few minutes matters.
     """
     cfg = _get_cfg()

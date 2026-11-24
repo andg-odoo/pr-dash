@@ -481,7 +481,7 @@ def _mine_row(repo, number, branch, *, checks=(("ci/runbot", "SUCCESS"),),
     }
     row, _ = derive.mine_row_from_node(node, "2026-10-05T00:00:00+00:00")
     return {**row, "id": f"{repo}#{number}", "repo": repo, "number": number, "url": "u",
-            "dismissed_at": None, "source_id": source}
+            "dismissed_at": None, "source_id": source, "behind": None}
 
 
 def _sets(rows, pages, *, streams=None, acks=None, seen=None, now="2026-10-05T00:00:00Z"):
