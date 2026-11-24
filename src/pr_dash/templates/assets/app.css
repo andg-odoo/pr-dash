@@ -1645,6 +1645,9 @@ body {
 .mine-table .mine-staging a, .mine-table .mine-staging a:visited { color: var(--green); }
 .mine-h3-link { margin-left: 8px; text-transform: none; letter-spacing: 0; font-weight: 400; }
 .mine-dim { color: var(--fg-faint); }
+.mine-behind-100 { color: var(--yellow); }
+.mine-behind-500 { color: var(--orange); }
+.mine-behind-700 { color: var(--red); font-weight: 600; }
 .mine-ci-green { color: var(--green); }
 
 .mine-table { border-collapse: collapse; font-size: 13px; width: 100%; }

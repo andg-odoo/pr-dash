@@ -607,7 +607,7 @@
     if (m.ci === "red") bits.push("ci✕");
     if (m.conflict) bits.push("conflict");
     if (m.decision === "APPROVED") bits.push("✓");
-    if (m.behind > 0) bits.push(`↓${m.behind}`);
+    if (m.behind > 0) bits.push(behindNote(m).trim());
     const tone = memberTone(m);
     return `<span class="mine-chip mine-chip-${tone}${m.draft ? " mine-chip-draft" : ""}" title="${escapeHTML(m.title)}">`
       + `<span class="mine-dot mine-dot-${tone}"></span>${escapeHTML(m.ref)}${bits.length ? " " + bits.join(" ") : ""}</span>`;
@@ -618,8 +618,11 @@
     ? `<span class="tr-ci-failure">${FW_FLAG[f.flag]}</span>`
     : `<span class="${f.state === "MERGED" ? "mine-fw-merged" : "mine-dim"}">${escapeHTML(f.state.toLowerCase())}</span>`;
 
+  const behindTier = n => n >= 700 ? "mine-behind-700" : n >= 500 ? "mine-behind-500"
+    : n >= 100 ? "mine-behind-100" : "mine-dim";
   const behindNote = p => p.behind > 0
-    ? ` <span class="mine-dim" title="commits on the base branch the head lacks">↓${p.behind}</span>` : "";
+    ? ` <span class="${behindTier(p.behind)}" title="commits on the base branch the head lacks">↓${p.behind}</span>`
+    : "";
 
   const fwLines = s => s.members.flatMap(m => m.fw.map(f =>
     `<span class="pr-sub mine-fw">${escapeHTML(f.base)}${behindNote(f)} ${escapeHTML(f.ref)} ${fwLabel(f)}</span>`)).join("");
