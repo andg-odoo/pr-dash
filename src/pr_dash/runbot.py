@@ -198,7 +198,7 @@ class Runbot:
             msg = f"a bundle walk needs {BUNDLE_WALK_REQUESTS} requests, the cap leaves fewer"
             raise CapReached(msg)
         # Project 1 is R&D, base bundle names like `master` also exist in other projects.
-        rows = self._api(f"bundle/{urllib.parse.quote(name, safe='')}?project_id=1")
+        rows = self._api(f"bundle/{urllib.parse.quote(name, safe='')}?project_id=1&batch_history=10")
         if len(rows) != 1:
             raise NoBundle(name, [r["name"] for r in rows[:BUNDLE_CANDIDATES]], len(rows))
         bundle = rows[0]
